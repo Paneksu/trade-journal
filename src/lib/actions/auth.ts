@@ -28,7 +28,7 @@ export async function signIn(_p: SignInState, data: FormData): Promise<SignInSta
   const key = await clientKey();
   const limit = checkRateLimit(key);
   if (!limit.allowed) {
-    return { error: `Za duzo prob. Sprobuj ponownie za ${Math.ceil(limit.retryInS / 60)} min.` };
+    return { error: `Za dużo prób. Spróbuj ponownie za ${Math.ceil(limit.retryInS / 60)} min.` };
   }
 
   const password = String(data.get("haslo") ?? "");
@@ -36,7 +36,7 @@ export async function signIn(_p: SignInState, data: FormData): Promise<SignInSta
 
   if (!(await verifyPassword(password, s.passwordHash))) {
     recordFailedAttempt(key);
-    return { error: "Nieprawidlowe haslo." };
+    return { error: "Nieprawidłowe hasło." };
   }
 
   clearAttempts(key);
@@ -62,9 +62,9 @@ export async function changePassword(_p: PasswordState, data: FormData): Promise
   const repeated = String(data.get("powtorzone") ?? "");
 
   if (!(await verifyPassword(current, s.passwordHash))) {
-    return { error: "Obecne haslo sie nie zgadza." };
+    return { error: "Obecne hasło się nie zgadza." };
   }
-  if (next !== repeated) return { error: "Nowe hasla nie sa takie same." };
+  if (next !== repeated) return { error: "Nowe hasła nie są takie same." };
 
   const strength = checkPasswordStrength(next);
   if (!strength.ok) return { error: strength.reason };

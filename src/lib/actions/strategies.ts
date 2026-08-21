@@ -28,7 +28,7 @@ export async function saveStrategy(_p: ActionState, d: FormData): Promise<Action
   await requireSession();
   const strategyId = id(d, "id");
   const name = text(d, "name");
-  if (!name) return { error: "Podaj nazwe strategii." };
+  if (!name) return { error: "Podaj nazwę strategii." };
 
   // Zasady przychodza jako lista linii. Identyfikatory sa stale, zeby odhaczone
   // punkty przy starych trade'ach nie rozjechaly sie po edycji checklisty.
@@ -79,7 +79,7 @@ export async function saveBacktestSession(_p: ActionState, d: FormData): Promise
   await requireSession();
   const sessionId = id(d, "id");
   const name = text(d, "name");
-  if (!name) return { error: "Podaj nazwe sesji." };
+  if (!name) return { error: "Podaj nazwę sesji." };
 
   const target = Number(d.get("targetTrades"));
   const balance = Number(String(d.get("startingBalance") ?? "").replace(",", "."));

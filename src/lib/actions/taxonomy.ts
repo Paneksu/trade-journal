@@ -35,10 +35,10 @@ export async function saveTagCategory(_p: ActionState, d: FormData): Promise<Act
   await requireSession();
   const id = Number(d.get("id")) || null;
   const name = text(d, "name");
-  if (!name) return { error: "Podaj nazwe kategorii." };
+  if (!name) return { error: "Podaj nazwę kategorii." };
 
   const key = text(d, "key") ?? toKey(name);
-  if (!key) return { error: "Z tej nazwy nie da sie zrobic klucza. Uzyj liter lacinskich." };
+  if (!key) return { error: "Z tej nazwy nie da się zrobić klucza. Użyj liter łacińskich." };
 
   const row = { name, key, description: text(d, "description"), sortOrder: order(d, "sortOrder") };
 
@@ -65,8 +65,8 @@ export async function saveTag(_p: ActionState, d: FormData): Promise<ActionState
   const categoryId = Number(d.get("categoryId"));
   const name = text(d, "name");
 
-  if (!Number.isInteger(categoryId) || categoryId <= 0) return { error: "Wybierz kategorie." };
-  if (!name) return { error: "Podaj nazwe tagu." };
+  if (!Number.isInteger(categoryId) || categoryId <= 0) return { error: "Wybierz kategorię." };
+  if (!name) return { error: "Podaj nazwę tagu." };
 
   const row = {
     categoryId,
@@ -80,7 +80,7 @@ export async function saveTag(_p: ActionState, d: FormData): Promise<ActionState
     if (id) await db.update(tags).set(row).where(eq(tags.id, id));
     else await db.insert(tags).values(row);
   } catch {
-    return { error: "Taki tag juz jest w tej kategorii." };
+    return { error: "Taki tag już jest w tej kategorii." };
   }
 
   revalidatePath("/", "layout");
@@ -112,13 +112,13 @@ export async function saveField(_p: ActionState, d: FormData): Promise<ActionSta
   const label = text(d, "label");
   const type = text(d, "type") as FieldType | null;
 
-  if (!label) return { error: "Podaj nazwe pola." };
+  if (!label) return { error: "Podaj nazwę pola." };
   if (!type || !FIELD_TYPES.includes(type)) return { error: "Wybierz typ pola." };
 
   // Klucz powstaje raz, przy zakladaniu pola. Pozniejsza zmiana odcielaby
   // wartosci zapisane przy istniejacych trade'ach.
   const key = id ? (text(d, "key") ?? "") : toKey(label);
-  if (!key) return { error: "Z tej nazwy nie da sie zrobic klucza. Uzyj liter lacinskich." };
+  if (!key) return { error: "Z tej nazwy nie da się zrobić klucza. Użyj liter łacińskich." };
 
   const options = TYPES_WITH_OPTIONS.includes(type)
     ? String(d.get("options") ?? "")
@@ -129,7 +129,7 @@ export async function saveField(_p: ActionState, d: FormData): Promise<ActionSta
     : [];
 
   if (TYPES_WITH_OPTIONS.includes(type) && options.length === 0) {
-    return { error: "Lista wyboru potrzebuje co najmniej jednej wartosci." };
+    return { error: "Lista wyboru potrzebuje co najmniej jednej wartości." };
   }
 
   const row = {
@@ -153,7 +153,7 @@ export async function saveField(_p: ActionState, d: FormData): Promise<ActionSta
     if (id) await db.update(customFields).set(row).where(eq(customFields.id, id));
     else await db.insert(customFields).values(row);
   } catch {
-    return { error: `Pole o kluczu ${key} juz istnieje.` };
+    return { error: `Pole o kluczu ${key} już istnieje.` };
   }
 
   revalidatePath("/", "layout");

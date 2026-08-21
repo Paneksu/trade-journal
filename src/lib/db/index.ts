@@ -11,7 +11,7 @@ type Holder = {
 function build() {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    throw new Error("Brak zmiennej DATABASE_URL. Ustaw ja w .env albo w panelu Coolify.");
+    throw new Error("Brak zmiennej DATABASE_URL. Ustaw ją w .env albo w panelu Coolify.");
   }
   // W trybie deweloperskim Next przeladowuje moduly; bez cache w globalu
   // kazde przeladowanie otwieraloby nowa pule polaczen.

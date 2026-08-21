@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import sharp from "sharp";
 
 /*
  * Scenariusze przechodzace przez cala aplikacje: od formularza, przez zapis,
@@ -134,6 +135,54 @@ test("sesja backtestu ma statystyki osobne od dziennika", async ({ page }) => {
   // ...a dziennik realny go nie liczy.
   await page.goto("/trades");
   await expect(page.getByText(nazwa)).toHaveCount(0);
+});
+
+test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
+  page,
+  browser,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2026-04-20T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#exitTime").fill("2026-04-20T15:45");
+  await page.locator("#exitPrice").fill("20005");
+  await page.locator("#stopLoss").fill("19995");
+
+  // Obrazek generowany w locie - bez plikow pomocniczych w repozytorium.
+  const png = await sharp({
+    create: { width: 32, height: 32, channels: 3, background: "#1d3a33" },
+  })
+    .png()
+    .toBuffer();
+  await page.locator("#shot_before").setInputFiles({
+    name: "wykres.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  const obraz = page.locator('img[src^="/api/screenshots/"]').first();
+  await expect(obraz).toBeVisible();
+
+  const adres = await obraz.getAttribute("src");
+  expect(adres).toBeTruthy();
+
+  // Zalogowany dostaje plik...
+  const zalogowany = await page.request.get(adres as string);
+  expect(zalogowany.status()).toBe(200);
+  expect(zalogowany.headers()["content-type"]).toContain("image/webp");
+
+  // ...a ktos bez sesji zostaje zawrocony na logowanie. Bez `maxRedirects`
+  // Playwright poszedlby za przekierowaniem i zobaczyl 200 na stronie logowania.
+  const czysty = await browser.newContext({ storageState: undefined });
+  const bezSesji = await czysty.request.get(`http://localhost:3000${adres}`, { maxRedirects: 0 });
+  expect(bezSesji.status()).toBe(307);
+  expect(bezSesji.headers().location).toContain("/login");
+  await czysty.close();
 });
 
 test("dziennik nie wpuszcza bez hasła", async ({ browser }) => {

@@ -14,7 +14,7 @@ function secret(): string {
   const s = process.env.SESSION_SECRET;
   if (!s || s.length < 32) {
     throw new Error(
-      "SESSION_SECRET musi miec co najmniej 32 znaki. Ustaw go w zmiennych srodowiska.",
+      "SESSION_SECRET musi mieć co najmniej 32 znaki. Ustaw go w zmiennych środowiska.",
     );
   }
   return s;

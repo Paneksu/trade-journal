@@ -16,7 +16,7 @@ export const getSettings = cache(async (): Promise<Settings> => {
   const [s] = await db.select().from(settingsTable).where(eq(settingsTable.id, 1)).limit(1);
   if (!s) {
     throw new Error(
-      "Baza nie ma wiersza ustawien. Uruchom `npm run seed`, zeby zalozyc konto i haslo.",
+      "Baza nie ma wiersza ustawień. Uruchom `npm run seed`, żeby założyć konto i hasło.",
     );
   }
   return s;

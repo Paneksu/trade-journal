@@ -58,10 +58,10 @@ export async function verifyPassword(password: string, stored: string | null): P
 }
 
 export function checkPasswordStrength(password: string): { ok: boolean; reason?: string } {
-  if (password.length < 10) return { ok: false, reason: "Haslo musi miec co najmniej 10 znakow." };
+  if (password.length < 10) return { ok: false, reason: "Hasło musi mieć co najmniej 10 znaków." };
   if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) {
-    return { ok: false, reason: "Haslo musi zawierac male i wielkie litery." };
+    return { ok: false, reason: "Hasło musi zawierać małe i wielkie litery." };
   }
-  if (!/[0-9]/.test(password)) return { ok: false, reason: "Haslo musi zawierac cyfre." };
+  if (!/[0-9]/.test(password)) return { ok: false, reason: "Hasło musi zawierać cyfrę." };
   return { ok: true };
 }

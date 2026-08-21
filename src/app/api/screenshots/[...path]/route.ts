@@ -5,7 +5,7 @@ import type { ReadableStream as WebReadableStream } from "node:stream/web";
 import { NextResponse } from "next/server";
 
 import { isSignedIn } from "@/lib/auth/guard";
-import { safePath } from "@/lib/screenshots";
+import { safePath } from "@/lib/uploads-path";
 
 /**
  * Serwowanie zrzutow z wolumenu. Kazde zadanie sprawdza sesje - pliki

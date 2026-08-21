@@ -59,7 +59,7 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
 export async function saveView(_p: ActionState, d: FormData): Promise<ActionState> {
   await requireSession();
   const name = text(d, "name");
-  if (!name) return { error: "Podaj nazwe widoku." };
+  if (!name) return { error: "Podaj nazwę widoku." };
 
   const query = String(d.get("query") ?? "");
   const filters = Object.fromEntries(new URLSearchParams(query).entries());

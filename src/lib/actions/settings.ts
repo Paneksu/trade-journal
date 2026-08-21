@@ -38,7 +38,7 @@ export async function saveAccount(_p: ActionState, d: FormData): Promise<ActionS
   await requireSession();
   const id = number(d, "id");
   const name = text(d, "name");
-  if (!name) return { error: "Podaj nazwe konta." };
+  if (!name) return { error: "Podaj nazwę konta." };
 
   const row = {
     name,
@@ -65,7 +65,7 @@ export async function deleteAccount(id: number): Promise<ActionState> {
     await db.delete(accounts).where(eq(accounts.id, id));
   } catch {
     // Klucz obcy z `restrict` chroni historie: konta z trade'ami sie nie usuwa.
-    return { error: "Na tym koncie sa trade'y. Zamiast usuwac, zarchiwizuj je." };
+    return { error: "Na tym koncie są trade'y. Zamiast usuwać, zarchiwizuj je." };
   }
   revalidatePath("/", "layout");
   return { ok: true };
@@ -82,9 +82,9 @@ export async function saveInstrument(_p: ActionState, d: FormData): Promise<Acti
   const tickValue = number(d, "tickValue");
 
   if (!symbol) return { error: "Podaj symbol instrumentu." };
-  if (!name) return { error: "Podaj nazwe instrumentu." };
-  if (tickSize === null || tickSize <= 0) return { error: "Wielkosc ticku musi byc wieksza od zera." };
-  if (tickValue === null || tickValue <= 0) return { error: "Wartosc ticku musi byc wieksza od zera." };
+  if (!name) return { error: "Podaj nazwę instrumentu." };
+  if (tickSize === null || tickSize <= 0) return { error: "Wielkość ticku musi być większa od zera." };
+  if (tickValue === null || tickValue <= 0) return { error: "Wartość ticku musi być większa od zera." };
 
   const row = {
     symbol,
@@ -106,7 +106,7 @@ export async function saveInstrument(_p: ActionState, d: FormData): Promise<Acti
     if (id) await db.update(instruments).set(row).where(eq(instruments.id, id));
     else await db.insert(instruments).values(row);
   } catch {
-    return { error: `Instrument o symbolu ${symbol} juz istnieje.` };
+    return { error: `Instrument o symbolu ${symbol} już istnieje.` };
   }
 
   revalidatePath("/", "layout");
@@ -118,7 +118,7 @@ export async function deleteInstrument(id: number): Promise<ActionState> {
   try {
     await db.delete(instruments).where(eq(instruments.id, id));
   } catch {
-    return { error: "Na tym instrumencie sa trade'y. Zamiast usuwac, oznacz go jako nieaktywny." };
+    return { error: "Na tym instrumencie są trade'y. Zamiast usuwać, oznacz go jako nieaktywny." };
   }
   revalidatePath("/", "layout");
   return { ok: true };
@@ -130,7 +130,7 @@ export async function saveSettings(_p: ActionState, d: FormData): Promise<Action
   await requireSession();
 
   const minSample = Math.round(number(d, "minSample") ?? 15);
-  if (minSample < 3) return { error: "Prog istotnosci ponizej trzech trade'ow nie ma sensu." };
+  if (minSample < 3) return { error: "Próg istotności poniżej trzech trade'ów nie ma sensu." };
 
   await db
     .update(settings)

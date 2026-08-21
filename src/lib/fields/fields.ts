@@ -42,11 +42,11 @@ export const TYPE_NAMES: Record<FieldType, string> = {
 };
 
 export const TYPE_HINTS: Record<FieldType, string> = {
-  text: "Dowolny tekst, na przyklad krotki komentarz.",
-  number: "Liczba z opcjonalnym zakresem i jednostka.",
-  select: "Jedna wartosc ze zdefiniowanej przez Ciebie listy.",
-  multiselect: "Dowolnie wiele wartosci z listy.",
-  bool: "Przelacznik tak albo nie.",
+  text: "Dowolny tekst, na przykład krótki komentarz.",
+  number: "Liczba z opcjonalnym zakresem i jednostką.",
+  select: "Jedna wartość ze zdefiniowanej przez Ciebie listy.",
+  multiselect: "Dowolnie wiele wartości z listy.",
+  bool: "Przełącznik tak albo nie.",
   date: "Data.",
   rating: "Ocena w skali od 1 do 5.",
 };
@@ -68,9 +68,9 @@ function schemaForField(p: FieldDef): z.ZodTypeAny {
 
   switch (p.type) {
     case "number": {
-      let s = z.number({ message: `${p.label}: wpisz liczbe.` });
-      if (p.min !== null) s = s.min(Number(p.min), `${p.label}: nie mniej niz ${p.min}.`);
-      if (p.max !== null) s = s.max(Number(p.max), `${p.label}: nie wiecej niz ${p.max}.`);
+      let s = z.number({ message: `${p.label}: wpisz liczbę.` });
+      if (p.min !== null) s = s.min(Number(p.min), `${p.label}: nie mniej niż ${p.min}.`);
+      if (p.max !== null) s = s.max(Number(p.max), `${p.label}: nie więcej niż ${p.max}.`);
       return s;
     }
     case "rating":
@@ -82,20 +82,20 @@ function schemaForField(p: FieldDef): z.ZodTypeAny {
     case "bool":
       return z.boolean();
     case "date":
-      return z.string().regex(/^\d{4}-\d{2}-\d{2}$/, `${p.label}: podaj date.`);
+      return z.string().regex(/^\d{4}-\d{2}-\d{2}$/, `${p.label}: podaj datę.`);
     case "select":
       return allowed.length > 0
-        ? z.enum(allowed as [string, ...string[]], { message: `${p.label}: wartosc spoza listy.` })
+        ? z.enum(allowed as [string, ...string[]], { message: `${p.label}: wartość spoza listy.` })
         : z.string();
     case "multiselect":
       return z.array(
         allowed.length > 0
-          ? z.enum(allowed as [string, ...string[]], { message: `${p.label}: wartosc spoza listy.` })
+          ? z.enum(allowed as [string, ...string[]], { message: `${p.label}: wartość spoza listy.` })
           : z.string(),
       );
     case "text":
     default:
-      return z.string().max(2000, `${p.label}: maksymalnie 2000 znakow.`);
+      return z.string().max(2000, `${p.label}: maksymalnie 2000 znaków.`);
   }
 }
 
@@ -178,7 +178,7 @@ export function validateValues(
     if (!result.success) {
       errors.push({
         key: p.key,
-        message: result.error.issues[0]?.message ?? `${p.label}: nieprawidlowa wartosc.`,
+        message: result.error.issues[0]?.message ?? `${p.label}: nieprawidłowa wartość.`,
       });
     }
   }
@@ -232,7 +232,7 @@ export function toKey(label: string): string {
 }
 
 export const fieldDefinitionSchema = z.object({
-  label: z.string().min(1, "Podaj nazwe pola.").max(60, "Nazwa moze miec do 60 znakow."),
+  label: z.string().min(1, "Podaj nazwę pola.").max(60, "Nazwa moze miec do 60 znakow."),
   type: z.enum(["text", "number", "select", "multiselect", "bool", "date", "rating"]),
   required: z.boolean(),
   inTable: z.boolean(),

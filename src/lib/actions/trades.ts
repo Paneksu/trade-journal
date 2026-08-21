@@ -82,14 +82,14 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   if (!instrument) return { ok: false, error: "Nie znam takiego instrumentu." };
 
   const entryTime = fromLocalInput(text(data, "entryTime") ?? "", timezone);
-  if (!entryTime) return { ok: false, error: "Podaj date i godzine wejscia." };
+  if (!entryTime) return { ok: false, error: "Podaj datę i godzinę wejścia." };
 
   const entryPrice = number(data, "entryPrice");
-  if (entryPrice === null) return { ok: false, error: "Podaj cene wejscia." };
+  if (entryPrice === null) return { ok: false, error: "Podaj cenę wejścia." };
 
   const contracts = number(data, "contracts");
   if (contracts === null || contracts <= 0) {
-    return { ok: false, error: "Podaj liczbe kontraktow wieksza od zera." };
+    return { ok: false, error: "Podaj liczbę kontraktów większą od zera." };
   }
 
   const exitTimeRaw = text(data, "exitTime");
@@ -104,10 +104,10 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
       : (statusRaw as "planned" | "open" | "closed" | "cancelled");
 
   if (status === "closed" && !exitTime) {
-    return { ok: false, error: "Trade zamkniety musi miec date wyjscia." };
+    return { ok: false, error: "Trade zamknięty musi mieć datę wyjścia." };
   }
   if (exitTime && exitTime.getTime() < entryTime.getTime()) {
-    return { ok: false, error: "Wyjscie nie moze byc wczesniej niz wejscie." };
+    return { ok: false, error: "Wyjście nie może być wcześniej niż wejście." };
   }
 
   const stopLoss = number(data, "stopLoss");
@@ -229,7 +229,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
         return {
           ok: false,
           id: savedId,
-          error: `Trade zapisany, ale zrzut sie nie wgral: ${(error as Error).message}`,
+          error: `Trade zapisany, ale zrzut się nie wgrał: ${(error as Error).message}`,
         };
       }
     }
