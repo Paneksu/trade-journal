@@ -81,6 +81,33 @@ zmiana hasła podbija licznik i wylogowuje każde urządzenie.
 
 ---
 
+## ADR-006 — dzień bez transakcji jako flaga notatki dnia (2026-08-21)
+
+Dzień świadomie odpuszczony jest zapisem dziennika, nie brakiem zapisu. Trzyma go
+istniejąca tabela `day_notes`: znacznik `no_trade` plus powód z zamkniętej listy
+(`no_trade_reason`). Osobna tabela dałaby dwa byty opisujące ten sam dzień i dwa
+miejsca do edycji, a plan dnia, przegląd i ocena i tak mieszkają już w notatce.
+
+Powody są enumem, nie słownikiem edytowalnym z ustawień: mają dawać się zliczać
+i porównywać między miesiącami, a lista siedmiu pozycji pokrywa realne przypadki.
+Opis własny wpisuje się w pole „Po sesji”.
+
+**Trade'y wygrywają z flagą.** Akcja zapisu odrzuca oznaczenie dnia, w którym są
+trade'y, a widok kalendarza w razie kolizji pokazuje wynik, nie pauzę. Bez tej
+zasady dwa źródła prawdy o dniu potrafiłyby sobie przeczyć.
+
+Nowa miara **pokrycie dziennika**: odsetek dni roboczych zakresu, które mają
+jakikolwiek zapis. Mianownik obcinamy do dzisiaj — przyszłość nie jest luką.
+**Świąt nie modelujemy**: dzień wolny oznacza się ręcznie powodem „dzień wolny”,
+nieoznaczony liczy się jako dziura. Kalendarz świąt dwóch giełd i jednego kraju
+byłby osobnym zbiorem danych do utrzymywania.
+
+**Miernik dyscypliny zostaje nietknięty.** Pauza nie podnosi i nie obniża wyniku:
+`scoreDiscipline` liczy kary per trade, a sygnał dniowy nie ma tam sensownego
+mianownika. To decyzja do rewizji, gdyby pauz uzbierało się dość, żeby coś znaczyły.
+
+---
+
 ## Odstępstwo — Lighthouse SEO 60 (2026-08-21)
 
 Bramka publikacji wymaga ≥ 90 w czterech kategoriach. Ta aplikacja ma **60 w SEO**

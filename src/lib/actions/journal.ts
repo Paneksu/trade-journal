@@ -1,11 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, sql } from "drizzle-orm";
+import { eq, isNull, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { dayNotes, savedViews } from "@/lib/db/schema";
+import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
+import { countTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
 
 function text(d: FormData, k: string): string | null {
@@ -20,6 +22,11 @@ function rating(d: FormData, k: string): number | null {
   return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
 }
 
+function reason(d: FormData, k: string): NoTradeReason | null {
+  const w = d.get(k);
+  return isNoTradeReason(w) ? w : null;
+}
+
 /* --- Dziennik dnia -------------------------------------------------------- */
 
 export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionState> {
@@ -30,6 +37,16 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
   const accountIdRaw = Number(d.get("accountId"));
   const accountId = Number.isInteger(accountIdRaw) && accountIdRaw > 0 ? accountIdRaw : null;
 
+  const noTrade = d.get("noTrade") !== null;
+
+  // Dwa zrodla prawdy o dniu nie moga sobie przeczyc: albo sa trade'y,
+  // albo dzien byl bez transakcji.
+  if (noTrade && (await countTradesOnDay(day)) > 0) {
+    return {
+      error: "Tego dnia są zapisane trade'y — nie można oznaczyć go jako dnia bez transakcji.",
+    };
+  }
+
   const values = {
     day,
     accountId,
@@ -38,17 +55,27 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
     mood: rating(d, "mood"),
     energy: rating(d, "energy"),
     dayRating: rating(d, "dayRating"),
+    noTrade,
+    // Odznaczenie flagi nie zostawia osieroconego powodu.
+    noTradeReason: noTrade ? reason(d, "noTradeReason") : null,
     updatedAt: new Date(),
   };
 
   // Jeden wpis na dzien i konto - powtorny zapis nadpisuje poprzedni.
+  // Bez konta konflikt lapie czesciowy indeks `day_notes_no_account_idx`,
+  // bo w Postgresie NULL != NULL.
   await db
     .insert(dayNotes)
     .values(values)
-    .onConflictDoUpdate({
-      target: [dayNotes.day, dayNotes.accountId],
-      set: values,
-    });
+    .onConflictDoUpdate(
+      accountId
+        ? { target: [dayNotes.day, dayNotes.accountId], set: values }
+        : {
+            target: dayNotes.day,
+            targetWhere: isNull(dayNotes.accountId),
+            set: values,
+          },
+    );
 
   revalidatePath("/", "layout");
   return { ok: true };

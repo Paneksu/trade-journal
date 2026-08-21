@@ -139,6 +139,28 @@ plan przed sesją, podsumowanie po sesji, nastrój, energia i ocena dnia.
 Notatka przed sesją ma sens tylko wtedy, gdy powstaje **przed** sesją. Po fakcie
 zawsze wychodzi, że plan był dobry.
 
+### Dzień bez transakcji
+
+Dzień, w którym świadomie nie grałeś, też jest wpisem. W panelu dnia zaznacz
+**Dzień bez transakcji** i wybierz powód: brak setupu, poza godzinami handlu,
+warunki rynkowe, dzień wolny, zaplanowana pauza, powód osobisty albo inny.
+Szczegóły dopisz w polu „Po sesji”.
+
+Taki dzień dostaje w kalendarzu własny kafel — neutralny, bez zieleni i czerwieni,
+bo nie jest ani zyskiem, ani stratą. Dnia, w którym są zapisane trade'y, nie da się
+tak oznaczyć.
+
+Dwa kafle na górze kalendarza czytają te zapisy:
+
+- **Dni bez transakcji** — ile pauz w miesiącu i jaki powód wraca najczęściej,
+- **Pokrycie dziennika** — jaki odsetek dni roboczych ma jakikolwiek zapis, trade
+  albo świadomą pauzę. Reszta to dni, o których dziennik nie wie nic. Dni jeszcze
+  nienadeszłe nie liczą się jako braki, święta trzeba oznaczyć samemu powodem
+  „dzień wolny”.
+
+Pauzy nie wchodzą do statystyk wyników ani do miernika dyscypliny — nie podbijają
+skuteczności i nie psują średniej.
+
 ## Backtesting
 
 *Backtesting → Nowa sesja*. Zapisujesz założenia (strategia, instrument, interwał,

@@ -7,6 +7,8 @@ Co robi:
 
 - **Dziennik** — szybkie wpisywanie trade'ów z podglądem wyniku liczonym na żywo,
   zrzutami wykresu przed i po, checklistą strategii i notatką dnia.
+- **Kalendarz** — miesiąc jako mapa wyników, z dniami świadomie odpuszczonymi
+  (powód pauzy) i pokryciem dziennika: ile dni roboczych ma w ogóle jakikolwiek zapis.
 - **Statystyki** — oczekiwana wartość w R i w gotówce, profit factor, obsunięcie,
   rozkład R, MAE/MFE, rozbicie na dowolny wymiar (instrument, sesja, dzień, tag, pole własne).
 - **Edge Finder** — automatycznie wskazuje konteksty, w których wyniki odstają od średniej,

@@ -273,3 +273,57 @@ test("wpisana kwota netto wylicza cenę wyjścia i zgadza się z podglądem", as
   await expect(page).toHaveURL(/\/trades\/\d+$/);
   await expect(page.getByText(/\+245,00\s?USD/).first()).toBeVisible();
 });
+
+test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async ({ page }) => {
+  // Miesiac bez zadnych danych, zeby liczby nie zalezaly od reszty zestawu.
+  await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
+
+  // Stan wyjsciowy wymuszony, a nie zalozony - inaczej przerwany przebieg
+  // zostawia flage i nastepne uruchomienie startuje od jedynki.
+  await page.getByLabel("Dzień bez transakcji").uncheck();
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+
+  const kafelPauz = page.locator("div.panel").filter({ hasText: "Dni bez transakcji" }).first();
+  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("0");
+
+  await page.getByLabel("Dzień bez transakcji").check();
+  await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+
+  await page.goto("/calendar?miesiac=2020-03");
+  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("1");
+  await expect(page.getByText("Brak setupu 1")).toBeVisible();
+
+  // Kafel dnia mowi wprost, ze to pauza, a nie dziura w dzienniku.
+  const kafelDnia = page.getByRole("link", { name: /bez transakcji/ });
+  await expect(kafelDnia).toContainText("Brak setupu");
+  await expect(kafelDnia).toHaveAttribute("href", "/calendar?dzien=2020-03-03");
+
+  // Odznaczenie wraca do stanu wyjsciowego - test nie zostawia sladu.
+  await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
+  await page.getByLabel("Dzień bez transakcji").uncheck();
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+
+  await page.goto("/calendar?miesiac=2020-03");
+  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("0");
+});
+
+test("dnia z trade'ami nie da się oznaczyć jako bez transakcji", async ({ page }) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2020-04-06T15:30");
+  await page.locator("#entryPrice").fill("4000");
+  await page.locator("#exitTime").fill("2020-04-06T16:00");
+  await page.locator("#exitPrice").fill("4002");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  await page.goto("/calendar?miesiac=2020-04&dzien=2020-04-06");
+  const znacznik = page.getByLabel("Dzień bez transakcji");
+  await expect(znacznik).toBeDisabled();
+  await expect(page.getByText("Tego dnia są już zapisane trade'y.")).toBeVisible();
+});

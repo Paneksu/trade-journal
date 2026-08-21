@@ -11,6 +11,9 @@ import { moneyShort, rValue } from "@/lib/format";
 
 export type DayResult = { day: string; pnl: number; count: number; r: number };
 
+/** Dzien swiadomie odpuszczony: bez wyniku, ale z zapisem. */
+export type NoTradeDay = { day: string; reason: string | null };
+
 const HEADERS = ["pon", "wt", "śr", "czw", "pt", "sob", "nd"];
 
 function daysInMonth(month: string): string[] {
@@ -31,17 +34,20 @@ function weekdayIndex(day: string): number {
 export function MonthGrid({
   month,
   days,
+  noTradeDays = [],
   currency,
   unit = "cash",
   linkBase = "/calendar",
 }: {
   month: string;
   days: DayResult[];
+  noTradeDays?: NoTradeDay[];
   currency: string;
   unit?: "cash" | "r";
   linkBase?: string;
 }) {
   const byDay = new Map(days.map((d) => [d.day, d]));
+  const noTradeByDay = new Map(noTradeDays.map((d) => [d.day, d]));
   const all = daysInMonth(month);
   const offset = all.length > 0 ? weekdayIndex(all[0]) : 0;
 
@@ -72,19 +78,29 @@ export function MonthGrid({
 
         {all.map((day) => {
           const result = byDay.get(day);
+          const pause = result ? undefined : noTradeByDay.get(day);
           const value = result ? (unit === "cash" ? result.pnl : result.r) : 0;
           const alpha = result ? intensity(value) : 0;
           // Skladowe zgodne z tokenami --color-profit i --color-loss.
           const rgb = value > 0 ? "70 192 139" : "229 101 79";
 
+          const opis = pause
+            ? pause.reason
+              ? `Dzień bez transakcji: ${pause.reason.toLowerCase()}`
+              : "Dzień bez transakcji"
+            : undefined;
+
           return (
             <Link
               key={day}
               href={`${linkBase}?dzien=${day}`}
+              title={opis}
               className={cx(
                 "flex min-h-16 flex-col rounded-[var(--radius-control)] border p-1.5",
                 "transition-colors duration-150",
-                result ? "border-line-strong" : "border-line hover:border-line-strong",
+                result || pause ? "border-line-strong" : "border-line hover:border-line-strong",
+                // Dzien bez transakcji nie jest ani zyskiem, ani strata - zadnego tintu.
+                pause && "bg-surface-2",
               )}
               style={
                 result && value !== 0
@@ -93,7 +109,10 @@ export function MonthGrid({
               }
             >
               <span
-                className={cx("liczba text-[11px]", result ? "text-muted" : "text-faint")}
+                className={cx(
+                  "liczba text-[11px]",
+                  result || pause ? "text-muted" : "text-faint",
+                )}
               >
                 {Number(day.slice(-2))}
               </span>
@@ -112,6 +131,23 @@ export function MonthGrid({
                     {unit === "cash" ? moneyShort(result.pnl, currency) : rValue(result.r)}
                   </span>
                   <span className="liczba text-[11px] text-muted">{result.count} tr.</span>
+                </>
+              )}
+              {pause && (
+                <>
+                  {/* Na waskim ekranie kafel ma szerokosc dwoch slow - dluzszy
+                      podpis lamalby siatke, wiec schodzi do skrotu. */}
+                  <span className="mt-auto text-[11px] leading-tight font-medium whitespace-nowrap text-muted sm:hidden">
+                    pauza
+                  </span>
+                  <span className="mt-auto hidden text-[11px] leading-tight font-medium text-muted sm:block">
+                    bez transakcji
+                  </span>
+                  {pause.reason && (
+                    <span className="hidden truncate text-[11px] leading-tight text-faint sm:block">
+                      {pause.reason}
+                    </span>
+                  )}
                 </>
               )}
             </Link>

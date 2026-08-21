@@ -116,6 +116,37 @@ export function Select({ className, children, ...rest }: ComponentProps<"select"
   );
 }
 
+/**
+ * Checkbox z etykieta w jednej linii. Natywny input, zeby formularz dzialal
+ * bez JS-a i zeby stan trafial do FormData tak samo jak reszta pol.
+ */
+export function Checkbox({
+  label,
+  hint,
+  className,
+  ...rest
+}: ComponentProps<"input"> & { label: ReactNode; hint?: string }) {
+  return (
+    <div>
+      <label className="flex cursor-pointer items-center gap-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+        <input
+          type="checkbox"
+          className={cx(
+            "size-4 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-line-strong",
+            "bg-surface-2 accent-accent transition-colors duration-150 hover:border-faint",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
+            "disabled:cursor-not-allowed",
+            className,
+          )}
+          {...rest}
+        />
+        <span className="text-sm text-text">{label}</span>
+      </label>
+      {hint && <p className="mt-0.5 text-xs text-faint">{hint}</p>}
+    </div>
+  );
+}
+
 export function Badge({
   children,
   color,

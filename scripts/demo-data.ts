@@ -189,7 +189,44 @@ async function main() {
     }
   }
 
-  console.log(`Dodano ${wstawione.length} trade'ow demonstracyjnych.`);
+  // Dni swiadomie odpuszczone - inaczej nie widac ani kafla "bez transakcji",
+  // ani pokrycia dziennika.
+  const zajete = new Set(
+    (await db.select({ day: schema.trades.tradingDay }).from(schema.trades))
+      .map((r) => r.day)
+      .filter((d): d is string => Boolean(d)),
+  );
+
+  const powody = ["no_setup", "market_conditions", "day_off", "planned_break", "personal"] as const;
+  const pauzy: { day: string; noTradeReason: (typeof powody)[number] }[] = [];
+  for (let i = 1; i <= 60 && pauzy.length < 12; i++) {
+    const d = new Date(Date.now() - i * 86_400_000);
+    const day = d.toISOString().slice(0, 10);
+    const dzienTygodnia = d.getUTCDay();
+    if (dzienTygodnia === 0 || dzienTygodnia === 6) continue;
+    if (zajete.has(day)) continue;
+    if (Math.random() < 0.45) continue;
+    pauzy.push({ day, noTradeReason: element([...powody]) });
+  }
+
+  if (pauzy.length > 0) {
+    await db
+      .insert(schema.dayNotes)
+      .values(
+        pauzy.map((p) => ({
+          accountId: account.id,
+          day: p.day,
+          noTrade: true,
+          noTradeReason: p.noTradeReason,
+          postSession: "Warunek wejścia się nie pojawił, dzień odpuszczony świadomie.",
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  console.log(
+    `Dodano ${wstawione.length} trade'ow demonstracyjnych i ${pauzy.length} dni bez transakcji.`,
+  );
   await client.end();
 }
 

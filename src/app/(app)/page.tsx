@@ -9,12 +9,14 @@ import { TradeList } from "@/components/trades/trade-list";
 import { EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
+import { monthBounds, reasonName } from "@/lib/domain/day-log";
 import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
 import { dimension, dimensionsForFields, dimensionsForTags } from "@/lib/domain/grouping";
 import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
 import { getAccounts, getFields, getTagCategories } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
+import { getDayNotes } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { monthName } from "@/lib/format";
 import { DateRangeSwitch, UnitSwitch } from "@/components/layout/toolbar";
@@ -63,6 +65,13 @@ export default async function DashboardPage({
 
   const days = dailyPnl(closed);
   const month = today.slice(0, 7);
+
+  // Ta sama siatka co w kalendarzu, wiec i te same dni bez transakcji.
+  const traded = new Set(days.map((d) => d.day));
+  const bounds = monthBounds(month);
+  const noTradeDays = (await getDayNotes(bounds.from, bounds.to, account?.id))
+    .filter((n) => n.noTrade && !traded.has(n.day))
+    .map((n) => ({ day: n.day, reason: reasonName(n.noTradeReason) }));
 
   const dimensions = [
     dimension("instrument"),
@@ -125,7 +134,13 @@ export default async function DashboardPage({
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel title={monthName(month)} description="Wynik dzień po dniu">
-          <MonthGrid month={month} days={days} currency={currency} unit={unit} />
+          <MonthGrid
+            month={month}
+            days={days}
+            noTradeDays={noTradeDays}
+            currency={currency}
+            unit={unit}
+          />
         </Panel>
 
         <Panel title="Rozkład wyników" description="Ile trade'ów kończy się jakim R">

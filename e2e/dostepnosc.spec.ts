@@ -18,6 +18,7 @@ const EKRANY = [
   { nazwa: "nowy trade", adres: "/trades/new" },
   { nazwa: "ustawienia", adres: "/settings" },
   { nazwa: "pola własne", adres: "/settings/fields" },
+  { nazwa: "dzień w kalendarzu", adres: "/calendar?miesiac=2020-03&dzien=2020-03-03" },
 ];
 
 for (const ekran of EKRANY) {

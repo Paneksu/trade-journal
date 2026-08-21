@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -47,6 +48,15 @@ export const marketSessionEnum = pgEnum("market_session", [
   "rth",
   "afterhours",
   "overnight",
+]);
+export const noTradeReasonEnum = pgEnum("no_trade_reason", [
+  "no_setup",
+  "outside_hours",
+  "market_conditions",
+  "day_off",
+  "planned_break",
+  "personal",
+  "other",
 ]);
 
 /* --- Konta ---------------------------------------------------------------- */
@@ -289,10 +299,21 @@ export const dayNotes = pgTable(
     mood: smallint(),
     energy: smallint(),
     dayRating: smallint(),
+    // Dzien swiadomie odpuszczony. Bez tego znacznika dzien bez trade'ow
+    // niczym nie rozni sie od dnia, o ktorym zapomnialem.
+    noTrade: boolean().notNull().default(false),
+    noTradeReason: noTradeReasonEnum(),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("day_notes_idx").on(t.day, t.accountId)],
+  (t) => [
+    uniqueIndex("day_notes_idx").on(t.day, t.accountId),
+    // W Postgresie NULL != NULL, wiec indeks wyzej nie lapie konfliktu bez konta.
+    // Bez tego czesciowego indeksu ten sam dzien wpadalby do bazy dwa razy.
+    uniqueIndex("day_notes_no_account_idx")
+      .on(t.day)
+      .where(sql`${t.accountId} is null`),
+  ],
 );
 
 /* --- Zapisane widoki tabeli ----------------------------------------------- */
