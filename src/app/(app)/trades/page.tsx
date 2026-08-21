@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { FilterBar } from "@/components/trades/filter-bar";
+import { SavedViews } from "@/components/trades/saved-views";
 import { TradesTable } from "@/components/trades/trades-table";
 import { KpiRow } from "@/components/stats/kpi-row";
 import { SourceSwitch } from "@/components/layout/toolbar";
@@ -10,6 +11,7 @@ import {
   getAccounts,
   getFields,
   getInstruments,
+  getSavedViews,
   getStrategies,
   getTags,
 } from "@/lib/queries/dictionaries";
@@ -27,12 +29,13 @@ export default async function TradesPage({
   const params = await searchParams;
   const filters = parseFilters(params);
 
-  const [accounts, instruments, strategies, tags, fields, trades] = await Promise.all([
+  const [accounts, instruments, strategies, tags, fields, views, trades] = await Promise.all([
     getAccounts(),
     getInstruments(),
     getStrategies(),
     getTags(),
     getFields(),
+    getSavedViews(),
     getTrades(filters),
   ]);
 
@@ -57,14 +60,20 @@ export default async function TradesPage({
         </div>
       </header>
 
-      <FilterBar
-        accounts={accounts}
-        instruments={instruments}
-        strategies={strategies}
-        tags={tags}
-        fields={fields}
-        activeCount={activeFilterCount(filters)}
-      />
+      <div className="panel">
+        <FilterBar
+          accounts={accounts}
+          instruments={instruments}
+          strategies={strategies}
+          tags={tags}
+          fields={fields}
+          activeCount={activeFilterCount(filters)}
+          embedded
+        />
+        <SavedViews
+          views={views.map((v) => ({ id: v.id, name: v.name, filters: v.filters }))}
+        />
+      </div>
 
       <KpiRow stats={stats} currency={currency} />
 

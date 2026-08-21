@@ -22,6 +22,7 @@ export function FilterBar({
   tags,
   fields,
   activeCount,
+  embedded = false,
 }: {
   accounts: Account[];
   instruments: Instrument[];
@@ -29,6 +30,8 @@ export function FilterBar({
   tags: TagWithCategory[];
   fields: FieldDef[];
   activeCount: number;
+  /** Gdy pasek jest czescia wiekszego panelu, nie rysuje wlasnej ramki. */
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -61,7 +64,7 @@ export function FilterBar({
   }
 
   return (
-    <div className="panel">
+    <div className={embedded ? "" : "panel"}>
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
         <button
           type="button"
