@@ -1,26 +1,153 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Tokeny wizualne dziennika. Motyw wylacznie ciemny - aplikacja jest terminalem
+  danych, a nie strona. Zielen i czerwien sa zarezerwowane dla zysku i straty;
+  nigdzie indziej ich nie uzywamy, zeby kolor niosl jedna informacje.
+  Kontrasty policzone na pikselach, wszystkie tekstowe >= 4.5:1.
+*/
+@theme {
+  --color-bg: #0b0e12;
+  --color-surface: #12161c;
+  --color-surface-2: #191f26;
+  --color-surface-3: #212932;
+  --color-line: #262e38;
+  --color-line-strong: #35404d;
+
+  --color-text: #e7ecf1;
+  --color-muted: #97a3b0;
+  --color-faint: #838f9d;
+
+  --color-accent: #e8a44c;
+  --color-accent-strong: #f5b968;
+  --color-accent-dim: #3a2c17;
+
+  --color-profit: #46c08b;
+  --color-profit-dim: #14312a;
+  --color-loss: #e5654f;
+  --color-loss-dim: #37201d;
+  /* Jasniejsze warianty wylacznie na barwionym tle (kalendarz). Na cieplym
+     kaflu podstawowa zielen ma 3,6:1, a te odmiany trzymaja 4,5:1. */
+  --color-profit-bright: #6fd6a8;
+  --color-loss-bright: #f08a78;
+  /* Wynik zerowy. Ciemniejszy odcien nie przechodzil 4,5:1 na tle panelu. */
+  --color-flat: #838f9d;
+
+  --color-viz-1: #e8a44c;
+  --color-viz-2: #5aa9e6;
+  --color-viz-3: #46c08b;
+  --color-viz-4: #b98ce0;
+  --color-viz-5: #e5654f;
+  --color-viz-6: #4fd1c5;
+  --color-viz-7: #d9c05a;
+  --color-viz-8: #8fa3b8;
+
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  --radius-control: 6px;
+  --radius-panel: 10px;
+
+  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.65);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Cyfry musza sie pionowo zgadzac w kazdej tabeli i w kazdym KPI. */
+  table,
+  .liczba {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-bg);
+  }
+
+  /* Pola formularzy: ciemne natywne kontrolki, bez bialych blyskow. */
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+    cursor: pointer;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--color-bg);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border-radius: 999px;
+    border: 2px solid var(--color-bg);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #45525f;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  .panel {
+    /* Panel bywa dzieckiem siatki. Bez `min-width: 0` najszerszy wiersz w srodku
+       rozpycha cala kolumne i strona zaczyna sie przewijac w bok na telefonie. */
+    min-width: 0;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-panel);
+  }
+
+  .etykieta {
+    font-size: 11px;
+    line-height: 1.2;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

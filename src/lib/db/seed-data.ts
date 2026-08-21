@@ -1,0 +1,126 @@
+/**
+ * Dane poczatkowe: katalog kontraktow, kategorie tagow i przykladowe pola wlasne.
+ * Wszystko jest pozniej edytowalne w ustawieniach - to tylko punkt startu,
+ * zeby pierwszy trade dalo sie wpisac bez konfigurowania czegokolwiek.
+ *
+ * `tickValue` w tysiecznych dolara, `commissionPerContract` w centach (obie strony).
+ */
+
+export type InstrumentSeed = {
+  symbol: string;
+  name: string;
+  exchange: string;
+  tickSize: string;
+  tickValue: number;
+  commissionPerContract: number;
+  rthFrom: string;
+  rthTo: string;
+  sortOrder: number;
+};
+
+export const INSTRUMENTS: InstrumentSeed[] = [
+  // Indeksy
+  { symbol: "ES", name: "E-mini S&P 500", exchange: "CME", tickSize: "0.25", tickValue: 12500, commissionPerContract: 404, rthFrom: "09:30", rthTo: "16:00", sortOrder: 10 },
+  { symbol: "MES", name: "Micro E-mini S&P 500", exchange: "CME", tickSize: "0.25", tickValue: 1250, commissionPerContract: 104, rthFrom: "09:30", rthTo: "16:00", sortOrder: 11 },
+  { symbol: "NQ", name: "E-mini Nasdaq 100", exchange: "CME", tickSize: "0.25", tickValue: 5000, commissionPerContract: 404, rthFrom: "09:30", rthTo: "16:00", sortOrder: 20 },
+  { symbol: "MNQ", name: "Micro E-mini Nasdaq 100", exchange: "CME", tickSize: "0.25", tickValue: 500, commissionPerContract: 104, rthFrom: "09:30", rthTo: "16:00", sortOrder: 21 },
+  { symbol: "YM", name: "E-mini Dow", exchange: "CBOT", tickSize: "1", tickValue: 5000, commissionPerContract: 404, rthFrom: "09:30", rthTo: "16:00", sortOrder: 30 },
+  { symbol: "MYM", name: "Micro E-mini Dow", exchange: "CBOT", tickSize: "1", tickValue: 500, commissionPerContract: 104, rthFrom: "09:30", rthTo: "16:00", sortOrder: 31 },
+  { symbol: "RTY", name: "E-mini Russell 2000", exchange: "CME", tickSize: "0.1", tickValue: 5000, commissionPerContract: 404, rthFrom: "09:30", rthTo: "16:00", sortOrder: 40 },
+  { symbol: "M2K", name: "Micro E-mini Russell 2000", exchange: "CME", tickSize: "0.1", tickValue: 500, commissionPerContract: 104, rthFrom: "09:30", rthTo: "16:00", sortOrder: 41 },
+
+  // Energia
+  { symbol: "CL", name: "Ropa WTI", exchange: "NYMEX", tickSize: "0.01", tickValue: 10000, commissionPerContract: 424, rthFrom: "09:00", rthTo: "14:30", sortOrder: 50 },
+  { symbol: "MCL", name: "Micro ropa WTI", exchange: "NYMEX", tickSize: "0.01", tickValue: 1000, commissionPerContract: 124, rthFrom: "09:00", rthTo: "14:30", sortOrder: 51 },
+  { symbol: "NG", name: "Gaz ziemny", exchange: "NYMEX", tickSize: "0.001", tickValue: 10000, commissionPerContract: 424, rthFrom: "09:00", rthTo: "14:30", sortOrder: 60 },
+
+  // Metale
+  { symbol: "GC", name: "Złoto", exchange: "COMEX", tickSize: "0.1", tickValue: 10000, commissionPerContract: 424, rthFrom: "08:20", rthTo: "13:30", sortOrder: 70 },
+  { symbol: "MGC", name: "Micro złoto", exchange: "COMEX", tickSize: "0.1", tickValue: 1000, commissionPerContract: 124, rthFrom: "08:20", rthTo: "13:30", sortOrder: 71 },
+  { symbol: "SI", name: "Srebro", exchange: "COMEX", tickSize: "0.005", tickValue: 25000, commissionPerContract: 424, rthFrom: "08:25", rthTo: "13:25", sortOrder: 80 },
+  { symbol: "HG", name: "Miedź", exchange: "COMEX", tickSize: "0.0005", tickValue: 12500, commissionPerContract: 424, rthFrom: "08:10", rthTo: "13:00", sortOrder: 81 },
+
+  // Stopy procentowe
+  { symbol: "ZB", name: "Obligacje 30-letnie", exchange: "CBOT", tickSize: "0.03125", tickValue: 31250, commissionPerContract: 404, rthFrom: "08:20", rthTo: "15:00", sortOrder: 90 },
+  { symbol: "ZN", name: "Obligacje 10-letnie", exchange: "CBOT", tickSize: "0.015625", tickValue: 15625, commissionPerContract: 404, rthFrom: "08:20", rthTo: "15:00", sortOrder: 91 },
+
+  // Waluty
+  { symbol: "6E", name: "Euro FX", exchange: "CME", tickSize: "0.00005", tickValue: 6250, commissionPerContract: 424, rthFrom: "08:20", rthTo: "15:00", sortOrder: 100 },
+  { symbol: "6B", name: "Funt brytyjski", exchange: "CME", tickSize: "0.0001", tickValue: 6250, commissionPerContract: 424, rthFrom: "08:20", rthTo: "15:00", sortOrder: 101 },
+  { symbol: "6J", name: "Jen japoński", exchange: "CME", tickSize: "0.0000005", tickValue: 6250, commissionPerContract: 424, rthFrom: "08:20", rthTo: "15:00", sortOrder: 102 },
+  { symbol: "6A", name: "Dolar australijski", exchange: "CME", tickSize: "0.0001", tickValue: 10000, commissionPerContract: 424, rthFrom: "08:20", rthTo: "15:00", sortOrder: 103 },
+
+  // Rolne
+  { symbol: "ZC", name: "Kukurydza", exchange: "CBOT", tickSize: "0.25", tickValue: 12500, commissionPerContract: 424, rthFrom: "09:30", rthTo: "14:20", sortOrder: 110 },
+  { symbol: "ZS", name: "Soja", exchange: "CBOT", tickSize: "0.25", tickValue: 12500, commissionPerContract: 424, rthFrom: "09:30", rthTo: "14:20", sortOrder: 111 },
+];
+
+export const TAG_CATEGORIES = [
+  { key: "setup", name: "Setup", description: "Rodzaj zagrania, które rozpoznałeś.", sortOrder: 10 },
+  { key: "mistake", name: "Błąd", description: "Co poszło nie tak po Twojej stronie.", sortOrder: 20 },
+  { key: "market", name: "Warunki rynkowe", description: "Charakter rynku w chwili wejścia.", sortOrder: 30 },
+  { key: "timeframe", name: "Interwał", description: "Interwał, z którego brał się sygnał.", sortOrder: 40 },
+];
+
+export const TAGS: { category: string; name: string; color: string }[] = [
+  { category: "setup", name: "wybicie", color: "#e8a44c" },
+  { category: "setup", name: "powrót do średniej", color: "#5aa9e6" },
+  { category: "setup", name: "kontynuacja trendu", color: "#46c08b" },
+  { category: "setup", name: "odwrócenie", color: "#b98ce0" },
+  { category: "setup", name: "otwarcie sesji", color: "#4fd1c5" },
+
+  { category: "mistake", name: "wejście za wcześnie", color: "#e5654f" },
+  { category: "mistake", name: "wejście za późno", color: "#e5654f" },
+  { category: "mistake", name: "przesunięty stop", color: "#e5654f" },
+  { category: "mistake", name: "za wczesne wyjście", color: "#e5654f" },
+  { category: "mistake", name: "brak planu", color: "#e5654f" },
+  { category: "mistake", name: "za duża pozycja", color: "#e5654f" },
+
+  { category: "market", name: "trend", color: "#8fa3b8" },
+  { category: "market", name: "konsolidacja", color: "#8fa3b8" },
+  { category: "market", name: "wysoka zmienność", color: "#8fa3b8" },
+  { category: "market", name: "dane makro", color: "#8fa3b8" },
+
+  { category: "timeframe", name: "1 min", color: "#d9c05a" },
+  { category: "timeframe", name: "5 min", color: "#d9c05a" },
+  { category: "timeframe", name: "15 min", color: "#d9c05a" },
+  { category: "timeframe", name: "1 h", color: "#d9c05a" },
+];
+
+export const CUSTOM_FIELDS = [
+  {
+    key: "nastroj",
+    label: "Nastrój przed wejściem",
+    type: "select" as const,
+    options: [
+      { value: "spokój", color: "#46c08b" },
+      { value: "niecierpliwość", color: "#e8a44c" },
+      { value: "presja", color: "#e5654f" },
+      { value: "znudzenie", color: "#8fa3b8" },
+    ],
+    required: false,
+    inTable: true,
+    inStats: true,
+    sortOrder: 10,
+  },
+  {
+    key: "jakosc_wejscia",
+    label: "Jakość wejścia",
+    type: "rating" as const,
+    options: [],
+    required: false,
+    inTable: false,
+    inStats: true,
+    sortOrder: 20,
+  },
+  {
+    key: "plan_zrealizowany",
+    label: "Trade zgodny z planem",
+    type: "bool" as const,
+    options: [],
+    required: false,
+    inTable: true,
+    inStats: true,
+    sortOrder: 30,
+  },
+];

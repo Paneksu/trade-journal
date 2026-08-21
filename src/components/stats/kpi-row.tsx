@@ -1,0 +1,70 @@
+import { Kpi, KpiGrid } from "./kpi";
+import type { Stats } from "@/lib/domain/stats";
+import { expectancyInterval } from "@/lib/domain/sample-size";
+import { int, money, percent, rValue, num, tradesCount } from "@/lib/format";
+
+/**
+ * Szesc liczb, ktore mowia o systemie najwiecej. Kazda ma podpis z kontekstem,
+ * bo goła liczba bez odniesienia nie znaczy nic.
+ */
+export function KpiRow({ stats, currency }: { stats: Stats; currency: string }) {
+  const interval = expectancyInterval(stats.expectancyR, stats.stdevR, stats.countWithR);
+
+  return (
+    <KpiGrid>
+      <Kpi
+        label="Wynik netto"
+        value={money(stats.pnlNet, { currency, sign: true })}
+        sub={`${tradesCount(stats.count)} · prowizje ${money(stats.commissions, { currency })}`}
+        tone={stats.pnlNet > 0 ? "profit" : stats.pnlNet < 0 ? "loss" : "neutral"}
+      />
+      <Kpi
+        label="Oczekiwana wartość"
+        value={rValue(stats.expectancyR)}
+        sub={
+          interval
+            ? `przedział ${rValue(interval.low, false)} … ${rValue(interval.high, false)}`
+            : `${money(stats.expectancyCash, { currency, sign: true })} na trade`
+        }
+        tone={(stats.expectancyR ?? 0) > 0 ? "profit" : (stats.expectancyR ?? 0) < 0 ? "loss" : "neutral"}
+        hint="Ile średnio zarabia jeden trade, liczone w wielokrotności ryzyka."
+      />
+      <Kpi
+        label="Profit factor"
+        value={stats.profitFactor === null ? "—" : num(stats.profitFactor, 2)}
+        sub={
+          stats.profitFactor === null
+            ? "brak stratnych trade'ów"
+            : "suma zysków ÷ suma strat"
+        }
+        tone={(stats.profitFactor ?? 0) >= 1 ? "profit" : "loss"}
+      />
+      <Kpi
+        label="Skuteczność"
+        value={percent(stats.winRate)}
+        sub={
+          stats.breakEvenWinRate === null
+            ? `${stats.wins} W / ${stats.losses} L`
+            : `próg opłacalności ${percent(stats.breakEvenWinRate)}`
+        }
+        tone={
+          stats.breakEvenWinRate !== null && stats.winRate > stats.breakEvenWinRate
+            ? "profit"
+            : "neutral"
+        }
+      />
+      <Kpi
+        label="Suma R"
+        value={rValue(stats.sumR)}
+        sub={`payoff ${stats.payoff === null ? "—" : num(stats.payoff, 2)} · ${int(stats.countWithR)} ze stopem`}
+        tone={stats.sumR > 0 ? "profit" : stats.sumR < 0 ? "loss" : "neutral"}
+      />
+      <Kpi
+        label="Maks. obsunięcie"
+        value={money(-stats.maxDrawdown, { currency })}
+        sub={`w R: ${rValue(-stats.maxDrawdownR, false)} · seria strat ${stats.maxLossStreak}`}
+        tone={stats.maxDrawdown > 0 ? "loss" : "neutral"}
+      />
+    </KpiGrid>
+  );
+}
