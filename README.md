@@ -20,13 +20,13 @@ Co robi:
 
 ## Uruchomienie lokalne
 
-Wymagania: Node 22, Docker (albo własny PostgreSQL 17).
+Wymagania: Node 22, Docker (albo własny PostgreSQL 17 lub 18 — obie wersje sprawdzone).
 
 ```bash
 # 1. Baza
 docker run -d --name tj-postgres \
   -e POSTGRES_USER=journal -e POSTGRES_PASSWORD=journal -e POSTGRES_DB=journal \
-  -p 55432:5432 postgres:17-alpine
+  -p 55432:5432 postgres:18-alpine
 
 # 2. Zmienne
 cp .env.example .env       # ustaw DATABASE_URL, SESSION_SECRET i OWNER_PASSWORD
@@ -43,6 +43,10 @@ npm run dev                # http://localhost:3000
 `npm run seed` zakłada hasło z `OWNER_PASSWORD`, konto startowe, katalog 23 kontraktów
 futures (ES, NQ, CL, GC, ZB, 6E i pozostałe), cztery kategorie tagów i trzy przykładowe
 pola własne. Skrypt jest idempotentny — kolejne uruchomienie nic nie psuje.
+
+Na wdrożeniu nie trzeba go uruchamiać ręcznie: przy starcie serwera `src/instrumentation.ts`
+robi to samo, ale **tylko na zupełnie pustej bazie** (`lib/db/seed-core.ts` — jedna
+implementacja dla obu wejść).
 
 Dane demonstracyjne do pracy nad wyglądem (tylko lokalnie):
 
@@ -108,8 +112,8 @@ Mierzone na obrazie produkcyjnym, nie na serwerze deweloperskim:
 
 | Sprawdzenie | Wynik |
 |---|---|
-| Testy jednostkowe | 97 zielonych |
-| Testy E2E | 6 scenariuszy |
+| Testy jednostkowe | 110 zielonych |
+| Testy E2E | 7 scenariuszy |
 | Dostępność (axe, WCAG 2.2 AA) | 11 ekranów bez naruszeń |
 | Lighthouse desktop | wydajność 100, dostępność 100, dobre praktyki 100 |
 | Lighthouse mobile | wydajność 92, dostępność 100, dobre praktyki 100 |

@@ -5,7 +5,7 @@ i prywatne repozytorium na GitHubie.
 
 ## 1. Baza danych
 
-W Coolify: **Project → New Resource → Database → PostgreSQL 17**.
+W Coolify: **Project → New Resource → Database → PostgreSQL 18** (domyślna; 17 też przetestowana).
 
 - nazwa: `trade-journal-db`
 - zapamiętaj wygenerowane hasło
@@ -52,24 +52,22 @@ ale anonimowego nikt nie zabezpieczy kopią.
 Kliknij **Deploy**. Kontener przy starcie:
 
 1. uruchamia migracje (`scripts/migrate.mjs`) — gdy padną, kontener się nie podnosi,
-2. startuje serwer.
+2. startuje serwer,
+3. na **zupełnie pustej bazie** zakłada dane początkowe: hasło z `OWNER_PASSWORD`,
+   konto, katalog 23 kontraktów futures, tagi i przykładowe pola własne.
 
-Gdy aplikacja jest zielona, wgraj dane początkowe — jednorazowo, z terminala kontenera
-w Coolify (**Terminal**) albo przez `docker exec`:
+Nie ma żadnego ręcznego kroku z seedem. Kolejne restarty niczego nie ruszają —
+w szczególności nie wskrzeszają instrumentów ani tagów, które usuniesz.
 
-```bash
-node -e "process.exit(0)"      # sprawdzenie, że jesteś w kontenerze aplikacji
-```
+Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Hasło* i usuń `OWNER_PASSWORD`
+ze zmiennych środowiskowych.
 
-Seed korzysta z TypeScriptu i nie ma go w obrazie produkcyjnym. Najprościej uruchomić go
-ze swojego komputera, wskazując bazę produkcyjną (tunel SSH albo tymczasowo wystawiony port):
+### Healthcheck
 
-```bash
-DATABASE_URL="postgres://…" OWNER_PASSWORD="…" npm run seed
-```
-
-Alternatywnie: zaloguj się do bazy i wykonaj `drizzle/0000_init.sql` ręcznie —
-ale seed jest wygodniejszy i idempotentny.
+W zakładce **Configuration → Healthcheck** ustaw ścieżkę `/api/health` i port `3000`.
+Endpoint sprawdza także połączenie z bazą, więc aplikacja odpowiadająca po HTTP,
+ale bez dostępu do bazy, zostanie uznana za niezdrową. `curl` jest w obrazie —
+Coolify go potrzebuje do własnej sondy.
 
 ## 4. Domena i SSL
 
@@ -83,6 +81,11 @@ Coolify występuje o certyfikat w momencie dodania domeny. Gdy DNS jeszcze nie w
 na serwer, walidacja nie przechodzi, a Let's Encrypt blokuje kolejne próby na godziny.
 
 Do czasu podania własnej domeny działa adres wygenerowany przez Coolify.
+
+Ciasteczko sesji jest oznaczane jako `secure` tylko wtedy, gdy połączenie idzie po HTTPS
+(decyduje nagłówek `x-forwarded-proto` od proxy). Dzięki temu logowanie działa także pod
+adresem `http` z Coolify, ale **hasło leci wtedy otwartym tekstem** — włącz SSL, gdy
+tylko aplikacja przestanie być zabawką testową.
 
 ## 5. Smoke test po wdrożeniu
 
@@ -101,7 +104,7 @@ Wykonaj za każdym razem, nie tylko przy pierwszym wdrożeniu:
 Dwie warstwy, obie potrzebne:
 
 1. **Baza** — harmonogram w zasobie PostgreSQL w Coolify. Ręcznie:
-   `docker exec <kontener-bazy> pg_dump -U journal journal > kopia.sql`
+   `docker exec <kontener-bazy> pg_dump -U postgres postgres > kopia.sql`
 2. **Zrzuty ekranu** — wolumen `/data`. Kopia bazy ich nie obejmuje.
 
 Dodatkowo w aplikacji: *Ustawienia → Dane i kopia → Pobierz kopię w JSON* daje eksport
