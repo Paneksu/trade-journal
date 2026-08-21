@@ -51,12 +51,14 @@ export function DisciplinePanel({ result }: { result: DisciplineResult }) {
               </div>
               <p className="mt-0.5 text-xs text-faint">{s.description}</p>
               {s.tradeIds.length > 0 && (
-                <p className="mt-1 flex flex-wrap gap-1.5">
+                <p className="mt-1 flex flex-wrap gap-1">
                   {s.tradeIds.slice(0, 8).map((id) => (
+                    /* Cel dotykowy ma miec co najmniej 24 x 24 px (WCAG 2.2, 2.5.8).
+                       Przy jednocyfrowych numerach sam tekst jest za waski. */
                     <Link
                       key={id}
                       href={`/trades/${id}`}
-                      className="liczba text-xs text-accent hover:underline"
+                      className="liczba inline-flex h-6 min-w-6 items-center justify-center rounded-[var(--radius-control)] px-1 text-xs text-accent hover:bg-accent-dim hover:underline"
                     >
                       #{id}
                     </Link>
