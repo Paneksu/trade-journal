@@ -22,7 +22,9 @@ if (!url) {
 }
 
 const folder = path.resolve("./drizzle");
-const client = postgres(url, { max: 1 });
+// `onnotice` wycisza komunikaty typu "schema already exists" - przy starcie
+// kontenera to szum, ktory wyglada w logach jak blad.
+const client = postgres(url, { max: 1, onnotice: () => {} });
 
 try {
   const journal = JSON.parse(await readFile(path.join(folder, "meta", "_journal.json"), "utf8"));
