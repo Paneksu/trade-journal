@@ -85,6 +85,71 @@ function amountFromTicks(ticks: number, tickValue: number, contracts: number): n
   return Math.round((ticks * tickValue * contracts) / 10);
 }
 
+export type ExitFromNetInput = {
+  instrument: InstrumentSpec;
+  direction: Direction;
+  contracts: number;
+  entryPrice: number;
+  /** Docelowy wynik netto w centach (moze byc ujemny). */
+  targetNet: number;
+  /** Laczna prowizja trade'a w centach. */
+  commission: number;
+};
+
+export type ExitFromNet = {
+  exitPrice: number;
+  ticks: number;
+  /** Faktyczny wynik netto po zaokragleniu do pelnego ticka, w centach. */
+  pnlNet: number;
+  /** pnlNet - targetNet, w centach. Zero = trafione co do centa. */
+  diff: number;
+};
+
+/** Ile miejsc po przecinku ma sens dla ceny, biorac wieksza precyzje z wejscia albo ticku. */
+function priceDecimals(entryPrice: number, tickSize: number): number {
+  const of = (n: number) => {
+    const text = Math.abs(n).toFixed(10).replace(/0+$/, "");
+    const dot = text.indexOf(".");
+    return dot === -1 ? 0 : text.length - dot - 1;
+  };
+  return Math.min(8, Math.max(of(entryPrice), of(tickSize)));
+}
+
+/** Domyka blad zmiennoprzecinkowy ceny do sensownej liczby miejsc po przecinku. */
+function roundPrice(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+/**
+ * Odwrotnosc `amountFromTicks`: z docelowego wyniku netto wylicza cene wyjscia,
+ * dokladajac z powrotem prowizje i zaokraglajac ruch do pelnego ticka instrumentu.
+ * `pnlNet` liczy tym samym `amountFromTicks`, co `computeTrade` - nie wlasnym wzorem
+ * obok niego. Zrodlem prawdy dla zapisu pozostaje `computeTrade`; ta funkcja
+ * tylko podpowiada cene do pola formularza.
+ */
+export function exitPriceForNet(t: ExitFromNetInput): ExitFromNet | null {
+  const { instrument: i, direction, contracts, entryPrice, targetNet, commission } = t;
+  if (!Number.isFinite(contracts) || contracts <= 0) return null;
+  if (!Number.isFinite(i.tickSize) || i.tickSize <= 0) return null;
+  if (!Number.isFinite(i.tickValue) || i.tickValue <= 0) return null;
+  if (!Number.isFinite(entryPrice) || !Number.isFinite(targetNet) || !Number.isFinite(commission)) {
+    return null;
+  }
+
+  const targetGross = targetNet + commission;
+  // `|| 0` gasi minus zero: Math.round(-0.2) daje -0, ktore wyswietliloby sie
+  // w interfejsie jako "-0" i rozjechalo z zerem zwracanym przez computeTrade.
+  const ticks = Math.round((targetGross * 10) / (i.tickValue * contracts)) || 0;
+  const rawExit = direction === "long" ? entryPrice + ticks * i.tickSize : entryPrice - ticks * i.tickSize;
+  const exitPrice = roundPrice(rawExit, priceDecimals(entryPrice, i.tickSize));
+
+  const pnlNet = amountFromTicks(ticks, i.tickValue, contracts) - commission;
+  const diff = pnlNet - targetNet;
+
+  return { exitPrice, ticks, pnlNet, diff };
+}
+
 type TimeParts = {
   year: number;
   month: number;

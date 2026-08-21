@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { saveTrade, type FormState } from "@/lib/actions/trades";
-import { commissionFor, computeTrade, type Direction } from "@/lib/domain/calc";
+import { commissionFor, computeTrade, exitPriceForNet, type Direction } from "@/lib/domain/calc";
 import type { FieldDef } from "@/lib/fields/fields";
 import { money, num, price, rValue } from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
@@ -129,6 +129,7 @@ export function TradeForm({
   const [contracts, setContracts] = useState(values.contracts ?? "1");
   const [stopLoss, setStopLoss] = useState(values.stopLoss ?? "");
   const [commission, setCommission] = useState(values.commission ?? "");
+  const [netTarget, setNetTarget] = useState("");
   const [showExtras, setShowExtras] = useState(Boolean(values.mae || values.mfe));
 
   const account = accounts.find((k) => k.id === accountId) ?? accounts[0];
@@ -136,18 +137,18 @@ export function TradeForm({
   const strategy = strategies.find((s) => s.id === strategyId);
   const currency = account?.currency ?? "USD";
 
+  /* Czyta liczbe dokladnie tak jak `number` w akcji zapisu (actions/trades.ts):
+     przecinek dziesietny i spacje w tysiacach. Inaczej formularz bylby ostrzejszy
+     od zapisu i odrzucalby kwoty, ktore serwer przyjmuje bez mrugniecia. */
   const parse = (w: string): number | null => {
-    const n = Number(w.replace(",", "."));
-    return w.trim() !== "" && Number.isFinite(n) ? n : null;
+    if (w.trim() === "") return null;
+    const n = Number(w.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
   };
 
-  const preview = useMemo(() => {
+  const spec = useMemo(() => {
     if (!instrument) return null;
-    const entry = parse(entryPrice);
-    const size = parse(contracts);
-    if (entry === null || size === null || size <= 0) return null;
-
-    const spec = {
+    return {
       tickSize: Number(instrument.tickSize),
       tickValue: Number(instrument.tickValue),
       commissionPerContract: Number(instrument.commissionPerContract),
@@ -155,22 +156,80 @@ export function TradeForm({
       rthTo: instrument.rthTo,
       exchangeTimezone: instrument.exchangeTimezone,
     };
+  }, [instrument]);
+
+  /* Cena wyjscia wyliczona z wpisanego wyniku netto. Jednokierunkowe: liczy sie
+     tylko z netTarget w dol do exitPrice, nigdy odwrotnie - inaczej byloby kolo. */
+  const derivedExit = useMemo(() => {
+    if (!spec || netTarget.trim() === "") return null;
+    const entry = parse(entryPrice);
+    const size = parse(contracts);
+    const target = parse(netTarget);
+    if (entry === null || size === null || size <= 0 || target === null) return null;
+
+    const fee = parse(commission);
+    return exitPriceForNet({
+      instrument: spec,
+      direction,
+      contracts: size,
+      entryPrice: entry,
+      targetNet: Math.round(target * 100),
+      commission: fee === null ? commissionFor(size, spec.commissionPerContract) : Math.round(fee * 100),
+    });
+  }, [netTarget, entryPrice, contracts, direction, spec, commission]);
+
+  /* Do pola ceny wchodzi surowa liczba, nie wersja sformatowana lokalnie.
+     Formatowanie przycielo by miejsca po przecinku, gdy cena wejscia jest
+     dokladniejsza niz tick, a spacja nierozdzielajaca nie ma czego szukac w polu. */
+  const exitText = derivedExit ? String(derivedExit.exitPrice) : null;
+
+  /* Podglad liczy sie z ceny, ktora naprawde siedzi w polu - wiec takze z tej
+     wyliczonej z kwoty netto. Inaczej panel obok milczalby przy wpisanej kwocie.
+     Gdy kwota jest wpisana, ale nie da sie z niej policzyc ceny, pole musi zostac
+     puste: cichy powrot do ostatniej recznej ceny zapisalby liczbe, do ktorej
+     uzytkownik nie wracal, i to wbrew komunikatowi pod polem kwoty. */
+  const effectiveExit = netTarget.trim() === "" ? exitPrice : (exitText ?? "");
+
+  const preview = useMemo(() => {
+    if (!spec) return null;
+    const entry = parse(entryPrice);
+    const size = parse(contracts);
+    if (entry === null || size === null || size <= 0) return null;
+
     const fee = parse(commission);
     return computeTrade({
       instrument: spec,
       direction,
       contracts: size,
       entryPrice: entry,
-      exitPrice: parse(exitPrice),
+      exitPrice: parse(effectiveExit),
       stopLoss: parse(stopLoss),
       takeProfit: null,
       mae: null,
       mfe: null,
       commission: fee === null ? commissionFor(size, spec.commissionPerContract) : Math.round(fee * 100),
       entryTime: new Date(),
-      exitTime: parse(exitPrice) === null ? null : new Date(),
+      exitTime: parse(effectiveExit) === null ? null : new Date(),
     });
-  }, [instrument, direction, entryPrice, exitPrice, contracts, stopLoss, commission]);
+  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss, commission]);
+
+  /* Komunikat pod polem kwoty - cisza nie jest opcja, uzytkownik ma wiedziec,
+     dlaczego cena sie nie policzyla albo o ile odbiega od wpisanej kwoty.
+     Powod nazywamy po imieniu: inaczej przy zlej kwocie dostaje instrukcje
+     dotyczaca pol, ktorych nie tknal. */
+  const netTargetMessage = useMemo(() => {
+    if (netTarget.trim() === "") return null;
+    if (parse(netTarget) === null) return "Nie umiem odczytać tej kwoty.";
+    if (!derivedExit) return "Podaj cenę wejścia i liczbę kontraktów.";
+    if (derivedExit.diff === 0) return null;
+    const kierunek = derivedExit.diff > 0 ? "więcej" : "mniej";
+    // Cena z przecinkiem dziesietnym, ale bez `price` - to obcieloby miejsca
+    // po przecinku, gdy cena wejscia jest dokladniejsza niz tick instrumentu.
+    const cena = String(derivedExit.exitPrice).replace(".", ",");
+    return `Cena na siatce ticków to ${cena}, co daje netto ${money(derivedExit.pnlNet, {
+      currency,
+    })}, czyli o ${money(Math.abs(derivedExit.diff), { currency })} ${kierunek} niż wpisane.`;
+  }, [netTarget, derivedExit, currency]);
 
   /** Ile kontraktow zmiesci sie w domyslnym ryzyku konta. */
   const suggestedSize = useMemo(() => {
@@ -340,8 +399,12 @@ export function TradeForm({
                   id="exitPrice"
                   name="exitPrice"
                   inputMode="decimal"
-                  value={exitPrice}
-                  onChange={(e) => setExitPrice(e.target.value)}
+                  value={effectiveExit}
+                  onChange={(e) => {
+                    // Reczna edycja ceny zawsze wygrywa - gasi wyliczenie z kwoty netto.
+                    setExitPrice(e.target.value);
+                    setNetTarget("");
+                  }}
                 />
               </div>
 
@@ -388,6 +451,28 @@ export function TradeForm({
                   onChange={(e) => setCommission(e.target.value)}
                 />
               </div>
+
+              {/* Pole bez atrybutu name - do zapisu idzie tylko wyliczona cena wyjscia.
+                  Stoi pod prowizja i pod cena wyjscia, bo z obu tych liczb korzysta. */}
+              <div className="space-y-1.5">
+                <Label htmlFor="netTarget" hint="Wynik netto, po prowizji">
+                  Kwota z brokera ({currency})
+                </Label>
+                <Input
+                  id="netTarget"
+                  inputMode="decimal"
+                  placeholder="policzy cenę wyjścia"
+                  value={netTarget}
+                  onChange={(e) => setNetTarget(e.target.value)}
+                  aria-describedby={netTargetMessage ? "netTarget-hint" : undefined}
+                />
+                {netTargetMessage && (
+                  <p id="netTarget-hint" className="text-xs text-faint">
+                    {netTargetMessage}
+                  </p>
+                )}
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="status">Status</Label>
                 <Select id="status" name="status" defaultValue={values.status ?? "closed"}>

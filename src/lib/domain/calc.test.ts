@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   computeTrade,
+  exitPriceForNet,
   fromLocalInput,
   marketHour,
   marketSession,
@@ -26,6 +27,10 @@ const NQ: InstrumentSpec = {
 };
 
 const ES: InstrumentSpec = { ...NQ, tickValue: 12500 };
+
+/* ZN: tick 1/64 pkt = 15,625 USD - tysieczne dolara nie dziela sie rowno
+   przez 10, wiec to dobry przypadek na sprawdzenie, ze nic sie nie gubi. */
+const ZN: InstrumentSpec = { ...NQ, tickSize: 0.015625, tickValue: 15625 };
 
 function input(overrides: Partial<TradeInput> = {}): TradeInput {
   return {
@@ -202,6 +207,205 @@ describe("czas rynkowy", () => {
 
   it("w ciagu dnia data handlowa jest zwykla data gieldowa", () => {
     expect(tradingDay(new Date("2026-03-10T14:30:00Z"), "America/New_York")).toBe("2026-03-10");
+  });
+});
+
+describe("exitPriceForNet", () => {
+  it("long na NQ, kwota rowna na tick - wraca przez computeTrade co do centa", () => {
+    const r = exitPriceForNet({
+      instrument: NQ,
+      direction: "long",
+      contracts: 2,
+      entryPrice: 20000,
+      targetNet: 99_192,
+      commission: 808,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.exitPrice).toBe(20025);
+    expect(r!.ticks).toBe(100);
+    expect(r!.diff).toBe(0);
+
+    const w = computeTrade(
+      input({ contracts: 2, entryPrice: 20000, exitPrice: r!.exitPrice, commission: 808 }),
+    );
+    expect(w.pnlNet).toBe(99_192);
+    expect(w.pnlNet).toBe(r!.pnlNet);
+  });
+
+  it("short na ES - cena wychodzi ponizej wejscia, znak sie zgadza", () => {
+    const r = exitPriceForNet({
+      instrument: ES,
+      direction: "short",
+      contracts: 1,
+      entryPrice: 5000,
+      targetNet: 24_596,
+      commission: 404,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.exitPrice).toBeLessThan(5000);
+    expect(r!.ticks).toBeGreaterThan(0);
+    expect(r!.pnlNet).toBeGreaterThan(0);
+  });
+
+  it("strata - targetNet ujemny daje cene po przeciwnej stronie wejscia", () => {
+    const r = exitPriceForNet({
+      instrument: NQ,
+      direction: "long",
+      contracts: 1,
+      entryPrice: 20000,
+      targetNet: -50_000,
+      commission: 404,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.exitPrice).toBeLessThan(20000);
+    expect(r!.ticks).toBeLessThan(0);
+    expect(r!.pnlNet).toBeLessThan(0);
+  });
+
+  it("zaokraglenie - kwota miedzy tickami daje diff != 0, ale pnlNet zgadza sie z computeTrade", () => {
+    const r = exitPriceForNet({
+      instrument: NQ,
+      direction: "long",
+      contracts: 2,
+      entryPrice: 20000,
+      targetNet: 99_300,
+      commission: 808,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.diff).not.toBe(0);
+
+    const w = computeTrade(
+      input({ contracts: 2, entryPrice: 20000, exitPrice: r!.exitPrice, commission: 808 }),
+    );
+    expect(w.pnlNet).toBe(r!.pnlNet);
+  });
+
+  it("prowizja - wyjscie na zero laduje na najblizszym ticku, nie zawsze na pokrywajacym", () => {
+    const zerowy = (commission: number) =>
+      exitPriceForNet({
+        instrument: NQ,
+        direction: "long",
+        contracts: 1,
+        entryPrice: 20000,
+        targetNet: 0,
+        commission,
+      });
+
+    // 4,04 USD to wiecej niz pol ticka (tick NQ = 5 USD), wiec cena idzie o tick w gore.
+    const pokryta = zerowy(404);
+    expect(pokryta!.ticks).toBe(1);
+    expect(pokryta!.exitPrice).toBe(20000.25);
+    expect(pokryta!.diff).toBe(96);
+
+    // 2,00 USD to mniej niz pol ticka - najblizszy tick to zero, wiec prowizja
+    // zostaje niepokryta i `diff` musi to pokazac. Zaokraglamy do najblizszego
+    // ticka, a nie w strone pokrycia kosztu.
+    const niepokryta = zerowy(200);
+    expect(niepokryta!.ticks).toBe(0);
+    expect(niepokryta!.exitPrice).toBe(20000);
+    expect(niepokryta!.pnlNet).toBe(-200);
+    expect(niepokryta!.diff).toBe(-200);
+  });
+
+  it("przypadki brzegowe zwracaja null", () => {
+    const base = {
+      instrument: NQ,
+      direction: "long" as const,
+      entryPrice: 20000,
+      targetNet: 1000,
+      commission: 0,
+    };
+    expect(exitPriceForNet({ ...base, contracts: 0 })).toBeNull();
+    expect(exitPriceForNet({ ...base, contracts: 1, instrument: { ...NQ, tickSize: 0 } })).toBeNull();
+    expect(exitPriceForNet({ ...base, contracts: 1, instrument: { ...NQ, tickValue: 0 } })).toBeNull();
+    expect(exitPriceForNet({ ...base, contracts: NaN })).toBeNull();
+    expect(exitPriceForNet({ ...base, contracts: 1, targetNet: NaN })).toBeNull();
+  });
+
+  it("ZN (tick 15,625 USD) - liczba tickow parzysta wychodzi rowno", () => {
+    const r = exitPriceForNet({
+      instrument: ZN,
+      direction: "long",
+      contracts: 4,
+      entryPrice: 110,
+      targetNet: 310_884,
+      commission: 1_616,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.exitPrice).toBe(110.78125);
+    expect(r!.ticks).toBe(50);
+    expect(r!.diff).toBe(0);
+  });
+
+  it("ZN - nieparzysta liczba tickow gubi pol centa, ale zgodnie z computeTrade", () => {
+    // Tick ZN to 15,625 USD = 1562,5 centa. Na jednym kontrakcie i nieparzystej
+    // liczbie tickow polowka centa musi gdzies pojsc - `amountFromTicks`
+    // zaokragla ja w gore i `diff` to uczciwie pokazuje.
+    const r = exitPriceForNet({
+      instrument: ZN,
+      direction: "long",
+      contracts: 1,
+      entryPrice: 110,
+      targetNet: 1_562,
+      commission: 0,
+    });
+    expect(r).not.toBeNull();
+    expect(r!.ticks).toBe(1);
+    expect(r!.pnlNet).toBe(1_563);
+    expect(r!.diff).toBe(1);
+
+    // Klucz: ta sama liczba wychodzi z modulu, ktory zapisuje trade'a.
+    const w = computeTrade(
+      input({
+        instrument: ZN,
+        contracts: 1,
+        entryPrice: 110,
+        exitPrice: r!.exitPrice,
+        commission: 0,
+      }),
+    );
+    expect(w.pnlNet).toBe(r!.pnlNet);
+  });
+
+  it("wyliczona cena zawsze wraca przez computeTrade z tym samym wynikiem", () => {
+    /* Gwarancja, na ktorej wisi cala funkcja: cokolwiek wstawimy do pola ceny,
+       zapis policzy z tego dokladnie to `pnlNet`, ktore obiecalismy w podgladzie.
+       Zamiast deklarowac to w komentarzu, przechodzimy siatke przypadkow -
+       takze z cena wejscia spoza siatki tickow. */
+    const instrumenty: [string, InstrumentSpec, number][] = [
+      ["NQ", NQ, 20000.1],
+      ["ES", ES, 5000],
+      ["ZN", ZN, 110.203125],
+    ];
+    for (const [nazwa, spec, entry] of instrumenty) {
+      for (const direction of ["long", "short"] as const) {
+        for (const contracts of [1, 3]) {
+          for (let kwota = -50_000; kwota <= 50_000; kwota += 1_137) {
+            const r = exitPriceForNet({
+              instrument: spec,
+              direction,
+              contracts,
+              entryPrice: entry,
+              targetNet: kwota,
+              commission: 404 * contracts,
+            });
+            expect(r, `${nazwa} ${direction} ${contracts} ${kwota}`).not.toBeNull();
+            const w = computeTrade(
+              input({
+                instrument: spec,
+                direction,
+                contracts,
+                entryPrice: entry,
+                exitPrice: r!.exitPrice,
+                commission: 404 * contracts,
+              }),
+            );
+            expect(w.pnlNet, `${nazwa} ${direction} ${contracts} ${kwota}`).toBe(r!.pnlNet);
+            expect(w.ticks, `${nazwa} ${direction} ${contracts} ${kwota}`).toBe(r!.ticks);
+          }
+        }
+      }
+    }
   });
 });
 

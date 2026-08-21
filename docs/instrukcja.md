@@ -26,6 +26,21 @@ Kilka rzeczy, które warto wiedzieć:
 - **Bez stopa nie ma R.** Statystyki w R pominą taki trade, a miernik dyscypliny go zgłosi.
 - **Zapisz i dodaj kolejny** zostawia Cię w formularzu — wygodne przy wpisywaniu sesji z kartki.
 
+### Nie znasz ceny wyjścia? Wpisz kwotę
+
+Broker pokazuje wynik w dolarach, a nie cenę, po której poszło wypełnienie. Zamiast zgadywać
+z wykresu, wpisz tę kwotę w pole **Kwota z brokera** — wynik netto, po prowizji, dokładnie
+tak, jak masz u siebie. Dziennik doliczy prowizję z powrotem i wstawi cenę wyjścia sam.
+Prowizję bierze z pola obok, a gdy jest puste — ze stawki zapisanej przy instrumencie.
+
+Ruch ceny musi wypaść na pełnym ticku instrumentu, więc nie każda kwota trafia co do centa.
+Gdy trzeba było zaokrąglić, pod polem pojawia się informacja, ile faktycznie wyszło i o ile
+różni się od wpisanej kwoty.
+
+Kwota jest nakładką na cenę wyjścia, nie zamiast niej. Wpisanie ceny wprost gasi wyliczanie
+i czyści kwotę. W drugą stronę: skasowanie kwoty przywraca ostatnią cenę, którą wpisałeś
+ręcznie — nic nie ginie.
+
 ### MAE i MFE
 
 Pola ukryte pod przyciskiem, bo nie każdy je prowadzi. Warto, jeśli chcesz wiedzieć,
