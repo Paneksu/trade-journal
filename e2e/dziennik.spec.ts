@@ -150,26 +150,41 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
   await page.locator("#exitPrice").fill("20005");
   await page.locator("#stopLoss").fill("19995");
 
-  // Obrazek generowany w locie - bez plikow pomocniczych w repozytorium.
-  const png = await sharp({
-    create: { width: 32, height: 32, channels: 3, background: "#1d3a33" },
-  })
-    .png()
-    .toBuffer();
-  await page.locator("#shot_before").setInputFiles({
-    name: "wykres.png",
-    mimeType: "image/png",
-    buffer: png,
-  });
+  // Obrazki generowane w locie - bez plikow pomocniczych w repozytorium.
+  const png = async (kolor: string) =>
+    sharp({ create: { width: 32, height: 32, channels: 3, background: kolor } })
+      .png()
+      .toBuffer();
+
+  // Jedno pole na wszystkie zrzuty (ADR-009) - dwa pliki naraz.
+  await page.locator("#shot").setInputFiles([
+    { name: "wykres-1.png", mimeType: "image/png", buffer: await png("#1d3a33") },
+    { name: "wykres-2.png", mimeType: "image/png", buffer: await png("#3a1d33") },
+  ]);
 
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
-  const obraz = page.locator('img[src^="/api/screenshots/"]').first();
+  const obrazy = page.locator('img[src^="/api/screenshots/"]');
+  await expect(obrazy).toHaveCount(2);
+
+  const obraz = obrazy.first();
   await expect(obraz).toBeVisible();
 
+  // Siatka ciagnie miniatury, nie pelne pliki - inaczej osiem zrzutow to
+  // kilkanascie megabajtow na jedno wejscie na strone.
   const adres = await obraz.getAttribute("src");
-  expect(adres).toBeTruthy();
+  expect(adres).toContain("-mini.webp");
+
+  // Powiekszenie: strzalki przewijaja, Escape zamyka.
+  await page.getByRole("button", { name: "Powiększ zrzut 1 z 2" }).click();
+  const okno = page.locator("dialog[open]");
+  await expect(okno).toBeVisible();
+  await expect(okno.getByText("1 / 2")).toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(okno.getByText("2 / 2")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
 
   // Zalogowany dostaje plik...
   const zalogowany = await page.request.get(adres as string);
@@ -331,7 +346,7 @@ test("dnia z trade'ami nie da się oznaczyć jako bez transakcji", async ({ page
 test("zrzut wklejony ze schowka ląduje w dniu bez transakcji", async ({ page }) => {
   await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
 
-  const zrzut = page.getByAltText("Zrzut z dnia 2020-03-03");
+  const zrzut = page.getByAltText(/Zrzut \d+ z \d+ — dzień 2020-03-03/);
 
   // Stan wyjsciowy wymuszony, a nie zalozony - przerwany przebieg zostawia zrzut.
   page.on("dialog", (d) => d.accept());
@@ -412,7 +427,7 @@ test("sesja backtestu dokumentuje dzień bez sygnału razem ze zrzutem", async (
     dane.items.add(new File([png], "wykres.png", { type: "image/png" }));
     document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dane, bubbles: true }));
   });
-  await expect(page.getByAltText("Zrzut z dnia 2020-06-02")).toHaveCount(1);
+  await expect(page.getByAltText(/Zrzut \d+ z \d+ — dzień 2020-06-02/)).toHaveCount(1);
 
   // Dzien, w ktorym sesja ma trade, nie moze udawac dnia bez sygnalu.
   await page.getByRole("link", { name: "Dodaj trade do sesji" }).click();

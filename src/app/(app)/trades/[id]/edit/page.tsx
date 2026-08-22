@@ -13,7 +13,7 @@ import {
   getStrategies,
   getTags,
 } from "@/lib/queries/dictionaries";
-import { getTrade } from "@/lib/queries/trades";
+import { getScreenshots, getTrade } from "@/lib/queries/trades";
 
 export const metadata = { title: "Edycja trade'a — Dziennik tradingowy" };
 
@@ -26,13 +26,14 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
 
-  const [accounts, instruments, strategies, sessions, tags, fields] = await Promise.all([
+  const [accounts, instruments, strategies, sessions, tags, fields, shots] = await Promise.all([
     getAccounts(),
     getInstruments(),
     getStrategies(),
     getBacktestSessions(),
     getTags(),
     getFields(),
+    getScreenshots(tradeId),
   ]);
 
   return (
@@ -80,6 +81,7 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           rulesMet: trade.rulesMetIds,
           tags: trade.tags.map((t) => t.id),
           custom: trade.custom,
+          shots,
         }}
       />
     </div>

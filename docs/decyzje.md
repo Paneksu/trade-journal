@@ -127,6 +127,8 @@ gotowa — inaczej pierwsze Ctrl+V po wejściu na stronę przepadałoby bez śla
 
 Zrzut wgrywa się bez zapisywania notatki: pusty wpis dnia powstaje sam, jeśli trzeba.
 
+Podział zrzutów trade'a na „przed" i „po" zniknął — patrz ADR-009.
+
 ---
 
 ## ADR-008 — wpis dnia należy do konta albo do sesji backtestu (2026-08-21)
@@ -162,6 +164,44 @@ do prywatnego dziennika transakcji.
 
 Pozostałe kategorie są spełnione: wydajność 100 (desktop) i 92 (mobile), dostępność 100,
 dobre praktyki 100.
+
+---
+
+## ADR-009 — zrzuty bez podziału na „przed" i „po" (2026-08-22)
+
+Trade miał dwa osobne pola na zrzuty i kolumnę `kind` z wartościami `before`/`after`.
+Etykieta nie niosła informacji: ze zrzutu „po" widać, jak wyglądało „przed", a przy
+trzecim obrazie trzeba było zgadywać, do której szuflady go wcisnąć. Zamiast tego jest
+**jedna lista w kolejności wgrywania**, a chronologia i tak stawia zrzut sprzed wejścia
+na początku — za darmo, bez pola do pomyłki.
+
+Enum `screenshot_kind` i kolumna `kind` zostały **usunięte** migracją `0004`. Ta sama
+migracja przenumerowała `sort_order` oknem `row_number()` po `trade_id`: wcześniej
+„przed" i „po" numerowały się osobno od zera, więc kolejność się dublowała. Kolumna
+`caption` zostaje w schemacie nieużywana — podpisy odrzucono świadomie, a osobna
+migracja kasująca jedną kolumnę tekstową może poczekać, aż będzie pewne, że nie wrócą.
+
+**Limit 8 zrzutów na wpis** (`src/lib/screenshots-limit.ts`, ten sam moduł liczy
+w przeglądarce i na serwerze). Przy przekroczeniu odrzucamy **całą paczkę**, nie
+przycinamy: przy wklejeniu pięciu zdjęć do sześciu istniejących nikt nie zgadnie,
+które dwa weszły. Komunikat podaje liczbę wolnych miejsc.
+
+Nowy trade nie ma jeszcze identyfikatora, więc jego pliki jadą tym samym multipartem
+co reszta formularza (`NewTradeShots` synchronizuje stan z polem przez `DataTransfer`).
+Trade istniejący i dzień dziennika dzielą jeden `ScreenshotUploader` — wklejanie,
+przeciąganie, licznik i kasowanie w jednym miejscu zamiast w dwóch.
+
+**Powiększenie stoi na natywnym `<dialog>` i `showModal()`, nie na bibliotece.**
+Pułapka fokusu, wygaszenie tła, Escape i powrót fokusu na kafel są wtedy za darmo,
+a repozytorium trzyma się zasady „celowo bez biblioteki komponentów" — paczki
+`@radix-ui/*` z `package.json` nadal nie są nigdzie importowane. Zawartość okna
+renderuje się dopiero po otwarciu: inaczej każde wejście na kartę ciągnęłoby pełny
+plik obok miniatur.
+
+Siatka ma **stałą wysokość wiersza**, nie proporcję liczoną z szerokości. Przy
+proporcji pionowy zrzut obok poziomego rozpychał wiersz i zostawiał pod sąsiadem
+pustą dziurę. Pierwszy zrzut dostaje szerszy kafel tylko przy trzech i pięciu
+sztukach — tam, gdzie siatka i tak miałaby lukę.
 
 ---
 

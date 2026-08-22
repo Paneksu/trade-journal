@@ -26,6 +26,21 @@ Kilka rzeczy, które warto wiedzieć:
 - **Bez stopa nie ma R.** Statystyki w R pominą taki trade, a miernik dyscypliny go zgłosi.
 - **Zapisz i dodaj kolejny** zostawia Cię w formularzu — wygodne przy wpisywaniu sesji z kartki.
 
+### Zrzuty wykresu
+
+Do jednego trade'a wchodzi **do ośmiu zrzutów** — bez dzielenia na „przed" i „po".
+Wrzuć tyle, ile potrzeba, żeby wytłumaczyć wejście: interwał wyższy, niższy, moment
+wyjścia. Układają się w kolejności wgrywania, więc chronologia robi się sama.
+
+W formularzu nowego trade'a pliki jadą razem z zapisem; na karcie zapisanego trade'a
+zrzut dokłada się od razu — **Ctrl+V** ze schowka, przeciągnięcie pliku albo wybór
+z dysku. Kliknięcie miniatury otwiera pełny obraz: strzałki przewijają, **Esc** zamyka.
+Kosz na miniaturze kasuje zrzut razem z plikiem, tego nie da się cofnąć.
+
+Gdy zrzutów jest już osiem, pole wgrywania znika — usuń któryś, żeby zrobić miejsce.
+Większa paczka nie zostanie przycięta po cichu: albo wejdzie w całości, albo dostaniesz
+komunikat z liczbą wolnych miejsc.
+
 ### Nie znasz ceny wyjścia? Wpisz kwotę
 
 Broker pokazuje wynik w dolarach, a nie cenę, po której poszło wypełnienie. Zamiast zgadywać
@@ -168,7 +183,8 @@ którym setupu nie było, bywa wart więcej niż zdanie o nim. Zrób zrzut w pla
 i wciśnij **Ctrl+V** gdziekolwiek na panelu dnia; możesz też przeciągnąć plik albo
 wybrać go z dysku. Zrzut zapisuje się od razu, notatki nie trzeba wcześniej zapisywać.
 
-Miniatura otwiera pełny obraz w nowej karcie. Kosz na miniaturze kasuje zrzut razem
+Tu też mieści się **osiem zrzutów**. Kliknięcie miniatury otwiera pełny obraz na całym
+ekranie — strzałki przewijają, **Esc** zamyka. Kosz na miniaturze kasuje zrzut razem
 z plikiem — tego nie da się cofnąć.
 
 ## Backtesting

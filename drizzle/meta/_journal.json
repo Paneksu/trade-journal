@@ -29,6 +29,13 @@
       "when": 1787428966463,
       "tag": "0003_dni_bez_sygnalu_w_backtescie",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787430828605,
+      "tag": "0004_zrzuty_bez_podzialu",
+      "breakpoints": true
     }
   ]
 }

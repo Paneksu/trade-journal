@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
 import { EquityChart, RHistogram } from "@/components/charts/lazy";
-import { DayScreenshots } from "@/components/calendar/day-screenshots";
+import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { DeleteDayNoteButton, NoTradeDayForm } from "@/components/backtest/no-trade-days";
 import { SessionForm } from "@/components/backtest/session-form";
 import { DeleteSessionButton } from "@/components/backtest/session-actions";
@@ -308,12 +308,16 @@ export default async function BacktestSessionPage({
 
                   {wybrany && (
                     <div className="mt-2 rounded-[var(--radius-control)] border border-line">
-                      <DayScreenshots
+                      <ScreenshotUploader
                         key={n.day}
-                        day={n.day}
-                        accountId={null}
-                        backtestSessionId={session.id}
+                        cel={{
+                          typ: "dzien",
+                          day: n.day,
+                          accountId: null,
+                          backtestSessionId: session.id,
+                        }}
                         shots={selectedShots}
+                        opis={`dzień ${n.day}`}
                       />
                     </div>
                   )}

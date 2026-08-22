@@ -4,7 +4,10 @@ import { useActionState, useMemo, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
 
+import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
+import type { Shot } from "@/components/screenshots/typy";
 import { FieldInputs } from "./field-inputs";
+import { NewTradeShots } from "./new-trade-shots";
 import { TagPicker } from "./tag-picker";
 import {
   Button,
@@ -18,6 +21,7 @@ import {
   Textarea,
 } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
+import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { saveTrade, type FormState } from "@/lib/actions/trades";
 import { commissionFor, computeTrade, exitPriceForNet, type Direction } from "@/lib/domain/calc";
 import type { FieldDef } from "@/lib/fields/fields";
@@ -65,6 +69,7 @@ export type TradeFormValues = {
   rulesMet?: string[];
   tags?: number[];
   custom?: Record<string, unknown>;
+  shots?: Shot[];
 };
 
 function SubmitRow({ isEdit, onStay }: { isEdit: boolean; onStay: (v: boolean) => void }) {
@@ -616,31 +621,21 @@ export function TradeForm({
             </div>
           </Panel>
 
-          <Panel title="Zrzuty wykresu" description="PNG, JPEG, WEBP lub AVIF, do 10 MB.">
-            <div className="grid gap-3 p-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="shot_before">Przed wejściem</Label>
-                <input
-                  id="shot_before"
-                  name="shot_before"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/avif"
-                  multiple
-                  className="block w-full text-sm text-muted file:mr-3 file:rounded-[var(--radius-control)] file:border file:border-line-strong file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:text-text hover:file:border-faint"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="shot_after">Po wyjściu</Label>
-                <input
-                  id="shot_after"
-                  name="shot_after"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/avif"
-                  multiple
-                  className="block w-full text-sm text-muted file:mr-3 file:rounded-[var(--radius-control)] file:border file:border-line-strong file:bg-surface-2 file:px-3 file:py-1.5 file:text-sm file:text-text hover:file:border-faint"
-                />
-              </div>
-            </div>
+          <Panel
+            title="Zrzuty wykresu"
+            description={`PNG, JPEG, WEBP lub AVIF, do 10 MB. Maksymalnie ${MAX_ZRZUTOW}.`}
+          >
+            {/* Nowy trade nie ma jeszcze id, wiec pliki jada z formularzem.
+                W edycji zrzuty leca od razu, obok reszty pol. */}
+            {values.id ? (
+              <ScreenshotUploader
+                cel={{ typ: "trade", tradeId: values.id }}
+                shots={values.shots ?? []}
+                opis="ten trade"
+              />
+            ) : (
+              <NewTradeShots />
+            )}
           </Panel>
 
           <SubmitRow isEdit={isEdit} onStay={setStay} />

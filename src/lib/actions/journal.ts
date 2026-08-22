@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { dayNotes, savedViews, screenshots } from "@/lib/db/schema";
 import { deleteDayDir, deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
+import { bladLimitu } from "@/lib/screenshots-limit";
 import { countTradesOnDay, countSessionTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
 
@@ -178,20 +179,24 @@ export async function addDayScreenshots(d: FormData): Promise<ActionState> {
   const sessionId = positiveInt(d, "backtestSessionId");
   const dayNoteId = await ensureDayNote(day, accountId, sessionId);
 
-  const [ostatni] = await db
-    .select({ sortOrder: screenshots.sortOrder })
+  const [stan] = await db
+    .select({
+      ile: sql<number>`count(*)::int`,
+      ostatni: sql<number>`coalesce(max(${screenshots.sortOrder}), -1)::int`,
+    })
     .from(screenshots)
-    .where(eq(screenshots.dayNoteId, dayNoteId))
-    .orderBy(desc(screenshots.sortOrder))
-    .limit(1);
-  let sortOrder = (ostatni?.sortOrder ?? -1) + 1;
+    .where(eq(screenshots.dayNoteId, dayNoteId));
+
+  const limit = bladLimitu(stan.ile, files.length);
+  if (limit) return { error: limit };
+
+  let sortOrder = stan.ostatni + 1;
 
   for (const file of files) {
     try {
       const saved = await saveScreenshot({ kind: "day", id: dayNoteId }, file);
       await db.insert(screenshots).values({
         dayNoteId,
-        kind: "other",
         file: saved.file,
         thumbnail: saved.thumbnail,
         width: saved.width,

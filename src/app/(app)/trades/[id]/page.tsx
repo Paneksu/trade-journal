@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { DeleteScreenshotButton, DeleteTradeButton } from "@/components/trades/trade-actions";
+import { DeleteTradeButton } from "@/components/trades/trade-actions";
+import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { Badge, DataPoint, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
@@ -11,7 +12,8 @@ import { formatValue } from "@/lib/fields/fields";
 import { getFields, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { closedOnly, getScreenshots, getTrade, getTrades } from "@/lib/queries/trades";
-import { dateTime, duration, int, money, num, percent, pnlClass, price, rValue } from "@/lib/format";
+import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
+import { dateTime, duration, int, longDate, money, num, percent, pnlClass, price, rValue } from "@/lib/format";
 
 export const metadata = { title: "Trade — Dziennik tradingowy" };
 
@@ -41,9 +43,6 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
     : [];
   const strategyStats = computeStats(sameStrategy);
 
-  const before = shots.filter((s) => s.kind === "before");
-  const after = shots.filter((s) => s.kind === "after");
-
   return (
     <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -52,7 +51,18 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
             <Link href="/trades" className="hover:text-text">
               Trade&apos;y
             </Link>{" "}
-            / #{trade.id}
+            / #{trade.id} ·{" "}
+            {/* Skrot do calego dnia - z kalendarza da sie wejsc w trade, z trade'a nie dalo sie wyjsc. */}
+            <Link
+              href={
+                trade.backtestSessionId
+                  ? `/backtest/${trade.backtestSessionId}?dzien=${trade.tradingDay}`
+                  : `/calendar?dzien=${trade.tradingDay}`
+              }
+              className="hover:text-text"
+            >
+              {longDate(trade.tradingDay)}
+            </Link>
           </p>
           <h1 className="mt-1 flex flex-wrap items-baseline gap-3">
             <span className="font-mono text-xl font-semibold text-text sm:text-2xl">
@@ -94,36 +104,16 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
         </div>
       </header>
 
-      {(before.length > 0 || after.length > 0) && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {[
-            { label: "Przed wejściem", list: before },
-            { label: "Po wyjściu", list: after },
-          ].map(({ label, list }) => (
-            <Panel key={label} title={label}>
-              {list.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-faint">Brak zrzutu.</p>
-              ) : (
-                <div className="space-y-2 p-2">
-                  {list.map((s) => (
-                    <figure key={s.id} className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`/api/screenshots/${s.file}`}
-                        alt={s.caption ?? label}
-                        width={s.width ?? undefined}
-                        height={s.height ?? undefined}
-                        className="w-full rounded-[var(--radius-control)] border border-line"
-                      />
-                      <DeleteScreenshotButton id={s.id} />
-                    </figure>
-                  ))}
-                </div>
-              )}
-            </Panel>
-          ))}
-        </div>
-      )}
+      <Panel
+        title="Zrzuty wykresu"
+        description={`${shots.length} z ${MAX_ZRZUTOW}. Kliknij, żeby powiększyć.`}
+      >
+        <ScreenshotUploader
+          cel={{ typ: "trade", tradeId: trade.id }}
+          shots={shots}
+          opis={`${trade.instrumentSymbol}, ${trade.tradingDay}`}
+        />
+      </Panel>
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Przebieg" className="xl:col-span-2">

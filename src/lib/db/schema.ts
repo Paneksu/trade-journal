@@ -42,7 +42,6 @@ export const fieldTypeEnum = pgEnum("field_type", [
   "rating",
 ]);
 export const fieldScopeEnum = pgEnum("field_scope", ["trade", "backtest", "both"]);
-export const screenshotKindEnum = pgEnum("screenshot_kind", ["before", "after", "other"]);
 export const sessionStatusEnum = pgEnum("session_status", ["running", "finished", "abandoned"]);
 export const marketSessionEnum = pgEnum("market_session", [
   "premarket",
@@ -276,7 +275,8 @@ export const screenshots = pgTable(
     // i nigdy pod niczym. Pilnuje tego warunek `screenshots_owner`.
     tradeId: integer().references(() => trades.id, { onDelete: "cascade" }),
     dayNoteId: integer().references(() => dayNotes.id, { onDelete: "cascade" }),
-    kind: screenshotKindEnum().notNull().default("before"),
+    // Zrzuty tworza jedna liste w kolejnosci wgrywania (ADR-009). Podzial na
+    // "przed" i "po" zniknal - przy trzecim zdjeciu etykieta i tak klamala.
     file: text().notNull(),
     thumbnail: text(),
     caption: text(),

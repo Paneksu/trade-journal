@@ -232,7 +232,7 @@ export async function getScreenshots(tradeId: number) {
     .select()
     .from(screenshots)
     .where(eq(screenshots.tradeId, tradeId))
-    .orderBy(asc(screenshots.kind), asc(screenshots.sortOrder), asc(screenshots.id));
+    .orderBy(asc(screenshots.sortOrder), asc(screenshots.id));
 }
 
 /** Ostatnio uzyte wartosci - do podpowiedzi w formularzu nowego trade'a. */

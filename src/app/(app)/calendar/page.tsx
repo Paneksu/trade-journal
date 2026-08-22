@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { DayNoteForm } from "@/components/calendar/day-note-form";
-import { DayScreenshots } from "@/components/calendar/day-screenshots";
+import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { UnitSwitch } from "@/components/layout/toolbar";
 import { Kpi, KpiGrid } from "@/components/stats/kpi";
@@ -183,7 +183,12 @@ export default async function CalendarPage({
             </Panel>
 
             <Panel title="Zrzuty dnia" description="Także dzień bez transakcji ma czego dowodzić.">
-              <DayScreenshots key={day} day={day} accountId={account?.id ?? null} shots={dayShots} />
+              <ScreenshotUploader
+                key={day}
+                cel={{ typ: "dzien", day, accountId: account?.id ?? null }}
+                shots={dayShots}
+                opis={`dzień ${day}`}
+              />
             </Panel>
           </div>
 

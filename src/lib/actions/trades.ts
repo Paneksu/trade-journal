@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
@@ -11,6 +11,7 @@ import { commissionFor, computeTrade, fromLocalInput, type Direction } from "@/l
 import { cleanValues, fieldsForScope, readFromForm, validateValues } from "@/lib/fields/fields";
 import { getFields, instrumentSpec } from "@/lib/queries/dictionaries";
 import { deleteScreenshot, deleteTradeDir, saveScreenshot } from "@/lib/screenshots";
+import { bladLimitu } from "@/lib/screenshots-limit";
 
 export type FormState = {
   ok: boolean;
@@ -66,6 +67,11 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const strategyId = optionalId(data, "strategyId");
   const directionRaw = text(data, "direction");
   const statusRaw = text(data, "status") ?? "closed";
+
+  // Limit sprawdzamy przed zapisem, zeby nie zostawic trade'a z polowa zdjec.
+  const nowe = zrzutyZFormularza(data);
+  const limit = bladLimitu(id ? await policzZrzuty(id) : 0, nowe.length);
+  if (limit) return { ok: false, error: limit };
 
   if (!accountId) return { ok: false, error: "Wybierz konto." };
   if (!instrumentId) return { ok: false, error: "Wybierz instrument." };
@@ -208,32 +214,11 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   }
 
   // --- zrzuty ---
-  for (const [fieldName, kind] of [
-    ["shot_before", "before"],
-    ["shot_after", "after"],
-  ] as const) {
-    const files = data.getAll(fieldName).filter((w): w is File => w instanceof File && w.size > 0);
-    for (const [i, file] of files.entries()) {
-      try {
-        const saved = await saveScreenshot({ kind: "trade", id: savedId }, file);
-        await db.insert(screenshots).values({
-          tradeId: savedId,
-          kind,
-          file: saved.file,
-          thumbnail: saved.thumbnail,
-          width: saved.width,
-          height: saved.height,
-          sortOrder: i,
-        });
-      } catch (error) {
-        return {
-          ok: false,
-          id: savedId,
-          error: `Trade zapisany, ale zrzut się nie wgrał: ${(error as Error).message}`,
-        };
-      }
-    }
-  }
+  // Formularz przysyla pliki tylko przy nowym trade'cie; w edycji zrzuty leca
+  // osobno przez `addTradeScreenshots`, wiec licznik zaczyna od zera dopiero
+  // wtedy, gdy trade faktycznie zadnych nie ma.
+  const shotError = await wgrajZrzuty(savedId, zrzutyZFormularza(data));
+  if (shotError) return { ok: false, id: savedId, error: `Trade zapisany, ale ${shotError}` };
 
   revalidatePath("/", "layout");
 
@@ -251,13 +236,80 @@ export async function deleteTrade(id: number): Promise<void> {
   redirect("/trades");
 }
 
-export async function removeScreenshot(screenshotId: number): Promise<void> {
+/* --- Zrzuty --------------------------------------------------------------- */
+
+function zrzutyZFormularza(data: FormData): File[] {
+  return data.getAll("shot").filter((w): w is File => w instanceof File && w.size > 0);
+}
+
+async function policzZrzuty(tradeId: number): Promise<number> {
+  const [w] = await db
+    .select({ ile: sql<number>`count(*)::int` })
+    .from(screenshots)
+    .where(eq(screenshots.tradeId, tradeId));
+  return w?.ile ?? 0;
+}
+
+/**
+ * Zapisuje pliki i dopisuje je na koncu listy. Numeracja startuje od tego, co
+ * juz lezy w bazie - inaczej zdjecie dograne pozniej wskakiwaloby na poczatek.
+ * Zwraca komunikat bledu albo null.
+ */
+async function wgrajZrzuty(tradeId: number, files: File[]): Promise<string | null> {
+  if (files.length === 0) return null;
+
+  const [stan] = await db
+    .select({ ostatni: sql<number>`coalesce(max(${screenshots.sortOrder}), -1)::int` })
+    .from(screenshots)
+    .where(eq(screenshots.tradeId, tradeId));
+  let sortOrder = (stan?.ostatni ?? -1) + 1;
+
+  for (const file of files) {
+    try {
+      const saved = await saveScreenshot({ kind: "trade", id: tradeId }, file);
+      await db.insert(screenshots).values({
+        tradeId,
+        file: saved.file,
+        thumbnail: saved.thumbnail,
+        width: saved.width,
+        height: saved.height,
+        sortOrder: sortOrder++,
+      });
+    } catch (error) {
+      return `zrzut się nie wgrał: ${(error as Error).message}`;
+    }
+  }
+  return null;
+}
+
+/** Zrzuty dogrywane do istniejacego trade'a: z pliku, ze schowka albo przeciagniete. */
+export async function addTradeScreenshots(data: FormData): Promise<FormState> {
+  await requireSession();
+  const tradeId = integer(data, "tradeId");
+  if (!tradeId) return { ok: false, error: "Nie wiem, do którego trade'a przypiąć zrzut." };
+
+  const files = zrzutyZFormularza(data);
+  if (files.length === 0) return { ok: false, error: "Nie widzę obrazu do wgrania." };
+
+  const limit = bladLimitu(await policzZrzuty(tradeId), files.length);
+  if (limit) return { ok: false, error: limit };
+
+  const blad = await wgrajZrzuty(tradeId, files);
+  if (blad) return { ok: false, error: blad[0].toUpperCase() + blad.slice(1) };
+
+  revalidatePath("/", "layout");
+  return { ok: true, id: tradeId };
+}
+
+export async function removeScreenshot(screenshotId: number): Promise<FormState> {
   await requireSession();
   const [s] = await db.select().from(screenshots).where(eq(screenshots.id, screenshotId)).limit(1);
-  if (!s) return;
+  if (!s) return { ok: false, error: "Nie ma takiego zrzutu." };
   await db.delete(screenshots).where(eq(screenshots.id, screenshotId));
   await deleteScreenshot(s.file, s.thumbnail);
-  revalidatePath(`/trades/${s.tradeId}`);
+  // Licznik zrzutow siedzi tez w tabeli trade'ow, wiec odswiezamy caly uklad.
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 /** Masowe tagowanie z tabeli - dodaje albo zdejmuje tag na wielu trade'ach naraz. */
