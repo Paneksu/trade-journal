@@ -22,6 +22,13 @@
       "when": 1787401058610,
       "tag": "0002_zrzuty_dnia",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787428966463,
+      "tag": "0003_dni_bez_sygnalu_w_backtescie",
+      "breakpoints": true
     }
   ]
 }

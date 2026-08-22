@@ -185,6 +185,19 @@ strategii w symulacji i na żywo. Gdy realny handel wypada wyraźnie gorzej, zwy
 są poślizgi, gorsze wejścia albo trade'y spoza planu — i wtedy warto zajrzeć do miernika
 dyscypliny, a nie do strategii.
 
+### Dni bez sygnału w sesji
+
+Panel **Dni bez sygnału** na stronie sesji zapisuje dni, w których strategia nie dała
+wejścia: data, powód i to, co widziałeś na wykresie. Kliknięcie daty rozwija wpis —
+wtedy działa **Ctrl+V** i wklejasz do niego zrzut, tak samo jak w kalendarzu.
+
+Nagłówek panelu pokazuje **pokrycie zakresu danych**: ile dni roboczych z zakresu
+sesji ma jakikolwiek zapis, trade albo udokumentowaną pauzę. To pilnuje uczciwości
+badania — sesja z trzydziestoma wejściami i dwustoma przemilczanymi dniami mówi
+o strategii mniej niż połowę.
+
+Dnia, w którym sesja ma zapisany trade, nie da się oznaczyć jako dnia bez sygnału.
+
 ## Kopia danych
 
 *Ustawienia → Dane i kopia* — eksport wszystkich tabel do JSON. Zrzuty ekranu leżą

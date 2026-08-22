@@ -75,6 +75,10 @@ export async function deleteTradeDir(tradeId: number): Promise<void> {
   await rm(tradeDir(tradeId), { recursive: true, force: true });
 }
 
+export async function deleteDayDir(dayNoteId: number): Promise<void> {
+  await rm(ownerDir({ kind: "day", id: dayNoteId }), { recursive: true, force: true });
+}
+
 export async function fileExists(full: string): Promise<boolean> {
   try {
     const s = await stat(full);

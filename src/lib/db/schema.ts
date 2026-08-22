@@ -303,6 +303,11 @@ export const dayNotes = pgTable(
     id: serial().primaryKey(),
     day: date().notNull(),
     accountId: integer().references(() => accounts.id, { onDelete: "cascade" }),
+    // Wpis nalezy albo do dziennika (konto), albo do sesji backtestu.
+    // W backtescie dzien bez sygnalu jest czescia badania, nie luka w nim.
+    backtestSessionId: integer().references(() => backtestSessions.id, {
+      onDelete: "cascade",
+    }),
     preSession: text(),
     postSession: text(),
     mood: smallint(),
@@ -316,12 +321,18 @@ export const dayNotes = pgTable(
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    uniqueIndex("day_notes_idx").on(t.day, t.accountId),
-    // W Postgresie NULL != NULL, wiec indeks wyzej nie lapie konfliktu bez konta.
-    // Bez tego czesciowego indeksu ten sam dzien wpadalby do bazy dwa razy.
+    // Trzy rozlaczne przestrzenie nazw dla jednego dnia: dziennik z kontem,
+    // dziennik bez konta i sesja backtestu. W Postgresie NULL != NULL,
+    // wiec kazdy przypadek z NULL-em potrzebuje wlasnego czesciowego indeksu.
+    uniqueIndex("day_notes_idx")
+      .on(t.day, t.accountId)
+      .where(sql`${t.backtestSessionId} is null`),
     uniqueIndex("day_notes_no_account_idx")
       .on(t.day)
-      .where(sql`${t.accountId} is null`),
+      .where(sql`${t.accountId} is null and ${t.backtestSessionId} is null`),
+    uniqueIndex("day_notes_session_idx")
+      .on(t.day, t.backtestSessionId)
+      .where(sql`${t.backtestSessionId} is not null`),
   ],
 );
 

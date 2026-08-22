@@ -1,14 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { dayNotes, savedViews, screenshots } from "@/lib/db/schema";
-import { deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
+import { deleteDayDir, deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
-import { countTradesOnDay } from "@/lib/queries/journal";
+import { countTradesOnDay, countSessionTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
 
 function text(d: FormData, k: string): string | null {
@@ -31,13 +31,31 @@ function reason(d: FormData, k: string): NoTradeReason | null {
 /* --- Dziennik dnia -------------------------------------------------------- */
 
 /**
- * Konflikt po (dzien, konto). Bez konta lapie go czesciowy indeks
- * `day_notes_no_account_idx`, bo w Postgresie NULL != NULL.
+ * Konflikt trafia w jeden z trzech czesciowych indeksow, zaleznie od tego,
+ * czy dzien nalezy do sesji backtestu, do konta, czy do zadnego z nich.
+ * W Postgresie NULL != NULL, wiec kazdy przypadek potrzebuje wlasnego celu.
  */
-function konflikt(accountId: number | null) {
+function konflikt(accountId: number | null, sessionId: number | null) {
+  if (sessionId) {
+    return {
+      target: [dayNotes.day, dayNotes.backtestSessionId],
+      targetWhere: isNotNull(dayNotes.backtestSessionId),
+    };
+  }
   return accountId
-    ? { target: [dayNotes.day, dayNotes.accountId] }
-    : { target: dayNotes.day, targetWhere: isNull(dayNotes.accountId) };
+    ? {
+        target: [dayNotes.day, dayNotes.accountId],
+        targetWhere: isNull(dayNotes.backtestSessionId),
+      }
+    : {
+        target: dayNotes.day,
+        targetWhere: and(isNull(dayNotes.accountId), isNull(dayNotes.backtestSessionId)),
+      };
+}
+
+function positiveInt(d: FormData, k: string): number | null {
+  const n = Number(d.get(k));
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionState> {
@@ -45,9 +63,7 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
   const day = text(d, "day");
   if (!day) return { error: "Brak daty." };
 
-  const accountIdRaw = Number(d.get("accountId"));
-  const accountId = Number.isInteger(accountIdRaw) && accountIdRaw > 0 ? accountIdRaw : null;
-
+  const accountId = positiveInt(d, "accountId");
   const noTrade = d.get("noTrade") !== null;
 
   // Dwa zrodla prawdy o dniu nie moga sobie przeczyc: albo sa trade'y,
@@ -76,7 +92,7 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
   await db
     .insert(dayNotes)
     .values(values)
-    .onConflictDoUpdate({ ...konflikt(accountId), set: values });
+    .onConflictDoUpdate({ ...konflikt(accountId, null), set: values });
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -86,13 +102,67 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
  * Zwraca id notatki dnia, zakladajac ja w razie potrzeby. Zrzut da sie wkleic,
  * zanim cokolwiek w notatce zostanie zapisane - i tak ma byc.
  */
-async function ensureDayNote(day: string, accountId: number | null): Promise<number> {
+async function ensureDayNote(
+  day: string,
+  accountId: number | null,
+  sessionId: number | null,
+): Promise<number> {
   const [row] = await db
     .insert(dayNotes)
-    .values({ day, accountId })
-    .onConflictDoUpdate({ ...konflikt(accountId), set: { updatedAt: new Date() } })
+    .values({ day, accountId: sessionId ? null : accountId, backtestSessionId: sessionId })
+    .onConflictDoUpdate({ ...konflikt(accountId, sessionId), set: { updatedAt: new Date() } })
     .returning({ id: dayNotes.id });
   return row.id;
+}
+
+/**
+ * Dzien bez sygnalu w sesji backtestu. Osobna akcja, bo w symulacji nie ma
+ * nastroju ani energii - liczy sie data, powod i to, co bylo na wykresie.
+ */
+export async function saveBacktestDayNote(_p: ActionState, d: FormData): Promise<ActionState> {
+  await requireSession();
+  const day = text(d, "day");
+  if (!day) return { error: "Podaj datę." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: "Data ma mieć postać RRRR-MM-DD." };
+
+  const sessionId = positiveInt(d, "backtestSessionId");
+  if (!sessionId) return { error: "Brak sesji." };
+
+  // Ta sama zasada co w dzienniku: trade'y sa twardszym dowodem niz znacznik.
+  if ((await countSessionTradesOnDay(sessionId, day)) > 0) {
+    return { error: "Ta sesja ma tego dnia zapisany trade — dzień nie był bez sygnału." };
+  }
+
+  const values = {
+    day,
+    accountId: null,
+    backtestSessionId: sessionId,
+    postSession: text(d, "postSession"),
+    noTrade: true,
+    noTradeReason: reason(d, "noTradeReason"),
+    updatedAt: new Date(),
+  };
+
+  await db
+    .insert(dayNotes)
+    .values(values)
+    .onConflictDoUpdate({ ...konflikt(null, sessionId), set: values });
+
+  revalidatePath("/backtest", "layout");
+  return { ok: true };
+}
+
+/** Kasuje wpis dnia razem ze zrzutami i ich plikami. */
+export async function deleteDayNote(id: number): Promise<ActionState> {
+  await requireSession();
+  const shots = await db.select().from(screenshots).where(eq(screenshots.dayNoteId, id));
+
+  await db.delete(dayNotes).where(eq(dayNotes.id, id));
+  for (const s of shots) await deleteScreenshot(s.file, s.thumbnail);
+  await deleteDayDir(id);
+
+  revalidatePath("/", "layout");
+  return { ok: true };
 }
 
 /** Zrzuty podpiete pod dzien: z pliku albo wklejone ze schowka. */
@@ -104,9 +174,9 @@ export async function addDayScreenshots(d: FormData): Promise<ActionState> {
   const files = d.getAll("shot").filter((w): w is File => w instanceof File && w.size > 0);
   if (files.length === 0) return { error: "Nie widzę obrazu do wgrania." };
 
-  const accountIdRaw = Number(d.get("accountId"));
-  const accountId = Number.isInteger(accountIdRaw) && accountIdRaw > 0 ? accountIdRaw : null;
-  const dayNoteId = await ensureDayNote(day, accountId);
+  const accountId = positiveInt(d, "accountId");
+  const sessionId = positiveInt(d, "backtestSessionId");
+  const dayNoteId = await ensureDayNote(day, accountId, sessionId);
 
   const [ostatni] = await db
     .select({ sortOrder: screenshots.sortOrder })

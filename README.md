@@ -10,6 +10,8 @@ Co robi:
 - **Kalendarz** — miesiąc jako mapa wyników, z dniami świadomie odpuszczonymi
   (powód pauzy) i pokryciem dziennika: ile dni roboczych ma w ogóle jakikolwiek zapis.
   Zrzut wykresu wkleja się do dnia przez Ctrl+V, także gdy tego dnia nie było trade'a.
+- **Backtesting** — sesje z założeniami i wnioskami, dni bez sygnału ze zrzutami
+  i pokryciem zakresu danych: ile dni badania ma w ogóle jakikolwiek zapis.
 - **Statystyki** — oczekiwana wartość w R i w gotówce, profit factor, obsunięcie,
   rozkład R, MAE/MFE, rozbicie na dowolny wymiar (instrument, sesja, dzień, tag, pole własne).
 - **Edge Finder** — automatycznie wskazuje konteksty, w których wyniki odstają od średniej,

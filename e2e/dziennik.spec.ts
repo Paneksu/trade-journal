@@ -372,3 +372,66 @@ test("zrzut wklejony ze schowka ląduje w dniu bez transakcji", async ({ page })
   await page.getByRole("button", { name: "Usuń zrzut" }).click();
   await expect(zrzut).toHaveCount(0);
 });
+
+test("sesja backtestu dokumentuje dzień bez sygnału razem ze zrzutem", async ({ page }) => {
+  const nazwa = `Sesja pauz ${Date.now()}`;
+
+  await page.goto("/backtest");
+  await page.getByRole("button", { name: "Nowa sesja backtestu" }).click();
+  await page.locator("#name").fill(nazwa);
+  await page.locator("#dataFrom").fill("2020-06-01");
+  await page.locator("#dataTo").fill("2020-06-05");
+  await page.getByRole("button", { name: "Utwórz sesję" }).click();
+  await expect(page).toHaveURL(/\/backtest\/\d+$/);
+
+  const panel = page.locator("section.panel").filter({ hasText: "Dni bez sygnału" });
+  // Piec dni roboczych w zakresie, zero zapisow.
+  await expect(panel).toContainText("0/5");
+
+  await page.locator("#ntd-day").fill("2020-06-02");
+  await page.locator("#ntd-reason").selectOption("no_setup");
+  await page.locator("#ntd-note").fill("Zakres otwarcia węższy niż 10 ticków, brak wybicia.");
+  await page.getByRole("button", { name: "Zapisz dzień bez sygnału" }).click();
+  await expect(page.getByText("Zapisano dzień bez sygnału.")).toBeVisible();
+
+  await expect(panel).toContainText("2 czerwca 2020");
+  await expect(panel).toContainText("Brak setupu");
+  await expect(panel).toContainText("1/5");
+
+  // Zrzut wkleja sie w wybrany dzien sesji.
+  await panel.getByRole("link", { name: "2 czerwca 2020" }).click();
+  await expect(page.locator('[data-wklejanie="gotowe"]')).toBeVisible();
+  await page.evaluate(() => {
+    const png = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      ),
+      (c) => c.charCodeAt(0),
+    );
+    const dane = new DataTransfer();
+    dane.items.add(new File([png], "wykres.png", { type: "image/png" }));
+    document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dane, bubbles: true }));
+  });
+  await expect(page.getByAltText("Zrzut z dnia 2020-06-02")).toHaveCount(1);
+
+  // Dzien, w ktorym sesja ma trade, nie moze udawac dnia bez sygnalu.
+  await page.getByRole("link", { name: "Dodaj trade do sesji" }).click();
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2020-06-03T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#exitTime").fill("2020-06-03T15:55");
+  await page.locator("#exitPrice").fill("20010");
+  await page.locator("#stopLoss").fill("19995");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  await page.goto(`/backtest?szukaj=`);
+  await page.getByRole("link", { name: nazwa }).click();
+  await page.locator("#ntd-day").fill("2020-06-03");
+  await page.getByRole("button", { name: "Zapisz dzień bez sygnału" }).click();
+  await expect(page.getByText(/Ta sesja ma tego dnia zapisany trade/)).toBeVisible();
+
+  // Trade i zapisana pauza razem daja dwa z pieciu dni.
+  await expect(panel).toContainText("2/5");
+});

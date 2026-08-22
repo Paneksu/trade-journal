@@ -129,6 +129,27 @@ Zrzut wgrywa się bez zapisywania notatki: pusty wpis dnia powstaje sam, jeśli 
 
 ---
 
+## ADR-008 — wpis dnia należy do konta albo do sesji backtestu (2026-08-21)
+
+`day_notes` obsługuje teraz dwa konteksty: dziennik realny (konto) i sesję backtestu.
+Dzień bez sygnału w symulacji to ta sama rzecz co pauza w dzienniku — ten sam powód,
+ta sama notatka, te same zrzuty — więc dostał tę samą tabelę zamiast własnej.
+
+Kosztem są **trzy rozłączne indeksy częściowe** zamiast jednego unikalnego:
+dzień z kontem, dzień bez konta i dzień sesji. W Postgresie NULL != NULL, więc bez
+tego podziału wpisy dwóch różnych sesji na ten sam dzień trafiałyby na siebie
+w indeksie „dzień bez konta". Akcja zapisu wybiera cel konfliktu tą samą regułą.
+
+W backteście nie ma nastroju, energii ani oceny dnia — osobny, krótszy formularz
+pyta o datę, powód i to, co było na wykresie. Zrzuty działają bez zmian, bo wiszą
+pod wpisem dnia, nie pod kontem.
+
+Nowa miara sesji: **pokrycie zakresu danych** — ile dni roboczych z `dataFrom`–`dataTo`
+ma jakikolwiek zapis. Backtest, który pokazuje 30 wejść i milczy o 200 dniach czekania,
+mówi o strategii mniej niż połowę.
+
+---
+
 ## Odstępstwo — Lighthouse SEO 60 (2026-08-21)
 
 Bramka publikacji wymaga ≥ 90 w czterech kategoriach. Ta aplikacja ma **60 w SEO**

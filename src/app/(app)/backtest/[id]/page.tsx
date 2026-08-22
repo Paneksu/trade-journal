@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
 import { EquityChart, RHistogram } from "@/components/charts/lazy";
+import { DayScreenshots } from "@/components/calendar/day-screenshots";
+import { DeleteDayNoteButton, NoTradeDayForm } from "@/components/backtest/no-trade-days";
 import { SessionForm } from "@/components/backtest/session-form";
 import { DeleteSessionButton } from "@/components/backtest/session-actions";
 import { KpiRow } from "@/components/stats/kpi-row";
@@ -14,22 +16,31 @@ import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { backtestSessions } from "@/lib/db/schema";
 import { localDate } from "@/lib/domain/calc";
+import { journalCoverage, reasonName } from "@/lib/domain/day-log";
 import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats, equityCurve, rHistogram } from "@/lib/domain/stats";
 import { getAccounts, getInstruments, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
+import {
+  getDayScreenshots,
+  getSessionDayNotes,
+  screenshotCountsForDayNotes,
+} from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
-import { money, num, percent, pnlClass, rValue } from "@/lib/format";
+import { longDate, money, num, percent, plural, pnlClass, rValue } from "@/lib/format";
 
 export const metadata = { title: "Sesja backtestu — Dziennik tradingowy" };
 
 export default async function BacktestSessionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ dzien?: string }>;
 }) {
   const settings = await requireSession();
   const { id } = await params;
+  const { dzien } = await searchParams;
   const sessionId = Number(id);
   if (!Number.isInteger(sessionId)) notFound();
 
@@ -68,6 +79,24 @@ export default async function BacktestSessionPage({
 
   const strategy = strategies.find((s) => s.id === session.strategyId);
   const instrument = instruments.find((i) => i.id === session.instrumentId);
+
+  // Dni bez sygnalu: druga polowa prawdy o sesji. Same wejscia mowia, ile razy
+  // strategia zagrala, a nie ile dni trzeba bylo przy niej przesiedziec.
+  const dayNotes = await getSessionDayNotes(session.id);
+  const shotCounts = await screenshotCountsForDayNotes(dayNotes.map((n) => n.id));
+  const selectedNote = dzien ? dayNotes.find((n) => n.day === dzien) : undefined;
+  const selectedShots = await getDayScreenshots(selectedNote?.id);
+
+  const tradedDays = new Set(closed.map((t) => t.tradingDay).filter((d): d is string => Boolean(d)));
+  const coverage =
+    session.dataFrom && session.dataTo
+      ? journalCoverage({
+          from: session.dataFrom,
+          to: session.dataTo,
+          tradedDays,
+          noTradeDays: dayNotes.map((n) => n.day),
+        })
+      : null;
 
   return (
     <div className="space-y-4">
@@ -226,6 +255,73 @@ export default async function BacktestSessionPage({
           timezone={settings.timezone}
           emptyText="Sesja nie ma jeszcze żadnego trade'a."
         />
+      </Panel>
+
+      <Panel
+        title="Dni bez sygnału"
+        description={
+          coverage
+            ? `${dayNotes.length} ${plural(dayNotes.length, "dzień", "dni", "dni")} · pokrycie zakresu danych ${percent(coverage.ratio, 0)} (${coverage.covered}/${coverage.expected} dni roboczych)`
+            : "Uzupełnij zakres danych sesji, żeby policzyć pokrycie."
+        }
+      >
+        <NoTradeDayForm
+          sessionId={session.id}
+          dataFrom={session.dataFrom}
+          dataTo={session.dataTo}
+        />
+
+        {dayNotes.length === 0 ? (
+          <p className="px-4 py-6 text-sm text-faint">
+            Żaden dzień bez sygnału nie jest jeszcze zapisany. Bez nich wynik sesji mówi,
+            ile strategia zarobiła, ale nie ile czekania kosztowała.
+          </p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {dayNotes.map((n) => {
+              const wybrany = n.id === selectedNote?.id;
+              const powod = reasonName(n.noTradeReason);
+              const ile = shotCounts.get(n.id) ?? 0;
+
+              return (
+                <li key={n.id} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <Link
+                        href={wybrany ? `/backtest/${session.id}` : `/backtest/${session.id}?dzien=${n.day}`}
+                        className="liczba text-sm font-medium text-text hover:text-accent"
+                      >
+                        {longDate(n.day)}
+                      </Link>
+                      <p className="mt-0.5 text-xs text-faint">
+                        {[powod, ile > 0 ? `${ile} ${plural(ile, "zrzut", "zrzuty", "zrzutów")}` : null]
+                          .filter(Boolean)
+                          .join(" · ") || "bez powodu"}
+                      </p>
+                    </div>
+                    {wybrany && <DeleteDayNoteButton id={n.id} />}
+                  </div>
+
+                  {n.postSession && (
+                    <p className="mt-2 text-sm whitespace-pre-line text-muted">{n.postSession}</p>
+                  )}
+
+                  {wybrany && (
+                    <div className="mt-2 rounded-[var(--radius-control)] border border-line">
+                      <DayScreenshots
+                        key={n.day}
+                        day={n.day}
+                        accountId={null}
+                        backtestSessionId={session.id}
+                        shots={selectedShots}
+                      />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Panel>
 
       <Panel title="Założenia i wnioski">

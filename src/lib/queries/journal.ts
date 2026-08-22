@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { dayNotes, screenshots, trades } from "@/lib/db/schema";
@@ -45,14 +45,47 @@ export async function getDayScreenshots(dayNoteId: number | null | undefined) {
     .orderBy(asc(screenshots.sortOrder), asc(screenshots.id));
 }
 
+/** Ile zrzutow ma kazdy z podanych wpisow dnia. */
+export async function screenshotCountsForDayNotes(ids: number[]): Promise<Map<number, number>> {
+  const map = new Map<number, number>();
+  if (ids.length === 0) return map;
+  const rows = await db
+    .select({ dayNoteId: screenshots.dayNoteId, ile: count() })
+    .from(screenshots)
+    .where(inArray(screenshots.dayNoteId, ids))
+    .groupBy(screenshots.dayNoteId);
+  for (const r of rows) if (r.dayNoteId !== null) map.set(r.dayNoteId, r.ile);
+  return map;
+}
+
+/** Wpisy dni bez sygnalu przypisane do sesji backtestu, od najnowszego. */
+export async function getSessionDayNotes(sessionId: number): Promise<DayNote[]> {
+  return db
+    .select()
+    .from(dayNotes)
+    .where(eq(dayNotes.backtestSessionId, sessionId))
+    .orderBy(desc(dayNotes.day));
+}
+
+/** Ile trade'ow ma sesja backtestu w danym dniu handlowym. */
+export async function countSessionTradesOnDay(sessionId: number, day: string): Promise<number> {
+  const [row] = await db
+    .select({ ile: count() })
+    .from(trades)
+    .where(and(eq(trades.backtestSessionId, sessionId), eq(trades.tradingDay, day)));
+  return row?.ile ?? 0;
+}
+
 /**
- * Ile trade'ow ma dany dzien handlowy. Sluzy do pilnowania, zeby dzien
+ * Ile realnych trade'ow ma dany dzien handlowy. Sluzy do pilnowania, zeby dzien
  * oznaczony jako "bez transakcji" nie przeczyl zapisanym trade'om.
+ * Trade'y z backtestu sie nie licza - symulacja nie jest dowodem na to,
+ * co dzialo sie w dzienniku.
  */
 export async function countTradesOnDay(day: string): Promise<number> {
   const [row] = await db
     .select({ ile: count() })
     .from(trades)
-    .where(eq(trades.tradingDay, day));
+    .where(and(eq(trades.tradingDay, day), isNull(trades.backtestSessionId)));
   return row?.ile ?? 0;
 }

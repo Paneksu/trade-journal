@@ -26,10 +26,12 @@ export type DayShot = {
 export function DayScreenshots({
   day,
   accountId,
+  backtestSessionId = null,
   shots,
 }: {
   day: string;
   accountId: number | null;
+  backtestSessionId?: number | null;
   shots: DayShot[];
 }) {
   const [pending, startTransition] = useTransition();
@@ -47,6 +49,7 @@ export function DayScreenshots({
     const dane = new FormData();
     dane.set("day", day);
     if (accountId) dane.set("accountId", String(accountId));
+    if (backtestSessionId) dane.set("backtestSessionId", String(backtestSessionId));
     for (const f of obrazy) dane.append("shot", f);
 
     setBlad(null);
@@ -77,7 +80,7 @@ export function DayScreenshots({
       if (wezel) wezel.dataset.wklejanie = "czekam";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [day, accountId]);
+  }, [day, accountId, backtestSessionId]);
 
   return (
     <div className="space-y-3 p-4">

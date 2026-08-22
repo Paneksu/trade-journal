@@ -37,6 +37,32 @@ for (const ekran of EKRANY) {
   });
 }
 
+test("dostępność: sesja backtestu", async ({ page }) => {
+  // Sesja zakladana w locie - adres sesji nie jest staly miedzy bazami.
+  await page.goto("/backtest");
+  await page.getByRole("button", { name: "Nowa sesja backtestu" }).click();
+  await page.locator("#name").fill(`Sesja do audytu ${Date.now()}`);
+  await page.locator("#dataFrom").fill("2020-07-01");
+  await page.locator("#dataTo").fill("2020-07-03");
+  await page.getByRole("button", { name: "Utwórz sesję" }).click();
+  await expect(page).toHaveURL(/\/backtest\/\d+$/);
+
+  await page.locator("#ntd-day").fill("2020-07-02");
+  await page.getByRole("button", { name: "Zapisz dzień bez sygnału" }).click();
+  await expect(page.getByText("Zapisano dzień bez sygnału.")).toBeVisible();
+  await page.getByRole("link", { name: "2 lipca 2020" }).click();
+  await page.waitForLoadState("networkidle");
+
+  const wynik = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+
+  const opis = wynik.violations.map(
+    (v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} el.`,
+  );
+  expect(opis, opis.join("\n")).toEqual([]);
+});
+
 test("dostępność: logowanie", async ({ browser }) => {
   const czysty = await browser.newContext({ storageState: undefined });
   const strona = await czysty.newPage();
