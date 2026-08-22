@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   date,
   index,
   integer,
@@ -271,9 +272,10 @@ export const screenshots = pgTable(
   "screenshots",
   {
     id: serial().primaryKey(),
-    tradeId: integer()
-      .notNull()
-      .references(() => trades.id, { onDelete: "cascade" }),
+    // Zrzut wisi albo pod trade'em, albo pod dniem dziennika - nigdy pod obojgiem
+    // i nigdy pod niczym. Pilnuje tego warunek `screenshots_owner`.
+    tradeId: integer().references(() => trades.id, { onDelete: "cascade" }),
+    dayNoteId: integer().references(() => dayNotes.id, { onDelete: "cascade" }),
     kind: screenshotKindEnum().notNull().default("before"),
     file: text().notNull(),
     thumbnail: text(),
@@ -283,7 +285,14 @@ export const screenshots = pgTable(
     sortOrder: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("screenshots_trade_idx").on(t.tradeId)],
+  (t) => [
+    index("screenshots_trade_idx").on(t.tradeId),
+    index("screenshots_day_note_idx").on(t.dayNoteId),
+    check(
+      "screenshots_owner",
+      sql`(${t.tradeId} is null) != (${t.dayNoteId} is null)`,
+    ),
+  ],
 );
 
 /* --- Dziennik dnia -------------------------------------------------------- */

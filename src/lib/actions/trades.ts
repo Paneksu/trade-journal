@@ -215,7 +215,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     const files = data.getAll(fieldName).filter((w): w is File => w instanceof File && w.size > 0);
     for (const [i, file] of files.entries()) {
       try {
-        const saved = await saveScreenshot(savedId, file);
+        const saved = await saveScreenshot({ kind: "trade", id: savedId }, file);
         await db.insert(screenshots).values({
           tradeId: savedId,
           kind,

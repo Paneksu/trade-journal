@@ -15,6 +15,13 @@
       "when": 1787330156548,
       "tag": "0001_no_trade_day",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787401058610,
+      "tag": "0002_zrzuty_dnia",
+      "breakpoints": true
     }
   ]
 }

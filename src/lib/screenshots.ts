@@ -4,7 +4,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 
-import { safePath, tradeDir } from "./uploads-path";
+import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./uploads-path";
 
 /**
  * Zrzuty ekranu wykresow. Trzymamy je na dysku (w Dockerze: wolumen),
@@ -24,7 +24,7 @@ export type SavedScreenshot = {
   height: number;
 };
 
-export async function saveScreenshot(tradeId: number, upload: File): Promise<SavedScreenshot> {
+export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<SavedScreenshot> {
   if (!ALLOWED.has(upload.type)) {
     throw new Error("Obsługiwane formaty to PNG, JPEG, WEBP i AVIF.");
   }
@@ -32,7 +32,7 @@ export async function saveScreenshot(tradeId: number, upload: File): Promise<Sav
     throw new Error("Plik jest większy niż 10 MB.");
   }
 
-  const dir = tradeDir(tradeId);
+  const dir = ownerDir(owner);
   await mkdir(dir, { recursive: true });
 
   const name = randomBytes(12).toString("hex");
@@ -54,9 +54,10 @@ export async function saveScreenshot(tradeId: number, upload: File): Promise<Sav
     .webp({ quality: 80 })
     .toFile(path.join(dir, thumb));
 
+  const segment = ownerSegment(owner);
   return {
-    file: `${tradeId}/${full}`,
-    thumbnail: `${tradeId}/${thumb}`,
+    file: `${segment}/${full}`,
+    thumbnail: `${segment}/${thumb}`,
     width: meta.width,
     height: meta.height,
   };

@@ -198,7 +198,8 @@ async function screenshotCounts(ids: number[]): Promise<Map<number, number>> {
     .from(screenshots)
     .where(inArray(screenshots.tradeId, ids))
     .groupBy(screenshots.tradeId);
-  for (const w of rows) map.set(w.tradeId, w.count);
+  // Zrzut dnia ma `tradeId` puste - `inArray` go nie zwroci, ale typ na to pozwala.
+  for (const w of rows) if (w.tradeId !== null) map.set(w.tradeId, w.count);
   return map;
 }
 

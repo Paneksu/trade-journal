@@ -161,6 +161,16 @@ Dwa kafle na górze kalendarza czytają te zapisy:
 Pauzy nie wchodzą do statystyk wyników ani do miernika dyscypliny — nie podbijają
 skuteczności i nie psują średniej.
 
+### Zrzuty dnia
+
+Panel **Zrzuty dnia** przyjmuje obrazy niezwiązane z żadnym trade'em — wykres, na
+którym setupu nie było, bywa wart więcej niż zdanie o nim. Zrób zrzut w platformie
+i wciśnij **Ctrl+V** gdziekolwiek na panelu dnia; możesz też przeciągnąć plik albo
+wybrać go z dysku. Zrzut zapisuje się od razu, notatki nie trzeba wcześniej zapisywać.
+
+Miniatura otwiera pełny obraz w nowej karcie. Kosz na miniaturze kasuje zrzut razem
+z plikiem — tego nie da się cofnąć.
+
 ## Backtesting
 
 *Backtesting → Nowa sesja*. Zapisujesz założenia (strategia, instrument, interwał,

@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq, isNull, sql } from "drizzle-orm";
+import { desc, eq, isNull, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { dayNotes, savedViews } from "@/lib/db/schema";
+import { dayNotes, savedViews, screenshots } from "@/lib/db/schema";
+import { deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
 import { countTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
@@ -28,6 +29,16 @@ function reason(d: FormData, k: string): NoTradeReason | null {
 }
 
 /* --- Dziennik dnia -------------------------------------------------------- */
+
+/**
+ * Konflikt po (dzien, konto). Bez konta lapie go czesciowy indeks
+ * `day_notes_no_account_idx`, bo w Postgresie NULL != NULL.
+ */
+function konflikt(accountId: number | null) {
+  return accountId
+    ? { target: [dayNotes.day, dayNotes.accountId] }
+    : { target: dayNotes.day, targetWhere: isNull(dayNotes.accountId) };
+}
 
 export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionState> {
   await requireSession();
@@ -62,21 +73,77 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
   };
 
   // Jeden wpis na dzien i konto - powtorny zapis nadpisuje poprzedni.
-  // Bez konta konflikt lapie czesciowy indeks `day_notes_no_account_idx`,
-  // bo w Postgresie NULL != NULL.
   await db
     .insert(dayNotes)
     .values(values)
-    .onConflictDoUpdate(
-      accountId
-        ? { target: [dayNotes.day, dayNotes.accountId], set: values }
-        : {
-            target: dayNotes.day,
-            targetWhere: isNull(dayNotes.accountId),
-            set: values,
-          },
-    );
+    .onConflictDoUpdate({ ...konflikt(accountId), set: values });
 
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/**
+ * Zwraca id notatki dnia, zakladajac ja w razie potrzeby. Zrzut da sie wkleic,
+ * zanim cokolwiek w notatce zostanie zapisane - i tak ma byc.
+ */
+async function ensureDayNote(day: string, accountId: number | null): Promise<number> {
+  const [row] = await db
+    .insert(dayNotes)
+    .values({ day, accountId })
+    .onConflictDoUpdate({ ...konflikt(accountId), set: { updatedAt: new Date() } })
+    .returning({ id: dayNotes.id });
+  return row.id;
+}
+
+/** Zrzuty podpiete pod dzien: z pliku albo wklejone ze schowka. */
+export async function addDayScreenshots(d: FormData): Promise<ActionState> {
+  await requireSession();
+  const day = text(d, "day");
+  if (!day) return { error: "Brak daty." };
+
+  const files = d.getAll("shot").filter((w): w is File => w instanceof File && w.size > 0);
+  if (files.length === 0) return { error: "Nie widzę obrazu do wgrania." };
+
+  const accountIdRaw = Number(d.get("accountId"));
+  const accountId = Number.isInteger(accountIdRaw) && accountIdRaw > 0 ? accountIdRaw : null;
+  const dayNoteId = await ensureDayNote(day, accountId);
+
+  const [ostatni] = await db
+    .select({ sortOrder: screenshots.sortOrder })
+    .from(screenshots)
+    .where(eq(screenshots.dayNoteId, dayNoteId))
+    .orderBy(desc(screenshots.sortOrder))
+    .limit(1);
+  let sortOrder = (ostatni?.sortOrder ?? -1) + 1;
+
+  for (const file of files) {
+    try {
+      const saved = await saveScreenshot({ kind: "day", id: dayNoteId }, file);
+      await db.insert(screenshots).values({
+        dayNoteId,
+        kind: "other",
+        file: saved.file,
+        thumbnail: saved.thumbnail,
+        width: saved.width,
+        height: saved.height,
+        sortOrder: sortOrder++,
+      });
+    } catch (error) {
+      return { error: `Zrzut się nie wgrał: ${(error as Error).message}` };
+    }
+  }
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+export async function removeDayScreenshot(id: number): Promise<ActionState> {
+  await requireSession();
+  const [s] = await db.select().from(screenshots).where(eq(screenshots.id, id)).limit(1);
+  if (!s || s.dayNoteId === null) return { error: "Nie ma takiego zrzutu." };
+
+  await db.delete(screenshots).where(eq(screenshots.id, id));
+  await deleteScreenshot(s.file, s.thumbnail);
   revalidatePath("/", "layout");
   return { ok: true };
 }

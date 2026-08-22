@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { DayNoteForm } from "@/components/calendar/day-note-form";
+import { DayScreenshots } from "@/components/calendar/day-screenshots";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { UnitSwitch } from "@/components/layout/toolbar";
 import { Kpi, KpiGrid } from "@/components/stats/kpi";
@@ -13,7 +14,7 @@ import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/li
 import { computeStats, dailyPnl } from "@/lib/domain/stats";
 import { getAccounts } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
-import { getDayNotes } from "@/lib/queries/journal";
+import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { longDate, money, monthName, percent, plural, rValue, tradesCount } from "@/lib/format";
 
@@ -55,6 +56,7 @@ export default async function CalendarPage({
   const dayStats = computeStats(closedOnly(dayTrades));
 
   const note = day ? notes.find((n) => n.day === day) : undefined;
+  const dayShots = day ? await getDayScreenshots(note?.id) : [];
 
   const tradingDays = days.length;
   const winningDays = days.filter((d) => d.pnl > 0).length;
@@ -161,23 +163,29 @@ export default async function CalendarPage({
       </Panel>
 
       {day && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Panel
-            title={longDate(day)}
-            description={
-              dayTrades.length > 0
-                ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnlNet, { currency, sign: true })} · ${rValue(dayStats.sumR)}`
-                : note?.noTrade
-                  ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? ` — ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
-                  : "Brak trade'ów tego dnia."
-            }
-          >
-            <TradeList
-              trades={dayTrades}
-              timezone={settings.timezone}
-              emptyText="Tego dnia nie było żadnego trade'a."
-            />
-          </Panel>
+        <div className="grid items-start gap-4 xl:grid-cols-2">
+          <div className="space-y-4">
+            <Panel
+              title={longDate(day)}
+              description={
+                dayTrades.length > 0
+                  ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnlNet, { currency, sign: true })} · ${rValue(dayStats.sumR)}`
+                  : note?.noTrade
+                    ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? ` — ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
+                    : "Brak trade'ów tego dnia."
+              }
+            >
+              <TradeList
+                trades={dayTrades}
+                timezone={settings.timezone}
+                emptyText="Tego dnia nie było żadnego trade'a."
+              />
+            </Panel>
+
+            <Panel title="Zrzuty dnia" description="Także dzień bez transakcji ma czego dowodzić.">
+              <DayScreenshots key={day} day={day} accountId={account?.id ?? null} shots={dayShots} />
+            </Panel>
+          </div>
 
           <Panel title="Notatka dnia">
             {/* Klucz z dnia: bez niego przejscie na inny dzien zostawia w polach stara tresc. */}

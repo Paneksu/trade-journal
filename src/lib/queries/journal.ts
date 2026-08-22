@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, count, eq, gte, isNull, lte } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { dayNotes, trades } from "@/lib/db/schema";
+import { dayNotes, screenshots, trades } from "@/lib/db/schema";
 import type { DayNote } from "@/lib/db/schema";
 
 /** Notatki dnia. Jeden wpis na dzien i konto. */
@@ -33,6 +33,16 @@ export async function getDayNotes(
     .from(dayNotes)
     .where(and(gte(dayNotes.day, from), lte(dayNotes.day, to), forAccount(accountId)))
     .orderBy(asc(dayNotes.day));
+}
+
+/** Zrzuty podpiete pod dzien, w kolejnosci wgrywania. */
+export async function getDayScreenshots(dayNoteId: number | null | undefined) {
+  if (!dayNoteId) return [];
+  return db
+    .select()
+    .from(screenshots)
+    .where(eq(screenshots.dayNoteId, dayNoteId))
+    .orderBy(asc(screenshots.sortOrder), asc(screenshots.id));
 }
 
 /**

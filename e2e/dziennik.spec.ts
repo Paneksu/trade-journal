@@ -327,3 +327,48 @@ test("dnia z trade'ami nie da się oznaczyć jako bez transakcji", async ({ page
   await expect(znacznik).toBeDisabled();
   await expect(page.getByText("Tego dnia są już zapisane trade'y.")).toBeVisible();
 });
+
+test("zrzut wklejony ze schowka ląduje w dniu bez transakcji", async ({ page }) => {
+  await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
+
+  const zrzut = page.getByAltText("Zrzut z dnia 2020-03-03");
+
+  // Stan wyjsciowy wymuszony, a nie zalozony - przerwany przebieg zostawia zrzut.
+  page.on("dialog", (d) => d.accept());
+  while ((await zrzut.count()) > 0) {
+    await page.getByRole("button", { name: "Usuń zrzut" }).first().click();
+    await expect(page.getByRole("button", { name: "Usuń zrzut" })).toHaveCount(
+      (await zrzut.count()) - 1,
+    );
+  }
+  await expect(zrzut).toHaveCount(0);
+
+  // Znacznik mowi, ze nasluch wklejania jest juz podpiety. Bez tego zdarzenie
+  // potrafi wyprzedzic hydratacje i przepasc bez sladu.
+  await expect(page.locator('[data-wklejanie="gotowe"]')).toBeVisible();
+
+  // Ctrl+V z platformy: zdarzenie wklejenia z plikiem, bez zapisywania go na dysk.
+  await page.evaluate(() => {
+    const png = Uint8Array.from(
+      atob(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      ),
+      (c) => c.charCodeAt(0),
+    );
+    const dane = new DataTransfer();
+    dane.items.add(new File([png], "zrzut.png", { type: "image/png" }));
+    document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dane, bubbles: true }));
+  });
+
+  await expect(zrzut).toHaveCount(1);
+
+  // Plik musi byc realnie do pobrania spod adresu, ktory trafil do miniatury.
+  const adres = await zrzut.getAttribute("src");
+  const odpowiedz = await page.request.get(adres!);
+  expect(odpowiedz.status()).toBe(200);
+  expect(odpowiedz.headers()["content-type"]).toBe("image/webp");
+
+  // Sprzatanie - test nie zostawia sladu w dzienniku.
+  await page.getByRole("button", { name: "Usuń zrzut" }).click();
+  await expect(zrzut).toHaveCount(0);
+});

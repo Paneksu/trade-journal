@@ -108,6 +108,27 @@ mianownika. To decyzja do rewizji, gdyby pauz uzbierało się dość, żeby coś
 
 ---
 
+## ADR-007 — zrzut wisi pod trade'em albo pod dniem (2026-08-21)
+
+Zrzuty dnia trafiają do tej samej tabeli `screenshots`, co zrzuty trade'a. Kolumna
+`trade_id` przestała być wymagana, doszła `day_note_id`, a warunek `screenshots_owner`
+pilnuje, żeby dokładnie jedna z nich była wypełniona. Osobna tabela oznaczałaby
+duplikat całej obsługi plików: zapisu przez sharpa, miniatur, kasowania i trasy
+serwującej z kontrolą sesji.
+
+Pliki dnia leżą w katalogu `dzien-<id>`, trade'a w `<id>`. Bez przedrostka trade 7
+i notatka dnia 7 wskazywałyby ten sam katalog. Wzorzec w `safePath` zna obie postacie
+i nic poza nimi — to nadal jedyna bariera między fragmentem adresu a dyskiem.
+
+**Wklejanie ze schowka jest główną drogą.** Nasłuch `paste` wisi na całym dokumencie,
+gdy panel dnia jest otwarty: po zrzucie z platformy nikt nie szuka najpierw pola do
+wklejenia. Nasłuch rusza dopiero po hydratacji, więc strefa mówi wprost, czy jest
+gotowa — inaczej pierwsze Ctrl+V po wejściu na stronę przepadałoby bez śladu.
+
+Zrzut wgrywa się bez zapisywania notatki: pusty wpis dnia powstaje sam, jeśli trzeba.
+
+---
+
 ## Odstępstwo — Lighthouse SEO 60 (2026-08-21)
 
 Bramka publikacji wymaga ≥ 90 w czterech kategoriach. Ta aplikacja ma **60 w SEO**
