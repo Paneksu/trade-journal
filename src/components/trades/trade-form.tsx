@@ -62,6 +62,8 @@ export type TradeFormValues = {
   contracts?: string;
   stopLoss?: string;
   takeProfit?: string;
+  /** Kwota z rachunku brokera, w walucie konta - nie w centach. */
+  brokerAmount?: string;
   mae?: string;
   mfe?: string;
   note?: string;
@@ -138,7 +140,7 @@ export function TradeForm({
   const [exitPrice, setExitPrice] = useState(values.exitPrice ?? "");
   const [contracts, setContracts] = useState(values.contracts ?? "1");
   const [stopLoss, setStopLoss] = useState(values.stopLoss ?? "");
-  const [netTarget, setNetTarget] = useState("");
+  const [netTarget, setNetTarget] = useState(values.brokerAmount ?? "");
   const [showExtras, setShowExtras] = useState(Boolean(values.mae || values.mfe));
 
   const account = accounts.find((k) => k.id === accountId) ?? accounts[0];
@@ -166,8 +168,17 @@ export function TradeForm({
     };
   }, [instrument]);
 
-  /* Cena wyjscia wyliczona z wpisanego wyniku. Jednokierunkowe: liczy sie
-     tylko z netTarget w dol do exitPrice, nigdy odwrotnie - inaczej byloby kolo. */
+  /* Kwota z brokera w centach. Ta sama zamiana co w akcji zapisu
+     (actions/trades.ts) - inaczej podglad klamalby wobec bazy. */
+  const brokerCents = useMemo(() => {
+    const n = parse(netTarget);
+    return n === null ? null : Math.round(n * 100);
+  }, [netTarget]);
+
+  /* Cena wyjscia wyliczona z wpisanej kwoty. Jednokierunkowe: liczy sie
+     tylko z kwoty w dol do exitPrice, nigdy odwrotnie - inaczej byloby kolo.
+     Kwota zostaje wynikiem trade'a (ADR-016), cena jest tylko jej odwzorowaniem
+     na siatce tickow. */
   const derivedExit = useMemo(() => {
     if (!spec || netTarget.trim() === "") return null;
     const entry = parse(entryPrice);
@@ -214,8 +225,9 @@ export function TradeForm({
       mfe: null,
       entryTime: new Date(),
       exitTime: parse(effectiveExit) === null ? null : new Date(),
+      brokerAmount: brokerCents,
     });
-  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss]);
+  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss, brokerCents]);
 
   /* Kategoria (zysk/strata/be) liczona tym samym `wynikTrade`, co statystyki -
      zeby podglad w formularzu nigdy nie klamal wobec tego, co pokaze tabela
@@ -229,22 +241,22 @@ export function TradeForm({
   }, [preview, contracts, progi]);
 
   /* Komunikat pod polem kwoty - cisza nie jest opcja, uzytkownik ma wiedziec,
-     dlaczego cena sie nie policzyla albo o ile odbiega od wpisanej kwoty.
-     Powod nazywamy po imieniu: inaczej przy zlej kwocie dostaje instrukcje
-     dotyczaca pol, ktorych nie tknal. */
+     dlaczego cena sie nie policzyla albo jaka cena wejdzie do zapisu. Powod
+     nazywamy po imieniu: inaczej przy zlej kwocie dostaje instrukcje dotyczaca
+     pol, ktorych nie tknal. O roznicy wobec siatki tickow juz nie mowimy -
+     od ADR-016 to kwota jest wynikiem, a cena tylko jej przyblizeniem. */
   const netTargetMessage = useMemo(() => {
     if (netTarget.trim() === "") return null;
-    if (parse(netTarget) === null) return "Nie umiem odczytać tej kwoty.";
+    if (brokerCents === null) return "Nie umiem odczytać tej kwoty.";
     if (!derivedExit) return "Podaj cenę wejścia i liczbę kontraktów.";
-    if (derivedExit.diff === 0) return null;
-    const kierunek = derivedExit.diff > 0 ? "więcej" : "mniej";
     // Cena z przecinkiem dziesietnym, ale bez `price` - to obcieloby miejsca
     // po przecinku, gdy cena wejscia jest dokladniejsza niz tick instrumentu.
     const cena = String(derivedExit.exitPrice).replace(".", ",");
-    return `Cena na siatce ticków to ${cena}, co daje wynik ${money(derivedExit.pnl, {
-      currency,
-    })}, czyli o ${money(Math.abs(derivedExit.diff), { currency })} ${kierunek} niż wpisane.`;
-  }, [netTarget, derivedExit, currency]);
+    return `Cena wyjścia na siatce ticków: ${cena}. W wyniku i statystykach liczy się wpisane ${money(
+      brokerCents,
+      { currency },
+    )}.`;
+  }, [netTarget, brokerCents, derivedExit, currency]);
 
   /** Ile kontraktow zmiesci sie w domyslnym ryzyku konta. */
   const suggestedSize = useMemo(() => {
@@ -444,22 +456,24 @@ export function TradeForm({
                   defaultValue={values.takeProfit ?? ""}
                 />
               </div>
-              {/* Pole bez atrybutu name - do zapisu idzie tylko wyliczona cena wyjscia.
-                  Stoi pod cena wyjscia, bo z niej korzysta. */}
+              {/* Kwota z rachunku brokera idzie do zapisu i to ona jest wynikiem
+                  trade'a (ADR-016). Cena wyjscia liczy sie z niej, nie odwrotnie,
+                  wiec pole stoi tuz pod cena. */}
               <div className="space-y-1.5">
-                <Label htmlFor="netTarget" hint="Wynik trade'a">
+                <Label htmlFor="brokerAmount" hint="Ta kwota jest wynikiem">
                   Kwota z brokera ({currency})
                 </Label>
                 <Input
-                  id="netTarget"
+                  id="brokerAmount"
+                  name="brokerAmount"
                   inputMode="decimal"
                   placeholder="policzy cenę wyjścia"
                   value={netTarget}
                   onChange={(e) => setNetTarget(e.target.value)}
-                  aria-describedby={netTargetMessage ? "netTarget-hint" : undefined}
+                  aria-describedby={netTargetMessage ? "brokerAmount-hint" : undefined}
                 />
                 {netTargetMessage && (
-                  <p id="netTarget-hint" className="text-xs text-faint">
+                  <p id="brokerAmount-hint" className="text-xs text-faint">
                     {netTargetMessage}
                   </p>
                 )}

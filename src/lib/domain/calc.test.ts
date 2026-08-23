@@ -201,6 +201,53 @@ describe("czas rynkowy", () => {
   });
 });
 
+describe("computeTrade - kwota z brokera bije siatke tickow (ADR-016)", () => {
+  /* Przypadek z zycia: NQ ma tick 5,00 USD na kontrakt, wiec 116,00 USD nie
+     lezy na siatce - cena wyjscia wypada tam, gdzie daloby 117,00 USD. Wynikiem
+     ma byc to, co pokazuje rachunek, czyli 116,00 USD. */
+  const w = computeTrade(
+    input({ contracts: 0.9, entryPrice: 12, exitPrice: 18.5, stopLoss: 8, brokerAmount: 11600 }),
+  );
+
+  it("zapisuje kwote z rachunku jako wynik", () => {
+    expect(w.pnl).toBe(11600);
+  });
+
+  it("nie rusza tickow - te opisuja ruch ceny, nie pieniadze", () => {
+    expect(w.ticks).toBe(26);
+  });
+
+  it("liczy R z kwoty z rachunku", () => {
+    // Ryzyko: 4 pkt = 16 tickow * 5,00 USD * 0,9 kontraktu = 72,00 USD.
+    expect(w.riskAmount).toBe(7200);
+    expect(w.rMultiple).toBeCloseTo(11600 / 7200, 10);
+  });
+
+  it("zero jest kwota, nie brakiem kwoty", () => {
+    const zero = computeTrade(input({ brokerAmount: 0 }));
+    expect(zero.pnl).toBe(0);
+    expect(zero.rMultiple).toBe(0);
+  });
+
+  it("kwota ujemna daje strate", () => {
+    const strata = computeTrade(input({ brokerAmount: -4500 }));
+    expect(strata.pnl).toBe(-4500);
+    expect(strata.rMultiple).toBeLessThan(0);
+  });
+
+  it("pozycja otwarta nie ma wyniku, nawet z podana kwota", () => {
+    const otwarta = computeTrade(
+      input({ exitPrice: null, exitTime: null, brokerAmount: 11600 }),
+    );
+    expect(otwarta.pnl).toBeNull();
+    expect(otwarta.rMultiple).toBeNull();
+  });
+
+  it("bez kwoty liczy po staremu, z tickow", () => {
+    expect(computeTrade(input({ brokerAmount: null })).pnl).toBe(computeTrade(input()).pnl);
+  });
+});
+
 describe("exitPriceForAmount", () => {
   it("long na NQ, kwota rowna na tick - wraca przez computeTrade co do centa", () => {
     const r = exitPriceForAmount({

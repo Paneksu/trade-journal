@@ -233,7 +233,9 @@ test("dziennik nie wpuszcza bez hasła", async ({ browser }) => {
   await czysty.close();
 });
 
-test("wpisana kwota z brokera wylicza cenę wyjścia i zgadza się z podglądem", async ({ page }) => {
+test("kwota z brokera jest wynikiem, a cena wyjścia się do niej dopasowuje", async ({
+  page,
+}) => {
   await page.goto("/trades/new");
 
   await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
@@ -243,72 +245,87 @@ test("wpisana kwota z brokera wylicza cenę wyjścia i zgadza się z podglądem"
   await page.locator("#exitTime").fill("2026-05-12T16:17");
 
   const exit = page.locator("#exitPrice");
-  const netto = page.locator("#netTarget");
+  const kwota = page.locator("#brokerAmount");
+  const hint = page.locator("#brokerAmount-hint");
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
 
-  // Trafienie co do centa: 25 tickow po 10 USD na 2 kontraktach = 250.
-  await netto.fill("250");
+  // Kwota lezaca na siatce: 25 tickow po 10 USD na 2 kontraktach = 250.
+  await kwota.fill("250");
   await expect(exit).toHaveValue("20006.25");
   await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
-  await expect(page.locator("#netTarget-hint")).toHaveCount(0);
+  await expect(hint).toContainText("20006,25");
 
-  // Kwota miedzy tickami: zaokraglenie w gore i komunikat o roznicy.
-  await netto.fill("255");
+  // Kwota miedzy tickami (ADR-016): cena idzie na najblizszy tick, ale wynik
+  // zostaje taki, jak wpisany - siatka nie ma prawa dopisac uzytkownikowi 5 USD.
+  await kwota.fill("255");
   await expect(exit).toHaveValue("20006.5");
-  await expect(page.locator("#netTarget-hint")).toContainText("więcej");
-  await expect(podglad.getByText(/\+260,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText(/\+255,00\s?USD/)).toBeVisible();
+  await expect(hint).toContainText("liczy się wpisane 255,00");
+  await expect(hint).not.toContainText("więcej");
 
   // Zmiana liczby kontraktow przelicza cene bez ruszania pola kwoty.
   await page.locator("#contracts").fill("1");
-  await expect(netto).toHaveValue("255");
+  await expect(kwota).toHaveValue("255");
   await expect(exit).toHaveValue("20012.75");
   await expect(podglad.getByText(/\+255,00\s?USD/)).toBeVisible();
 
   // Short liczy w druga strone.
   await page.locator("#contracts").fill("2");
   await page.getByText("Short", { exact: true }).click();
-  await netto.fill("250");
+  await kwota.fill("250");
   await expect(exit).toHaveValue("19993.75");
   await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
   await page.getByText("Long", { exact: true }).click();
 
   // Strata: cena po przeciwnej stronie wejscia.
-  await netto.fill("-250");
+  await kwota.fill("-250");
   await expect(exit).toHaveValue("19993.75");
   await expect(podglad.getByText(/−250,00\s?USD/)).toBeVisible();
 
   // Nieczytelna kwota nazywa powod po imieniu, nie odsyla do innych pol.
-  await netto.fill("−");
-  await expect(page.locator("#netTarget-hint")).toContainText("Nie umiem odczytać");
+  await kwota.fill("−");
+  await expect(hint).toContainText("Nie umiem odczytać");
 
   // Brak ceny wejscia: komunikat zamiast ciszy, a pole ceny wyjscia PUSTE.
   // Cichy powrot do poprzedniej ceny zapisalby liczbe wbrew komunikatowi.
-  await netto.fill("250");
+  await kwota.fill("250");
   await page.locator("#entryPrice").fill("");
-  await expect(page.locator("#netTarget-hint")).toContainText("Podaj cenę wejścia");
+  await expect(hint).toContainText("Podaj cenę wejścia");
   await expect(exit).toHaveValue("");
   await page.locator("#entryPrice").fill("20000");
   await expect(exit).toHaveValue("20006.25");
 
   // Reczna edycja ceny gasi wyliczenie.
   await exit.fill("20010");
-  await expect(netto).toHaveValue("");
+  await expect(kwota).toHaveValue("");
   await expect(exit).toHaveValue("20010");
 
   // Skasowanie kwoty przywraca ostatnia reczna cene - kwota jest nakladka,
   // nie kasuje tego, co uzytkownik wpisal sam.
-  await netto.fill("250");
+  await kwota.fill("250");
   await expect(exit).toHaveValue("20006.25");
-  await netto.fill("");
+  await kwota.fill("");
   await expect(exit).toHaveValue("20010");
 
-  // Powrot do kwoty i zapis - karta trade'a musi pokazac te sama liczbe.
-  await netto.fill("250");
-  await expect(exit).toHaveValue("20006.25");
+  // Zapis kwoty spoza siatki - karta trade'a musi pokazac ja, nie 260,00.
+  await kwota.fill("255");
+  await expect(exit).toHaveValue("20006.5");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
 
   await expect(page).toHaveURL(/\/trades\/\d+$/);
-  await expect(page.getByText(/\+250,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText(/\+255,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText(/\+260,00\s?USD/)).toHaveCount(0);
+
+  // Edycja wraca z wypelniona kwota, a jej skasowanie oddaje wynik siatce.
+  const adres = page.url();
+  await page.goto(`${adres}/edit`);
+  await expect(page.locator("#brokerAmount")).toHaveValue("255");
+  await expect(page.locator("#exitPrice")).toHaveValue("20006.5");
+
+  await page.locator("#brokerAmount").fill("");
+  await page.getByRole("button", { name: "Zapisz zmiany" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+  await expect(page.getByText(/\+260,00\s?USD/).first()).toBeVisible();
 });
 
 test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async ({ page }) => {

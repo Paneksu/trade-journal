@@ -80,6 +80,8 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           contracts: String(Number(trade.contracts)),
           stopLoss: trade.stopLoss ? String(Number(trade.stopLoss)) : "",
           takeProfit: trade.takeProfit ? String(Number(trade.takeProfit)) : "",
+          // Centy z bazy z powrotem na kwote, jaka uzytkownik wpisal (ADR-016).
+          brokerAmount: trade.brokerAmount === null ? "" : String(trade.brokerAmount / 100),
           mae: trade.mae ? String(Number(trade.mae)) : "",
           mfe: trade.mfe ? String(Number(trade.mfe)) : "",
           note: trade.note ?? "",

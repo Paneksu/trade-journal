@@ -64,6 +64,13 @@
       "when": 1787530000000,
       "tag": "0008_interwal_zrzutu",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787540000000,
+      "tag": "0009_kwota_brokera",
+      "breakpoints": true
     }
   ]
 }

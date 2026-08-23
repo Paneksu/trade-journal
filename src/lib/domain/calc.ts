@@ -9,6 +9,8 @@
  * - kwoty w centach jako liczby calkowite
  * - ruch ceny liczymy w tickach, bo tylko to jest odporne na blad zmiennoprzecinkowy
  * - ryzyko liczymy z odleglosci do stopa; R liczymy z wyniku (prowizja poza modelem, patrz ADR-010)
+ * - kwota z brokera, gdy podana, bije siatke tickow: to rachunek jest faktem,
+ *   a model tickowy tylko przyblizeniem (ADR-016)
  */
 
 export type Direction = "long" | "short";
@@ -40,6 +42,12 @@ export type TradeInput = {
   mfe: number | null;
   entryTime: Date;
   exitTime: Date | null;
+  /**
+   * Faktyczny wynik z rachunku brokera, w centach. Gdy podany, jest wynikiem
+   * trade'a zamiast kwoty policzonej z tickow (ADR-016). Zero jest poprawna
+   * wartoscia - break even u brokera - wiec sprawdzamy `null`, nie falsy.
+   */
+  brokerAmount?: number | null;
 };
 
 export type TradeResult = {
@@ -225,7 +233,17 @@ export function computeTrade(t: TradeInput): TradeResult {
   const ticks =
     t.exitPrice === null ? null : moveInTicks(direction, t.entryPrice, t.exitPrice, i.tickSize);
 
-  const pnl = ticks === null ? null : amountFromTicks(ticks, i.tickValue, contracts);
+  /* Kwota z brokera wygrywa z siatka tickow (ADR-016): tick NQ ma 5 USD, wiec
+     wynik 116 USD nie lezy na siatce, a to on jest prawda o rachunku. Ticki
+     zostaja policzone z ceny - opisuja ruch, nie pieniadze. Brak ceny wyjscia
+     to pozycja otwarta i zaden wynik, nawet z podana kwota. */
+  const brokerAmount = t.brokerAmount ?? null;
+  const pnl =
+    ticks === null
+      ? null
+      : brokerAmount !== null
+        ? brokerAmount
+        : amountFromTicks(ticks, i.tickValue, contracts);
 
   // Ryzyko: odleglosc do stopa. Stop rowny cenie wejscia nie definiuje ryzyka -
   // wtedy R po prostu nie istnieje.

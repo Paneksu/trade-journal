@@ -246,7 +246,8 @@ odejmować.
 
 Pole „Kwota z brokera" w formularzu trade'a zostaje - to nadal wygodny
 sposób wpisania wyniku bez liczenia ceny wyjścia ręcznie, tylko przestało
-być kwotą „po prowizji".
+być kwotą „po prowizji". (Rola tego pola zmieniła się później — ADR-016:
+kwota nie podpowiada już wyniku, tylko nim jest.)
 
 ---
 
@@ -485,3 +486,44 @@ w audycie dostępności `trades-table.tsx`. Tło pod tekstem musi być
 nieprzezroczyste, bo leży na dowolnym, nieprzewidywalnym fragmencie zdjęcia
 wykresu — półprzezroczyste tło (jak przy przycisku kosza obok, `bg-bg/80`)
 dawałoby nieprzewidywalny kontrast zależny od tego, co akurat jest pod spodem.
+
+---
+
+## ADR-016 — kwota z brokera jest wynikiem (2026-08-23)
+
+Pole „Kwota z brokera" było do tej pory wyłącznie kalkulatorem: nie miało
+atrybutu `name`, nie trafiało do bazy, a jedyne, co robiło, to przez
+`exitPriceForAmount` wyliczało cenę wyjścia na najbliższym ticku. Wynik
+zapisywał się potem z tej ceny. Przy NQ tick to 5,00 USD na kontrakt, więc
+wpisane 116,00 USD zapisywało się jako 117,00 USD, a formularz jeszcze
+ostrzegał, że kwota „nie zgadza się" z siatką. Ostrzegał w złą stronę:
+faktem jest rachunek brokera, a model tickowy tylko jego przybliżeniem.
+
+**Kwota, gdy podana, jest wynikiem.** `computeTrade` przyjmuje
+`brokerAmount` (centy) i zwraca go jako `pnl` zamiast kwoty z ticków.
+Ponieważ `rMultiple` liczy się z `pnl`, a `wynikTrade` (ADR-011) też,
+kategoria zysk/strata/BE i R idą za kwotą same z siebie — bez rozgałęzień
+w statystykach. Statystyki, filtry SQL i wykresy czytają dalej `trades.pnl`
+i o zmianie nic nie wiedzą; to była główna przesłanka za tym kształtem
+zamiast `COALESCE` rozsianego po sześciu zapytaniach.
+
+**Ticki zostają z ceny.** Opisują ruch rynku, nie pieniądze — 26 ticków to
+26 ticków, niezależnie od tego, ile broker naliczył prowizji, poślizgu czy
+częściowych wypełnień. To właśnie ta różnica jest treścią pola.
+
+**Osobna kolumna `broker_amount`** (migracja `drizzle/0009_kwota_brokera.sql`)
+trzyma ślad, że wynik pochodzi z rachunku, a nie z siatki. Bez niej nie dałoby
+się odróżnić obu przypadków ani wrócić do edycji z wypełnionym polem, a
+wyczyszczenie kwoty nie miałoby jak przywrócić wyniku z ticków. Zapisujemy ją
+zawsze jawnie, także jako `null` — pominięcie klucza w `set()` zostawiłoby
+w edycji starą kwotę. Zero jest poprawną wartością (break even u brokera),
+więc wszędzie sprawdzamy `null`, nigdy „falsy".
+
+**Bez backfillu.** Stare trade'y mają `broker_amount = NULL` i zachowują
+swój wynik z ticków. Nie ma z czego odtworzyć kwot, których nikt nie zapisał.
+
+**Komunikat pod polem** przestał mówić „o 1,00 USD więcej niż wpisane" —
+mówi, jaka cena wyjścia wejdzie do zapisu, i przypomina, że w statystykach
+liczy się wpisana kwota. Różnica `diff` z `exitPriceForAmount` nie jest już
+błędem do zgłoszenia, tylko normalnym skutkiem tego, że ceny chodzą po tickach,
+a pieniądze nie.

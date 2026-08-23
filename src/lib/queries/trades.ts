@@ -64,6 +64,7 @@ const columns = {
   weekday: trades.weekday,
   entryHour: trades.entryHour,
   tradingDay: trades.tradingDay,
+  brokerAmount: trades.brokerAmount,
   createdAt: trades.createdAt,
 };
 
@@ -83,6 +84,8 @@ export type TradeRecord = TradeForAnalysis & {
   backtestSessionName: string | null;
   ticks: number | null;
   riskTicks: number | null;
+  /** Kwota z rachunku brokera w centach albo null, gdy wynik jest z tickow (ADR-016). */
+  brokerAmount: number | null;
   rulesMetIds: string[];
   screenshotCount: number;
 };
@@ -155,6 +158,7 @@ function build(row: Row, rowTags: TagRow[], screenshotCount: number, progi: Prog
     backtestSessionName: row.backtestSessionName,
     ticks: row.ticks,
     riskTicks: row.riskTicks,
+    brokerAmount: row.brokerAmount === null ? null : Number(row.brokerAmount),
     rulesMetIds: met,
     screenshotCount,
   };

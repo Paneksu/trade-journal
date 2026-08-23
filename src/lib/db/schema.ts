@@ -235,6 +235,12 @@ export const trades = pgTable(
     entryHour: smallint(),
     tradingDay: date(),
 
+    /* Kwota z rachunku brokera w centach - wpisana recznie, nie wyliczona.
+       Gdy nie jest NULL, `pnl` jest jej kopia (ADR-016). Trzymamy ja osobno,
+       zeby dalo sie odroznic wynik z rachunku od wyniku z siatki tickow
+       i zeby formularz w edycji wracal z wypelnionym polem. */
+    brokerAmount: bigint({ mode: "number" }),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },

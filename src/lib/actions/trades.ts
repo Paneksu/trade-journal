@@ -116,6 +116,16 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const mae = number(data, "mae");
   const mfe = number(data, "mfe");
 
+  /* Kwota z rachunku brokera - gdy podana, jest wynikiem trade'a zamiast
+     kwoty z siatki tickow (ADR-016). Zamiana na centy taka sama jak w
+     podgladzie formularza, inaczej panel klamalby wobec bazy. Otwarta
+     pozycja wyniku nie ma, wiec kwota jej nie dotyczy. */
+  const brokerRaw = number(data, "brokerAmount");
+  const brokerAmount =
+    status === "closed" && exitPrice !== null && brokerRaw !== null
+      ? Math.round(brokerRaw * 100)
+      : null;
+
   const result = computeTrade({
     instrument: instrumentSpec(instrument),
     direction,
@@ -128,6 +138,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     mfe,
     entryTime,
     exitTime: status === "closed" ? exitTime : null,
+    brokerAmount,
   });
 
   // --- pola wlasne ---
@@ -175,6 +186,9 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     weekday: result.weekday,
     entryHour: result.entryHour,
     tradingDay: result.tradingDay,
+    // Zawsze jawnie, takze jako null: pominiecie klucza zostawiloby w edycji
+    // stara kwote i wynik rozjechalby sie z wyczyszczonym polem.
+    brokerAmount,
     updatedAt: new Date(),
   };
 
