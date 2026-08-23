@@ -57,18 +57,37 @@ export const INSTRUMENTS: InstrumentSeed[] = [
 // Kategoria "timeframe" zniknela (ADR-013) - interwal jest teraz atrybutem
 // kazdego przypisania tagu, nie osobnym tagiem. Patrz lib/domain/interwaly.ts
 // i migracja drizzle/0007_interwal_przy_tagu.sql.
+//
+// Kategoria "market" (warunki rynkowe) zniknela w ADR-017, a dawny "setup"
+// stal sie "confluence": tagi opisuja przeslanki wejscia, nie nazwe zagrania.
+// Podzial na HTF i LTF wynika z interwalu przypisania, wiec nie ma tu i nie ma
+// byc osobnych kategorii na warstwy. Patrz drizzle/0010_konfluencje.sql.
 export const TAG_CATEGORIES = [
-  { key: "setup", name: "Setup", description: "Rodzaj zagrania, które rozpoznałeś.", sortOrder: 10 },
-  { key: "mistake", name: "Błąd", description: "Co poszło nie tak po Twojej stronie.", sortOrder: 20 },
-  { key: "market", name: "Warunki rynkowe", description: "Charakter rynku w chwili wejścia.", sortOrder: 30 },
+  {
+    key: "confluence",
+    name: "Konfluencje",
+    description:
+      "Przesłanki, które złożyły się na wejście. Interwał wybierasz osobno dla każdej — z niego wynika podział na HTF i LTF.",
+    sortOrder: 10,
+  },
+  {
+    key: "setup",
+    name: "Setup",
+    description: "Nazwa całego zagrania, np. „Silver Bullet”. Bez interwału.",
+    sortOrder: 20,
+  },
+  { key: "mistake", name: "Błąd", description: "Co poszło nie tak po Twojej stronie.", sortOrder: 30 },
 ];
 
+// Kategoria "setup" celowo zostaje pusta: nikt poza uzytkownikiem nie wie,
+// jak on nazywa swoje zagrania, a zasiew podpowiadajacy cudze nazwy tylko
+// zasmieca liste.
 export const TAGS: { category: string; name: string; color: string }[] = [
-  { category: "setup", name: "wybicie", color: "#e8a44c" },
-  { category: "setup", name: "powrót do średniej", color: "#5aa9e6" },
-  { category: "setup", name: "kontynuacja trendu", color: "#46c08b" },
-  { category: "setup", name: "odwrócenie", color: "#b98ce0" },
-  { category: "setup", name: "otwarcie sesji", color: "#4fd1c5" },
+  { category: "confluence", name: "wybicie", color: "#e8a44c" },
+  { category: "confluence", name: "powrót do średniej", color: "#5aa9e6" },
+  { category: "confluence", name: "kontynuacja trendu", color: "#46c08b" },
+  { category: "confluence", name: "odwrócenie", color: "#b98ce0" },
+  { category: "confluence", name: "otwarcie sesji", color: "#4fd1c5" },
 
   { category: "mistake", name: "wejście za wcześnie", color: "#e5654f" },
   { category: "mistake", name: "wejście za późno", color: "#e5654f" },
@@ -76,11 +95,6 @@ export const TAGS: { category: string; name: string; color: string }[] = [
   { category: "mistake", name: "za wczesne wyjście", color: "#e5654f" },
   { category: "mistake", name: "brak planu", color: "#e5654f" },
   { category: "mistake", name: "za duża pozycja", color: "#e5654f" },
-
-  { category: "market", name: "trend", color: "#8fa3b8" },
-  { category: "market", name: "konsolidacja", color: "#8fa3b8" },
-  { category: "market", name: "wysoka zmienność", color: "#8fa3b8" },
-  { category: "market", name: "dane makro", color: "#8fa3b8" },
 ];
 
 export const CUSTOM_FIELDS = [

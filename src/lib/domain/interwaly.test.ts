@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { czyInterwal, INTERWALY, porzadekInterwalu, sparujZInterwalami } from "./interwaly";
+import {
+  czyHTF,
+  czyInterwal,
+  INTERWALY,
+  interwalyWarstwy,
+  porzadekInterwalu,
+  PROG_HTF,
+  sparujZInterwalami,
+  warstwaInterwalu,
+  warstwaLub,
+} from "./interwaly";
 
 describe("czyInterwal", () => {
   it("przyjmuje kazda wartosc z listy", () => {
@@ -33,6 +43,42 @@ describe("porzadekInterwalu", () => {
       (a, b) => porzadekInterwalu(a) - porzadekInterwalu(b),
     );
     expect(posortowane).toEqual(INTERWALY);
+  });
+});
+
+describe("warstwaInterwalu", () => {
+  it("prog jest domkniety od dolu - 1h to juz HTF", () => {
+    expect(warstwaInterwalu(PROG_HTF)).toBe("HTF");
+    expect(warstwaInterwalu("30m")).toBe("LTF");
+  });
+
+  it("kazdy interwal nalezy do dokladnie jednej warstwy", () => {
+    const htf = interwalyWarstwy("HTF");
+    const ltf = interwalyWarstwy("LTF");
+    expect([...ltf, ...htf]).toHaveLength(INTERWALY.length);
+    expect(htf.filter((w) => ltf.includes(w))).toEqual([]);
+  });
+
+  it("podzial idzie po kolejnosci listy, nie po literach nazwy", () => {
+    // "4h" wypada w HTF mimo ze zaczyna sie od cyfry mniejszej niz "30m".
+    expect(interwalyWarstwy("HTF")).toEqual(["1h", "4h", "D", "W", "M"]);
+    expect(interwalyWarstwy("LTF")).toEqual(["30s", "1m", "2m", "3m", "4m", "5m", "15m", "30m"]);
+  });
+});
+
+describe("warstwaLub", () => {
+  it("brak interwalu nie nalezy do zadnej warstwy", () => {
+    // Tag Setup albo Blad nie ma skali czasu - udawanie warstwy domyslnej
+    // wrzucaloby go do statystyk HTF albo LTF bez podstawy.
+    expect(warstwaLub(null)).toBeNull();
+    expect(warstwaLub("")).toBeNull();
+    expect(warstwaLub("7m")).toBeNull();
+  });
+
+  it("czyHTF nie myli braku danych z LTF", () => {
+    expect(czyHTF("4h")).toBe(true);
+    expect(czyHTF("5m")).toBe(false);
+    expect(czyHTF(null)).toBe(false);
   });
 });
 

@@ -1,7 +1,14 @@
 import { and, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import { trades } from "@/lib/db/schema";
-import { czyInterwal } from "@/lib/domain/interwaly";
+import { czyInterwal, czyWarstwa, interwalyWarstwy, type Warstwa } from "@/lib/domain/interwaly";
+import {
+  czyPowod,
+  czyWariantKierunku,
+  sqlKierunek,
+  type PowodZlejEgzekucji,
+  type WariantKierunku,
+} from "@/lib/domain/kierunek";
 import { sqlWynik, type Progi, type Wynik } from "@/lib/domain/outcome";
 
 /**
@@ -19,6 +26,18 @@ export type Filters = {
   tags: number[];
   /** Interwal przypisania tagu (ADR-013), nie interwal instrumentu. */
   intervals: string[];
+  /** Warstwa analizy wyprowadzona z interwalu przypisania (ADR-017). */
+  layers: Warstwa[];
+  /** Trafnosc kierunku (ADR-018). "nieocenione" to osobny stan, nie brak filtru. */
+  directionHit: WariantKierunku | null;
+  reasons: PowodZlejEgzekucji[];
+  /**
+   * Zrzuty: `true` = tylko ze zrzutem, `false` = tylko bez zrzutu, `null` = bez
+   * filtru. Trzy stany, nie dwa - inaczej opcja "tylko bez zrzutu" w pasku
+   * filtrow nie mialaby jak istniec. Galeria ustawia `true`, gdy parametru
+   * nie ma w adresie w ogole; jawne `zezrzutem=wszystko` to zdejmuje.
+   */
+  withShots: boolean | null;
   direction: "long" | "short" | null;
   status: string | null;
   sessions: string[];
@@ -38,6 +57,10 @@ export const EMPTY_FILTERS: Filters = {
   strategies: [],
   tags: [],
   intervals: [],
+  layers: [],
+  directionHit: null,
+  reasons: [],
+  withShots: null,
   direction: null,
   status: null,
   sessions: [],
@@ -80,6 +103,8 @@ export function parseFilters(p: SearchParams): Filters {
   const session = one("sesja");
   const direction = one("kierunek");
   const outcome = one("wynik");
+  const directionHit = one("kierunek_ok");
+  const zrzuty = one("zezrzutem");
 
   return {
     from: one("od"),
@@ -89,6 +114,10 @@ export function parseFilters(p: SearchParams): Filters {
     strategies: numbers(p.strategia),
     tags: numbers(p.tag),
     intervals: texts(p.interwal).filter(czyInterwal),
+    layers: texts(p.warstwa).filter(czyWarstwa),
+    directionHit: czyWariantKierunku(directionHit) ? directionHit : null,
+    reasons: texts(p.powod).filter(czyPowod),
+    withShots: zrzuty === "1" ? true : zrzuty === "0" ? false : null,
     direction: direction === "long" ? "long" : direction === "short" ? "short" : null,
     status: one("status"),
     sessions: texts(p.rynek),
@@ -114,6 +143,10 @@ export function toSearchParams(f: Filters): URLSearchParams {
   if (f.strategies.length) p.set("strategia", f.strategies.join(","));
   if (f.tags.length) p.set("tag", f.tags.join(","));
   if (f.intervals.length) p.set("interwal", f.intervals.join(","));
+  if (f.layers.length) p.set("warstwa", f.layers.join(","));
+  put("kierunek_ok", f.directionHit);
+  if (f.reasons.length) p.set("powod", f.reasons.join(","));
+  if (f.withShots !== null) p.set("zezrzutem", f.withShots ? "1" : "0");
   put("kierunek", f.direction);
   put("status", f.status);
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
@@ -135,6 +168,10 @@ export function activeFilterCount(f: Filters): number {
   if (f.strategies.length) n += 1;
   if (f.tags.length) n += 1;
   if (f.intervals.length) n += 1;
+  if (f.layers.length) n += 1;
+  if (f.directionHit) n += 1;
+  if (f.reasons.length) n += 1;
+  if (f.withShots !== null) n += 1;
   if (f.direction) n += 1;
   if (f.status) n += 1;
   if (f.sessions.length) n += 1;
@@ -200,6 +237,44 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
     w.push(
       sql`EXISTS (SELECT 1 FROM trade_tags tt WHERE tt.trade_id = ${trades.id} AND tt.interval IN (${values}))`,
     );
+  }
+
+  if (f.layers.length) {
+    // Warstwa to zbior interwalow (ADR-017), wiec ten sam ksztalt co filtr
+    // interwalu - jeden EXISTS na przypisaniach tagow.
+    const values = sql.join(
+      f.layers.flatMap((warstwa) => interwalyWarstwy(warstwa)).map((iv) => sql`${iv}`),
+      sql`, `,
+    );
+    w.push(
+      sql`EXISTS (SELECT 1 FROM trade_tags tt WHERE tt.trade_id = ${trades.id} AND tt.interval IN (${values}))`,
+    );
+  }
+
+  if (f.directionHit) {
+    // Przez `sqlKierunek`, zeby prog BE byl liczony jednym wzorem po obu
+    // stronach - inaczej filtr i etykieta rozjechalyby sie w tym samym renderze.
+    w.push(
+      sqlKierunek(
+        {
+          pnl: trades.pnl,
+          riskAmount: trades.riskAmount,
+          contracts: trades.contracts,
+          directionCorrect: trades.directionCorrect,
+        },
+        progi,
+        f.directionHit,
+      ),
+    );
+  }
+
+  if (f.reasons.length) {
+    w.push(or(...f.reasons.map((r) => sql`${trades.badExecutionReason}::text = ${r}`)));
+  }
+
+  if (f.withShots !== null) {
+    const istnieje = sql`EXISTS (SELECT 1 FROM screenshots s WHERE s.trade_id = ${trades.id})`;
+    w.push(f.withShots ? istnieje : sql`NOT ${istnieje}`);
   }
 
   for (const [key, values] of Object.entries(f.fields)) {

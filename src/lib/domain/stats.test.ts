@@ -27,6 +27,9 @@ function sample(): TradeStat[] {
     contracts: 1,
     maeR: null,
     mfeR: null,
+    directionCorrect: null,
+    badExecutionReason: null,
+    potentialR: null,
   }));
 }
 
@@ -130,6 +133,9 @@ describe("wynik BE (ADR-011)", () => {
       pnl,
       rMultiple: null,
       riskAmount: 10_000,
+      directionCorrect: null,
+      badExecutionReason: null,
+      potentialR: null,
       durationS: null,
       entryTime: new Date(2026, 2, id, 12, 0),
       tradingDay: `2026-03-${String(id).padStart(2, "0")}`,
@@ -246,5 +252,139 @@ describe("rHistogram", () => {
 
   it("pomija trade'y bez R", () => {
     expect(rHistogram(sample().map((t) => ({ ...t, rMultiple: null })))).toEqual([]);
+  });
+});
+
+describe("kierunek a egzekucja (ADR-018)", () => {
+  /** Ryzyko 10 000 centow -> prog BE 1000 centow. */
+  function t(id: number, pnl: number, extra: Partial<TradeStat> = {}): TradeStat {
+    return {
+      id,
+      pnl,
+      rMultiple: pnl / 10_000,
+      riskAmount: 10_000,
+      durationS: null,
+      entryTime: new Date(`2026-03-${String(id).padStart(2, "0")}T14:30:00Z`),
+      tradingDay: `2026-03-${String(id).padStart(2, "0")}`,
+      contracts: 1,
+      maeR: null,
+      mfeR: null,
+      directionCorrect: null,
+      badExecutionReason: null,
+      potentialR: null,
+      ...extra,
+    };
+  }
+
+  it("wygrana wchodzi do trafnosci bez zaznaczania, chybienie obniza wynik", () => {
+    const s = computeStats(
+      [
+        t(1, 20_000),
+        t(2, -10_000, { directionCorrect: true, badExecutionReason: "early_exit" }),
+        t(3, -10_000, { directionCorrect: false }),
+        t(4, -10_000), // nieocenione - poza mianownikiem
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.directionCount).toBe(3);
+    expect(s.directionHits).toBe(2);
+    expect(s.directionAccuracy).toBeCloseTo(2 / 3, 10);
+  });
+
+  it("trafnosc kierunku potrafi byc wyzsza niz skutecznosc", () => {
+    // Sedno funkcji: system z przewaga i zla reka wyglada inaczej niz system
+    // bez przewagi, mimo tego samego winrate.
+    const s = computeStats(
+      [
+        t(1, 20_000),
+        t(2, -10_000, { directionCorrect: true }),
+        t(3, -10_000, { directionCorrect: true }),
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.winRate).toBeCloseTo(1 / 3, 10);
+    expect(s.directionAccuracy).toBe(1);
+  });
+
+  it("straty techniczne to trafiony kierunek bez zysku - wygrane sie nie licza", () => {
+    const s = computeStats(
+      [
+        t(1, 20_000),
+        t(2, -10_000, { directionCorrect: true }),
+        t(3, 500, { directionCorrect: true }), // BE, nie zysk
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.technicalCount).toBe(2);
+    expect(s.technicalPnl).toBe(-9_500);
+  });
+
+  it("utracone R sumuje sie z clampem na zero per trade", () => {
+    const s = computeStats(
+      [
+        t(1, -10_000, { directionCorrect: true, potentialR: 3 }), // -1R przy potencjale 3R => 4
+        t(2, 30_000, { potentialR: 2 }), // wygrana ponad potencjal => 0, nie -1
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.lostR).toBe(4);
+    expect(s.lostRCount).toBe(2);
+  });
+
+  it("sufit systemu zostaje pusty, gdy nikt nie wpisal potencjalu", () => {
+    // Inaczej byloby to expectancyR przebrane za nowa metryke.
+    const s = computeStats([t(1, 20_000), t(2, -10_000)], DOMYSLNE_PROGI);
+    expect(s.potentialExpectancyR).toBeNull();
+    expect(s.lostR).toBe(0);
+  });
+
+  it("sufit systemu przewyzsza oczekiwana wartosc o utracone R na trade", () => {
+    const s = computeStats(
+      [
+        t(1, 10_000),
+        t(2, -10_000, { directionCorrect: true, potentialR: 3 }),
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.expectancyR).toBeCloseTo(0, 10);
+    expect(s.potentialExpectancyR).toBeCloseTo(2, 10);
+  });
+});
+
+describe("sufit systemu nigdy nie jest nizszy niz oczekiwana wartosc", () => {
+  function t(id: number, pnl: number, extra: Partial<TradeStat> = {}): TradeStat {
+    return {
+      id,
+      pnl,
+      rMultiple: null,
+      riskAmount: 10_000,
+      durationS: null,
+      entryTime: new Date(`2026-03-${String(id).padStart(2, "0")}T14:30:00Z`),
+      tradingDay: `2026-03-${String(id).padStart(2, "0")}`,
+      contracts: 1,
+      maeR: null,
+      mfeR: null,
+      directionCorrect: null,
+      badExecutionReason: null,
+      potentialR: null,
+      ...extra,
+    };
+  }
+
+  it("liczy sie tym samym mianownikiem co expectancyR, mimo trade'ow bez R", () => {
+    // Bez wspolnego mianownika trade'y bez stopa (rMultiple = null) rozwadnialy
+    // sufit i wychodzil ON PONIZEJ oczekiwanej wartosci, ktora rzekomo ogranicza.
+    const s = computeStats(
+      [
+        t(1, 10_000, { rMultiple: 1 }),
+        t(2, -10_000, { rMultiple: -1, directionCorrect: true, potentialR: 3 }),
+        t(3, 5_000, { riskAmount: null, rMultiple: null }),
+        t(4, 5_000, { riskAmount: null, rMultiple: null }),
+      ],
+      DOMYSLNE_PROGI,
+    );
+    expect(s.expectancyR).toBeCloseTo(0, 10);
+    expect(s.potentialExpectancyR).toBeCloseTo(2, 10);
+    expect(s.potentialExpectancyR!).toBeGreaterThanOrEqual(s.expectancyR!);
   });
 });

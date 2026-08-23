@@ -6,7 +6,8 @@
  * niz liczba tradeow - to celowe i tak sie te tabele czyta.
  */
 
-import { czyInterwal, porzadekInterwalu } from "./interwaly";
+import { czyInterwal, porzadekInterwalu, warstwaLub, WARSTWY, type Warstwa } from "./interwaly";
+import { POWOD_NAZWY, WARIANT_KIERUNKU_NAZWY } from "./kierunek";
 import type { Progi } from "./outcome";
 import { computeStats, type Stats } from "./stats";
 import { SESSION_NAMES, WEEKDAY_NAMES, type TradeForAnalysis } from "./types";
@@ -119,7 +120,63 @@ const BUILTIN: Record<string, Omit<Dimension, "key">> = {
     values: (t) => [...new Set(t.tags.map((tag) => tag.interval).filter((w): w is string => w !== null))],
     sortValues: (a, b) => indeksInterwalu(a) - indeksInterwalu(b),
   },
+  /* Warstwa wyprowadzona z interwalu przypisania (ADR-017), nie z osobnej
+     kategorii tagow. Trade z konfluencjami na 4h i na 5m nalezy do obu warstw -
+     tak jak przy kazdym innym wymiarze tagowym w tym module. */
+  tfLayer: {
+    label: "Warstwa TF",
+    values: (t) => [
+      ...new Set(t.tags.map((tag) => warstwaLub(tag.interval)).filter((w): w is Warstwa => w !== null)),
+    ],
+    sortValues: (a, b) => indeksWarstwy(a) - indeksWarstwy(b),
+  },
+  /* Konfluencje rozbite na warstwy. Wartoscia jest SAMA NAZWA tagu, nie
+     "FVG · 4h" - inaczej kazdy interwal tworzylby wlasny kubelek, probki
+     rozsypalyby sie na okruchy i nic nie przeszloby progu minSample.
+     Rozdzielenie na dwa wymiary jest tu calym sensem: Edge Finder porownuje
+     PARY wymiarow, wiec sam znajduje kombinacje "konfluencja HTF x LTF",
+     bez zadnej zmiany w edge-finder.ts. */
+  conf_htf: {
+    label: "Konfluencja HTF",
+    values: (t) => konfluencjeWarstwy(t, "HTF"),
+  },
+  conf_ltf: {
+    label: "Konfluencja LTF",
+    values: (t) => konfluencjeWarstwy(t, "LTF"),
+  },
+  /* Ponizsze dwa MUSZA byc outcomeDerived. Powod zlej egzekucji istnieje
+     wylacznie przy trade'ach nie-wygranych, wiec Edge Finder "odkrylby", ze
+     kontekst "powod = niepotrzebny stop" ma oczekiwana wartosc ponizej zera -
+     z definicji, a nie z obserwacji. Ta sama pulapka co przy `rrange`. */
+  badreason: {
+    label: "Powód złej egzekucji",
+    values: (t) => (t.badExecutionReason === null ? [] : [POWOD_NAZWY[t.badExecutionReason]]),
+    outcomeDerived: true,
+  },
+  directionHit: {
+    label: "Trafność kierunku",
+    values: (t) =>
+      t.kierunekTrafiony === null
+        ? []
+        : [WARIANT_KIERUNKU_NAZWY[t.kierunekTrafiony ? "tak" : "nie"]],
+    outcomeDerived: true,
+  },
 };
+
+function konfluencjeWarstwy(t: TradeForAnalysis, warstwa: Warstwa): string[] {
+  return [
+    ...new Set(
+      t.tags
+        .filter((tag) => tag.categoryKey === "confluence" && warstwaLub(tag.interval) === warstwa)
+        .map((tag) => tag.name),
+    ),
+  ];
+}
+
+function indeksWarstwy(w: string): number {
+  const i = (WARSTWY as readonly string[]).indexOf(w);
+  return i === -1 ? Number.POSITIVE_INFINITY : i;
+}
 
 /** Pozycja interwalu w kolejnosci wyswietlania; nieznana wartosc leci na koniec. */
 function indeksInterwalu(w: string): number {
@@ -136,7 +193,11 @@ export function dimension(key: string): Dimension {
     return {
       key,
       label: category,
-      values: (t) => t.tags.filter((tag) => tag.categoryKey === category).map((tag) => tag.name),
+      // `new Set` takze tutaj, blizej zrodla - `groupBy` i `bucketize` juz
+      // deduplikuja, ale wymiar bywa czytany bezposrednio (ADR-017).
+      values: (t) => [
+        ...new Set(t.tags.filter((tag) => tag.categoryKey === category).map((tag) => tag.name)),
+      ],
     };
   }
   if (key.startsWith("field:")) {
@@ -176,8 +237,9 @@ export function dimensionsForTags(categories: { key: string; name: string }[]): 
   return categories.map((k) => ({
     key: `tag:${k.key}`,
     label: k.name,
-    values: (t: TradeForAnalysis) =>
-      t.tags.filter((tag) => tag.categoryKey === k.key).map((tag) => tag.name),
+    values: (t: TradeForAnalysis) => [
+      ...new Set(t.tags.filter((tag) => tag.categoryKey === k.key).map((tag) => tag.name)),
+    ],
   }));
 }
 
@@ -192,7 +254,13 @@ export function groupBy(
   for (const t of trades) {
     const values = dim.values(t);
     const keys = values.length > 0 ? values : [UNASSIGNED];
-    for (const k of keys) {
+    // Deduplikacja na poziomie mechanizmu, nie w kazdym wymiarze z osobna
+    // (ADR-017). Ten sam tag moze wisiec na trade'cie kilka razy - raz na
+    // kazdym interwale - wiec wymiar "tag:confluence" zwroci ["FVG","FVG"].
+    // Bez `new Set` ten trade wpadlby dwa razy do TEJ SAMEJ grupy i zawyzyl
+    // count, pnl, sumR oraz skutecznosc. Bledu nikt by nie zglosil: liczby
+    // wygladaja wiarygodnie, tylko sa nieprawdziwe.
+    for (const k of new Set(keys)) {
       const list = buckets.get(k);
       if (list) list.push(t);
       else buckets.set(k, [t]);

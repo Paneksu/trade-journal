@@ -2,6 +2,7 @@ import { DailyBars, EquityChart, MaeMfeScatter, GroupBars, RHistogram } from "@/
 import { UnitSwitch, SourceSwitch } from "@/components/layout/toolbar";
 import { DimensionPicker } from "@/components/stats/dimension-picker";
 import { DisciplinePanel } from "@/components/stats/discipline-panel";
+import { KierunekPanel } from "@/components/stats/kierunek-panel";
 import { EdgeFinderPanel } from "@/components/stats/edge-finder-panel";
 import { GroupTable } from "@/components/stats/group-table";
 import { KpiRow } from "@/components/stats/kpi-row";
@@ -226,6 +227,8 @@ export default async function StatsPage({
             </Panel>
 
             <DisciplinePanel result={discipline} />
+
+            <KierunekPanel stats={stats} trades={closed} currency={currency} />
           </div>
 
           <Panel title="Pozostałe liczby">

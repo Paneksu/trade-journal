@@ -9,8 +9,10 @@ import { db } from "@/lib/db";
 import { instruments, screenshots, tradeTags, trades } from "@/lib/db/schema";
 import { computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc";
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
+import { czyPowod, normalizujKierunek } from "@/lib/domain/kierunek";
+import { wynikTrade } from "@/lib/domain/outcome";
 import { cleanValues, fieldsForScope, readFromForm, validateValues } from "@/lib/fields/fields";
-import { getFields, instrumentSpec } from "@/lib/queries/dictionaries";
+import { getFields, getProgi, instrumentSpec } from "@/lib/queries/dictionaries";
 import { deleteScreenshot, deleteTradeDir, saveScreenshot } from "@/lib/screenshots";
 import { bladLimitu } from "@/lib/screenshots-limit";
 
@@ -154,6 +156,34 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     };
   }
 
+  /* Kierunek a egzekucja (ADR-018). Normalizujemy PRZED zapisem, zeby CHECK
+     `trades_kierunek` byl siatka bezpieczenstwa, a nie sciezka, ktora
+     uzytkownik zobaczy - surowy komunikat Postgresa nic mu nie mowi.
+     Prog BE bierzemy z ustawien tym samym wzorem, co statystyki. */
+  const progiBE = await getProgi();
+  const surowyPowod = text(data, "badExecutionReason");
+  const kierunek = normalizujKierunek(
+    {
+      directionCorrect: data.get("directionCorrect") !== null,
+      badExecutionReason: czyPowod(surowyPowod) ? surowyPowod : null,
+      potentialR: number(data, "potentialR"),
+    },
+    {
+      // Brak `pnl` (trade bez ceny wyjscia) nie jest wygrana - jest brakiem
+      // rozstrzygniecia, a wtedy `oceniane` i tak jest falszem.
+      wygrana:
+        status === "closed" &&
+        result.pnl !== null &&
+        wynikTrade(
+          { pnl: result.pnl, riskAmount: result.riskAmount, contracts: contracts ?? 0 },
+          progiBE,
+        ) === "zysk",
+      // Blok renderuje sie tylko przy zamknietej stracie/BE, wiec jego brak
+      // znaczy "nie pytalismy", a nie "kierunek chybiony".
+      oceniane: status === "closed" && data.get("kierunek_oceniany") !== null,
+    },
+  );
+
   const row = {
     accountId,
     instrumentId,
@@ -172,6 +202,9 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     mfe: mfe === null ? null : String(mfe),
     note: text(data, "note"),
     executionRating: integer(data, "executionRating"),
+    directionCorrect: kierunek.directionCorrect,
+    badExecutionReason: kierunek.badExecutionReason,
+    potentialR: kierunek.potentialR === null ? null : kierunek.potentialR.toFixed(4),
     rulesMet: data.getAll("rule").map(String),
     custom: values,
     ticks: result.ticks,
@@ -202,25 +235,35 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   }
 
   // --- tagi ---
-  // Interwal siedzi w osobnym polu "tagint:<id>" obok checkboxa "tag" - nie
+  // Interwaly siedza w osobnych polach "tagint:<id>" obok checkboxa "tag" - nie
   // w jednej zakodowanej wartosci ("12:5m"), bo nazwa "tag" jest wspoldzielona
   // z filter-bar.tsx i z tagMany, ktore o interwale nic nie wiedza.
+  //
+  // Od ADR-017 jeden tag moze miec KILKA interwalow naraz - kazdy to osobny
+  // wiersz w trade_tags. Iterujemy po ZAZNACZONYCH TAGACH, nie po kluczach
+  // "tagint:*": checkbox ukryty CSS-em nadal jedzie w FormData, wiec odznaczenie
+  // tagu przy zaznaczonych chipach interwalu zostawiloby tu osierocone wiersze.
   const selectedTags = data
     .getAll("tag")
     .map((w) => Number(w))
     .filter((n) => Number.isInteger(n) && n > 0);
   await db.delete(tradeTags).where(eq(tradeTags.tradeId, savedId));
   if (selectedTags.length > 0) {
-    await db
-      .insert(tradeTags)
-      .values(
-        selectedTags.map((tagId) => {
-          const raw = data.get(`tagint:${tagId}`);
-          const interval = typeof raw === "string" && czyInterwal(raw) ? raw : null;
-          return { tradeId: savedId, tagId, interval };
-        }),
-      )
-      .onConflictDoNothing();
+    type Przypisanie = { tradeId: number; tagId: number; interval: string | null };
+    const przypisania = selectedTags.flatMap<Przypisanie>((tagId) => {
+      const interwaly = [
+        ...new Set(
+          data
+            .getAll(`tagint:${tagId}`)
+            .filter((w): w is string => typeof w === "string" && czyInterwal(w)),
+        ),
+      ];
+      // Brak wskazanego interwalu to jedno przypisanie bez skali czasu -
+      // tak dziala Setup, Blad i konfluencja, ktorej uzytkownik nie doprecyzowal.
+      if (interwaly.length === 0) return [{ tradeId: savedId, tagId, interval: null }];
+      return interwaly.map((interval) => ({ tradeId: savedId, tagId, interval }));
+    });
+    await db.insert(tradeTags).values(przypisania).onConflictDoNothing();
   }
 
   // --- zrzuty ---
@@ -382,9 +425,22 @@ export async function tagMany(tradeIds: number[], tagId: number, add: boolean): 
     // Tagowanie masowe z tabeli nie zna kontekstu pojedynczego trade'a, wiec
     // interwal przypisania zawsze zostaje pusty - uzytkownik dopowie go
     // recznie w karcie trade'a, jesli ma sens.
+    //
+    // Pomijamy trade'y, ktore ten tag juz maja - na DOWOLNYM interwale.
+    // `onConflictDoNothing` samo tego nie zalatwi: po ADR-017 unikat obejmuje
+    // takze interwal, wiec wiersz (7, FVG, null) nie koliduje z (7, FVG, '5m')
+    // i tag zdublowalby sie po cichu.
+    const juzMaja = await db
+      .select({ tradeId: tradeTags.tradeId })
+      .from(tradeTags)
+      .where(and(inArray(tradeTags.tradeId, tradeIds), eq(tradeTags.tagId, tagId)));
+    const pomin = new Set(juzMaja.map((w) => w.tradeId));
+    const doDodania = tradeIds.filter((id) => !pomin.has(id));
+    if (doDodania.length === 0) return;
+
     await db
       .insert(tradeTags)
-      .values(tradeIds.map((tradeId) => ({ tradeId, tagId, interval: null })))
+      .values(doDodania.map((tradeId) => ({ tradeId, tagId, interval: null })))
       .onConflictDoNothing();
   } else {
     await db

@@ -18,6 +18,7 @@ import { cx } from "@/lib/classes";
 import { deleteMany, tagMany } from "@/lib/actions/trades";
 import { SESSION_NAMES, TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import { formatValue, type FieldDef } from "@/lib/fields/fields";
+import { POWOD_NAZWY, type PowodZlejEgzekucji } from "@/lib/domain/kierunek";
 import { dateTime, duration, int, money, num, pnlClass, price, rValue, wynikClass } from "@/lib/format";
 import type { TradeRecord } from "@/lib/queries/trades";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
@@ -37,14 +38,25 @@ type Props = {
 
 const STORAGE_KEY = "tj-kolumny";
 
+/* Kolumny ukryte na starcie. Scalane ZE stanem z localStorage, nie zastepowane
+   nim: stary klucz `tj-kolumny` trzyma `{}`, wiec bez scalania kazda nowa
+   kolumna wskakiwalaby widoczna do tabel, ktore uzytkownik juz sobie ulozyl. */
+const DOMYSLNA_WIDOCZNOSC: VisibilityState = {
+  badExecutionReason: false,
+  potentialR: false,
+};
+
 export function TradesTable({ trades, fields, tags, timezone, currency }: Props) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "entryTime", desc: true }]);
   const [visibility, setVisibility] = useState<VisibilityState>(() => {
-    if (typeof window === "undefined") return {};
+    if (typeof window === "undefined") return DOMYSLNA_WIDOCZNOSC;
     try {
-      return JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}") as VisibilityState;
+      const zapisane = JSON.parse(
+        window.localStorage.getItem(STORAGE_KEY) ?? "{}",
+      ) as VisibilityState;
+      return { ...DOMYSLNA_WIDOCZNOSC, ...zapisane };
     } catch {
-      return {};
+      return DOMYSLNA_WIDOCZNOSC;
     }
   });
   const [selection, setSelection] = useState<Record<string, boolean>>({});
@@ -212,9 +224,11 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         enableSorting: false,
         cell: ({ row }) => (
           <span className="flex flex-wrap gap-1">
+            {/* `assignmentId`, nie `id`: ten sam tag moze wystapic kilka razy,
+                raz na kazdym interwale (ADR-017). */}
             {row.original.tags.map((tag) => (
               <Badge
-                key={tag.id}
+                key={tag.assignmentId}
                 color={tag.color}
                 title={tag.interval ? `${tag.category} · ${tag.interval}` : tag.category}
               >
@@ -232,6 +246,38 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         cell: ({ getValue }) => {
           const w = getValue() as number | null;
           return <span className="text-muted">{w === null ? "—" : `${w}/5`}</span>;
+        },
+      },
+      {
+        id: "directionCorrect",
+        accessorKey: "kierunekTrafiony",
+        header: "Kier.",
+        cell: ({ getValue }) => {
+          const w = getValue() as boolean | null;
+          if (w === null) return <span className="text-faint">—</span>;
+          return (
+            <span className={w ? "text-profit" : "text-loss"} title="Trafność kierunku">
+              {w ? "trafiony" : "chybiony"}
+            </span>
+          );
+        },
+      },
+      {
+        id: "badExecutionReason",
+        accessorKey: "badExecutionReason",
+        header: "Powód",
+        cell: ({ getValue }) => {
+          const w = getValue() as PowodZlejEgzekucji | null;
+          return <span className="text-muted">{w === null ? "—" : POWOD_NAZWY[w]}</span>;
+        },
+      },
+      {
+        id: "potentialR",
+        accessorKey: "potentialR",
+        header: "Potencjał R",
+        cell: ({ getValue }) => {
+          const w = getValue() as number | null;
+          return <span className="liczba text-muted">{rValue(w)}</span>;
         },
       },
       {

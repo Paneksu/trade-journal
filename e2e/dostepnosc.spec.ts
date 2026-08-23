@@ -16,6 +16,9 @@ const EKRANY = [
   { nazwa: "backtesting", adres: "/backtest" },
   { nazwa: "strategie", adres: "/strategies" },
   { nazwa: "nowy trade", adres: "/trades/new" },
+  /* Galeria i formularz z rozwinietymi chipami interwalow: 13 checkboxow na
+     kazda konfluencje to duzo kontrolek i kazda musi miec etykiete (ADR-017). */
+  { nazwa: "galeria", adres: "/galeria" },
   { nazwa: "ustawienia", adres: "/settings" },
   { nazwa: "pola własne", adres: "/settings/fields" },
   { nazwa: "dzień w kalendarzu", adres: "/calendar?miesiac=2020-03&dzien=2020-03-03" },

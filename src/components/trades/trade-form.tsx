@@ -25,6 +25,7 @@ import { cx } from "@/lib/classes";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { saveTrade, type FormState } from "@/lib/actions/trades";
 import { computeTrade, exitPriceForAmount, type Direction } from "@/lib/domain/calc";
+import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { FieldDef } from "@/lib/fields/fields";
 import { money, num, price, rValue, wynikClass, WYNIK_NAZWY } from "@/lib/format";
@@ -68,6 +69,10 @@ export type TradeFormValues = {
   mfe?: string;
   note?: string;
   executionRating?: number | null;
+  directionCorrect?: boolean | null;
+  badExecutionReason?: string | null;
+  /** Zasieg calego zagrania w R - nie mylic z `mfe` (ADR-018). */
+  potentialR?: string | null;
   rulesMet?: string[];
   tags?: { id: number; interval: string | null }[];
   custom?: Record<string, unknown>;
@@ -142,6 +147,10 @@ export function TradeForm({
   const [stopLoss, setStopLoss] = useState(values.stopLoss ?? "");
   const [netTarget, setNetTarget] = useState(values.brokerAmount ?? "");
   const [showExtras, setShowExtras] = useState(Boolean(values.mae || values.mfe));
+  /* Status jest tu stanem, a nie samym `defaultValue`, bo od niego zalezy, czy
+     w ogole pokazac blok kierunku (ADR-018) - pytanie "czy mialem racje mimo
+     straty" nie ma sensu przy trade'cie planowanym ani otwartym. */
+  const [status, setStatus] = useState(values.status ?? "closed");
 
   const account = accounts.find((k) => k.id === accountId) ?? accounts[0];
   const instrument = instruments.find((i) => i.id === instrumentId) ?? instruments[0];
@@ -481,7 +490,12 @@ export function TradeForm({
 
               <div className="space-y-1.5">
                 <Label htmlFor="status">Status</Label>
-                <Select id="status" name="status" defaultValue={values.status ?? "closed"}>
+                <Select
+                  id="status"
+                  name="status"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
                   <option value="closed">zamknięty</option>
                   <option value="open">otwarty</option>
                   <option value="planned">planowany</option>
@@ -601,6 +615,13 @@ export function TradeForm({
                 errors={state.fieldErrors}
               />
 
+              <BlokKierunku
+                widoczny={status === "closed" && wynik !== null && wynik !== "zysk"}
+                wygrana={status === "closed" && wynik === "zysk"}
+                values={values}
+                podpowiedzR={preview?.mfeR ?? null}
+              />
+
               <div className="space-y-1.5">
                 <Label htmlFor="note">Notatka</Label>
                 <Textarea
@@ -697,5 +718,86 @@ export function TradeForm({
         </div>
       </div>
     </form>
+  );
+}
+
+/**
+ * Kierunek trafiony mimo zlej egzekucji (ADR-018).
+ *
+ * Blok pokazuje sie WYLACZNIE przy zamknietym trade'cie, ktory nie jest
+ * zyskiem - przy wygranej pytanie nie ma sensu, bo trafnosc wynika z wyniku.
+ *
+ * Ukryte pole `kierunek_oceniany` jest tu istotne: bez niego serwer nie
+ * odroznilby "kierunek chybiony" (blok widoczny, checkbox odznaczony) od
+ * "nie pytalismy" (blok w ogole sie nie renderowal). Gdyby jedno i drugie
+ * zapisywalo `null`, mianownik trafnosci rownalby sie licznikowi i metryka
+ * zawsze pokazywalaby sto procent.
+ */
+function BlokKierunku({
+  widoczny,
+  wygrana,
+  values,
+  podpowiedzR,
+}: {
+  widoczny: boolean;
+  wygrana: boolean;
+  values: TradeFormValues;
+  podpowiedzR: number | null;
+}) {
+  if (wygrana) {
+    return (
+      <p className="text-xs text-faint">
+        Kierunek trafiony — wynika z wyniku, nie trzeba tego zaznaczać.
+      </p>
+    );
+  }
+  if (!widoczny) return null;
+
+  return (
+    <div className="space-y-2 rounded-[var(--radius-control)] border border-line bg-surface-2 p-3">
+      <input type="hidden" name="kierunek_oceniany" value="1" />
+      <label className="flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          name="directionCorrect"
+          value="1"
+          defaultChecked={values.directionCorrect === true}
+          className="peer h-4 w-4 accent-[var(--accent)]"
+        />
+        <span className="text-sm text-text">Kierunek był dobry, zawiodła egzekucja</span>
+      </label>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="badExecutionReason">Powód</Label>
+          <Select
+            id="badExecutionReason"
+            name="badExecutionReason"
+            defaultValue={values.badExecutionReason ?? ""}
+          >
+            <option value="">— nie wskazuję —</option>
+            {POWODY.map((w) => (
+              <option key={w} value={w}>
+                {POWOD_NAZWY[w]}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="potentialR">Cena doszła do (R)</Label>
+          <Input
+            id="potentialR"
+            name="potentialR"
+            inputMode="decimal"
+            defaultValue={values.potentialR ?? ""}
+            placeholder={podpowiedzR === null ? "np. 2.5" : `MFE: ${podpowiedzR.toFixed(2)}`}
+          />
+          <p className="text-xs text-faint">
+            Zasięg całego ruchu, także po Twoim wyjściu — to nie to samo co MFE.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }

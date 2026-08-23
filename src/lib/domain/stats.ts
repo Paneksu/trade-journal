@@ -12,6 +12,11 @@
  * to jedyne miejsce w module, ktore decyduje, czy trade jest wygrana.
  */
 
+import {
+  kierunekTrafiony,
+  utraconeR,
+  type PowodZlejEgzekucji,
+} from "./kierunek";
 import { wynikTrade, type Progi } from "./outcome";
 
 export type TradeStat = {
@@ -25,6 +30,13 @@ export type TradeStat = {
   contracts: number;
   maeR: number | null;
   mfeR: number | null;
+  /* Kierunek a egzekucja (ADR-018). Pola sa WYMAGANE, nie opcjonalne - dzieki
+     temu kompilator wskazuje kazda fabryke testowa i nikt nie policzy trafnosci
+     z danych, ktorych po prostu nie ma. `null` w `directionCorrect` znaczy
+     "nieocenione", `false` - "kierunek chybiony". */
+  directionCorrect: boolean | null;
+  badExecutionReason: PowodZlejEgzekucji | null;
+  potentialR: number | null;
 };
 
 export type Stats = {
@@ -57,6 +69,33 @@ export type Stats = {
   avgMaeR: number | null;
   avgMfeR: number | null;
   totalContracts: number;
+
+  /* --- Kierunek a egzekucja (ADR-018) --------------------------------------
+     Mianownikiem trafnosci sa WYLACZNIE trade'y ocenione. Nieoznaczona strata
+     to "nie wiem", nie "kierunek chybiony" - wliczanie jej zanizaloby wynik za
+     sam fakt, ze uzytkownik czegos nie przejrzal. */
+  /** Ile trade'ow ma rozstrzygniety kierunek (wygrane wliczaja sie z definicji). */
+  directionCount: number;
+  directionHits: number;
+  /** `directionHits / directionCount`; `null`, gdy nie ma czego liczyc. */
+  directionAccuracy: number | null;
+  /** Kierunek dobry, wynik zly - strata wylacznie z powodu egzekucji. */
+  technicalCount: number;
+  technicalPnl: number;
+  technicalSumR: number;
+  /** Suma R zostawionych na stole, z clampem na zero per trade. */
+  lostR: number;
+  /** Z ilu trade'ow policzono `lostR` - bez tego sama suma nic nie znaczy. */
+  lostRCount: number;
+  /**
+   * Sufit systemu: oczekiwana wartosc przy idealnej egzekucji tych samych wejsc.
+   * Mianownik to `countWithR`, ten sam co w `expectancyR` - inaczej sufit
+   * potrafi wyjsc NIZEJ od oczekiwanej wartosci, co jest bez sensu i od razu
+   * podwaza zaufanie do calego panelu.
+   */
+  potentialExpectancyR: number | null;
+  /** Zamkniete trade'y bez oceny kierunku - kontekst dla trafnosci, nie ozdoba. */
+  directionUnassessed: number;
 };
 
 export function emptyStats(): Stats {
@@ -90,6 +129,16 @@ export function emptyStats(): Stats {
     avgMaeR: null,
     avgMfeR: null,
     totalContracts: 0,
+    directionCount: 0,
+    directionHits: 0,
+    directionAccuracy: null,
+    technicalCount: 0,
+    technicalPnl: 0,
+    technicalSumR: 0,
+    lostR: 0,
+    lostRCount: 0,
+    potentialExpectancyR: null,
+    directionUnassessed: 0,
   };
 }
 
@@ -175,6 +224,24 @@ export function computeStats(list: TradeStat[], progi: Progi): Stats {
 
     s.best = s.best === null ? t.pnl : Math.max(s.best, t.pnl);
     s.worst = s.worst === null ? t.pnl : Math.min(s.worst, t.pnl);
+
+    // Kierunek a egzekucja (ADR-018) - w tym samym przejsciu, wiec kazda grupa
+    // w `groupBy` i kazdy kontekst w Edge Finderze dostaje te liczby za darmo.
+    const trafiony = kierunekTrafiony(t, progi);
+    if (trafiony !== null) {
+      s.directionCount += 1;
+      if (trafiony) s.directionHits += 1;
+    }
+    if (trafiony === true && wynik !== "zysk") {
+      s.technicalCount += 1;
+      s.technicalPnl += t.pnl;
+      s.technicalSumR += t.rMultiple ?? 0;
+    }
+    const stracone = utraconeR(t, progi);
+    if (stracone !== null) {
+      s.lostR += stracone;
+      s.lostRCount += 1;
+    }
   }
 
   s.currentStreak = winStreak > 0 ? winStreak : -lossStreak;
@@ -199,6 +266,15 @@ export function computeStats(list: TradeStat[], progi: Progi): Stats {
   s.systemQuality =
     s.expectancyR !== null && s.stdevR !== null && s.stdevR > 0 ? s.expectancyR / s.stdevR : null;
   s.breakEvenWinRate = s.payoff !== null ? 1 / (1 + s.payoff) : null;
+
+  s.directionAccuracy = s.directionCount > 0 ? s.directionHits / s.directionCount : null;
+  s.directionUnassessed = s.count - s.directionCount;
+  // Sufit liczymy tylko wtedy, gdy ktokolwiek wpisal potencjal - inaczej byloby
+  // to `expectancyR` przebrane za nowa metryke. Mianownik MUSI byc ten sam co
+  // w `expectancyR` (czyli `countWithR`, nie `count`): przy trade'ach bez R
+  // sufit wyszedlby ponizej oczekiwanej wartosci, ktora rzekomo ogranicza.
+  s.potentialExpectancyR =
+    s.lostRCount > 0 && s.countWithR > 0 ? (s.sumR + s.lostR) / s.countWithR : null;
 
   const avgDuration = mean(durations);
   s.avgDurationS = avgDuration === null ? null : Math.round(avgDuration);

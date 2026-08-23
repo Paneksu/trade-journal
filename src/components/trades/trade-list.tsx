@@ -44,13 +44,20 @@ export function TradeList({
             </span>
 
             <span className="hidden min-w-0 flex-1 gap-1.5 sm:flex">
-              {t.tags.slice(0, 3).map((tag) => (
-                <Badge key={tag.id} color={tag.color} title={tag.category}>
-                  {tag.name}
-                </Badge>
-              ))}
-              {t.tags.length > 3 && (
-                <span className="self-center text-xs text-faint">+{t.tags.length - 3}</span>
+              {/* Skrot bez interwalow, wiec tag powtorzony na kilku warstwach
+                  (ADR-017) pokazalby sie tu trzy razy pod rzad. Na liscie liczy
+                  sie JAKI tag, nie ile razy - stad deduplikacja po `id`. */}
+              {dedupTagi(t.tags)
+                .slice(0, 3)
+                .map((tag) => (
+                  <Badge key={tag.assignmentId} color={tag.color} title={tag.category}>
+                    {tag.name}
+                  </Badge>
+                ))}
+              {dedupTagi(t.tags).length > 3 && (
+                <span className="self-center text-xs text-faint">
+                  +{dedupTagi(t.tags).length - 3}
+                </span>
               )}
             </span>
 
@@ -87,4 +94,10 @@ export function TradeList({
       ))}
     </ul>
   );
+}
+
+/** Po jednym chipie na tag, niezaleznie od liczby interwalow (ADR-017). */
+function dedupTagi<T extends { id: number }>(tagi: T[]): T[] {
+  const widziane = new Set<number>();
+  return tagi.filter((t) => (widziane.has(t.id) ? false : (widziane.add(t.id), true)));
 }

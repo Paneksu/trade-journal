@@ -6,6 +6,7 @@ import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader
 import { Badge, DataPoint, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
+import { POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
 import { computeStats } from "@/lib/domain/stats";
 import { formatValue } from "@/lib/fields/fields";
@@ -164,6 +165,30 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               {trade.weekday === null ? "—" : WEEKDAY_NAMES[trade.weekday]}
             </DataPoint>
           </div>
+
+          {/* Kierunek a egzekucja (ADR-018) - osobny wiersz, bo to ocena
+              zagrania, a nie kolejna liczba z rachunku. Pokazujemy tylko wtedy,
+              gdy jest co pokazac. */}
+          {trade.kierunekTrafiony !== null && (
+            <div className="grid grid-cols-2 gap-4 border-t border-line p-4 sm:grid-cols-4">
+              <DataPoint label="Kierunek">
+                <span className={trade.kierunekTrafiony ? "text-profit" : "text-loss"}>
+                  {trade.kierunekTrafiony ? "trafiony" : "chybiony"}
+                </span>
+              </DataPoint>
+              <DataPoint label="Powód">
+                {trade.badExecutionReason === null
+                  ? "—"
+                  : POWOD_NAZWY[trade.badExecutionReason]}
+              </DataPoint>
+              <DataPoint label="Potencjał">{rValue(trade.potentialR)}</DataPoint>
+              <DataPoint label="Utracone R">
+                {trade.potentialR === null
+                  ? "—"
+                  : rValue(Math.max(0, trade.potentialR - (trade.rMultiple ?? 0)), false)}
+              </DataPoint>
+            </div>
+          )}
         </Panel>
 
         <Panel title="Opis">
@@ -180,9 +205,11 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               <div>
                 <p className="etykieta mb-1.5">Tagi</p>
                 <div className="flex flex-wrap gap-1.5">
+                  {/* `assignmentId`, nie `id` - tag powtorzony na kilku
+                      interwalach to kilka chipow (ADR-017). */}
                   {trade.tags.map((t) => (
                     <Badge
-                      key={t.id}
+                      key={t.assignmentId}
                       color={t.color}
                       title={t.interval ? `${t.category} · ${t.interval}` : t.category}
                     >

@@ -37,6 +37,52 @@ export function porzadekInterwalu(w: Interwal): number {
 }
 
 /**
+ * Warstwa analizy: HTF to obraz z gory (kierunek, poziomy), LTF to moment
+ * wejscia. Podzial NIE jest osobna kategoria tagow - wynika wprost z interwalu
+ * przypisania (ADR-017). Ta sama konfluencja moze wiec wisiec na trade'cie raz
+ * jako HTF (4h) i raz jako LTF (5m), i dokladnie ta kombinacja jest informacja.
+ *
+ * Prog liczony przez `porzadekInterwalu`, nie przez wypisana liste - dolozenie
+ * "2h" do INTERWALY samo trafi we wlasciwa warstwe, bez ruszania tego kodu.
+ */
+export const PROG_HTF: Interwal = "1h";
+
+export type Warstwa = "HTF" | "LTF";
+
+export const WARSTWY = ["HTF", "LTF"] as const;
+
+export const WARSTWA_NAZWY: Record<Warstwa, string> = {
+  HTF: "HTF (1h i wyżej)",
+  LTF: "LTF (poniżej 1h)",
+};
+
+export function czyWarstwa(w: string | null | undefined): w is Warstwa {
+  return w === "HTF" || w === "LTF";
+}
+
+export function warstwaInterwalu(w: Interwal): Warstwa {
+  return porzadekInterwalu(w) >= porzadekInterwalu(PROG_HTF) ? "HTF" : "LTF";
+}
+
+/**
+ * Warstwa dowolnej wartosci z bazy. `null` oznacza "brak interwalu" - tag bez
+ * wskazanej skali czasu (Setup, Blad) nie nalezy do zadnej warstwy i nie ma go
+ * udawac przez wartosc domyslna.
+ */
+export function warstwaLub(w: string | null | undefined): Warstwa | null {
+  return czyInterwal(w) ? warstwaInterwalu(w) : null;
+}
+
+export function czyHTF(w: string | null | undefined): boolean {
+  return warstwaLub(w) === "HTF";
+}
+
+/** Interwaly danej warstwy - do listy wartosci w filtrze SQL i do chipow w formularzu. */
+export function interwalyWarstwy(warstwa: Warstwa): Interwal[] {
+  return INTERWALY.filter((w) => warstwaInterwalu(w) === warstwa);
+}
+
+/**
  * Paruje pliki zrzutow z interwalami wybranymi dla kazdego z nich po indeksie
  * - nie po nazwie czy zawartosci. Uzywane przy nowym trade'cie (formularz
  * wysyla rownolegle "shot" i "shotint"), gdzie kazdy plik ma osobny interwal

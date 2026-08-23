@@ -40,6 +40,10 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     rulesMet: 3,
     hasRules: true,
     hasStop: true,
+    directionCorrect: null,
+    kierunekTrafiony: null,
+    badExecutionReason: null,
+    potentialR: null,
     tags: [],
     custom: {},
     ...n,
@@ -219,5 +223,73 @@ describe("niepewnosc wyniku", () => {
   it("mowi ile trade'ow potrzeba do zadanej precyzji", () => {
     expect(requiredSample(2, 0.2)).toBe(385);
     expect(requiredSample(null)).toBeNull();
+  });
+});
+
+describe("findEdges a tag powtorzony na kilku interwalach (ADR-017)", () => {
+  let nr = 0;
+  const konfluencja = (interval: string) => ({
+    assignmentId: (nr += 1),
+    id: 7,
+    name: "FVG",
+    category: "Konfluencje",
+    categoryKey: "confluence",
+    color: "#fff",
+    interval,
+  });
+
+  it("nie zawyza probki, przez co kontekst nie przechodzi progu na kredyt", () => {
+    // Dziesiec trade'ow, kazdy z FVG na 4h i na 5m. Bez deduplikacji kubelek
+    // "FVG" mialby 20 pozycji i przeszedlby minSample=15 - Edge Finder
+    // oglosilby przewage policzona z dziesieciu trade'ow policzonych podwojnie.
+    const trades = Array.from({ length: 10 }, (_, i) =>
+      trade({
+        id: i + 1,
+        pnl: 10_000,
+        rMultiple: 1,
+        tags: [konfluencja("4h"), konfluencja("5m")],
+      }),
+    ).concat(
+      Array.from({ length: 20 }, (_, i) =>
+        trade({ id: 100 + i, pnl: -10_000, rMultiple: -1, tags: [] }),
+      ),
+    );
+
+    const w = findEdges(trades, [dimension("tag:confluence")], {
+      progi,
+      minSample: 15,
+      pairs: false,
+    });
+    expect(w.edges.find((z) => z.key.includes("FVG"))).toBeUndefined();
+  });
+
+  it("liczy taki trade raz, gdy probka jest wystarczajaca", () => {
+    const trades = Array.from({ length: 16 }, (_, i) =>
+      trade({
+        id: i + 1,
+        pnl: 10_000,
+        rMultiple: 1,
+        tags: [konfluencja("4h"), konfluencja("5m")],
+      }),
+    ).concat(
+      // Druga wartosc wymiaru jest konieczna: wymiar o jednym kubelku nie
+      // rozroznia niczego i Edge Finder odrzuca go, zanim cokolwiek policzy.
+      Array.from({ length: 16 }, (_, i) =>
+        trade({
+          id: 100 + i,
+          pnl: -10_000,
+          rMultiple: -1,
+          tags: [{ ...konfluencja("5m"), id: 8, name: "EQ" }],
+        }),
+      ),
+    );
+
+    const w = findEdges(trades, [dimension("tag:confluence")], {
+      progi,
+      minSample: 15,
+      pairs: false,
+    });
+    const znalezisko = w.edges.find((z) => z.key.includes("FVG"));
+    expect(znalezisko?.count).toBe(16);
   });
 });

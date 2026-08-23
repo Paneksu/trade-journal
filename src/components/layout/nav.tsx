@@ -8,6 +8,7 @@ import {
   CalendarDays,
   FlaskConical,
   LayoutDashboard,
+  Images,
   ListOrdered,
   LogOut,
   Menu,
@@ -22,6 +23,7 @@ import { cx } from "@/lib/classes";
 const LINKS = [
   { href: "/", label: "Pulpit", icon: LayoutDashboard },
   { href: "/trades", label: "Trade'y", icon: ListOrdered },
+  { href: "/galeria", label: "Galeria", icon: Images },
   { href: "/stats", label: "Statystyki", icon: BarChart3 },
   { href: "/calendar", label: "Kalendarz", icon: CalendarDays },
   { href: "/backtest", label: "Backtesting", icon: FlaskConical },

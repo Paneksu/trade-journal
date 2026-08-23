@@ -527,3 +527,166 @@ mówi, jaka cena wyjścia wejdzie do zapisu, i przypomina, że w statystykach
 liczy się wpisana kwota. Różnica `diff` z `exitPriceForAmount` nie jest już
 błędem do zgłoszenia, tylko normalnym skutkiem tego, że ceny chodzą po tickach,
 a pieniądze nie.
+
+---
+
+## ADR-017 — tagi jako konfluencje, warstwa z interwału, tag wielokrotnie (2026-08-24)
+
+**Kontekst.** Kategoria „Setup" zawierała w praktyce konfluencje (EQ, RB, fvg,
+ifvg, otwarcie sesji), a nie nazwy zagrań. Kategoria „Warunki rynkowe" nie była
+używana. Interwał można było przypisać do tagu tylko jeden, choć ta sama
+konfluencja bywa widoczna równocześnie na 4h i na 5m — i to właśnie ta para
+jest informacją, nie sam fakt obecności FVG.
+
+**Trzy kategorie zamiast trzech innych.** `confluence` (przesłanki wejścia,
+z interwałem), `setup` (nazwa całego zagrania, bez interwału), `mistake`.
+Kategorię `setup` **przemianowaliśmy** na `confluence` zamiast przepinać tagi
+do nowej: `tags.id` zostają, więc historia w `trade_tags`, zapisane widoki
+(`saved_views.filters->'tag'` trzyma ID-ki) i linki `?tag=12` przeżywają
+migrację nietknięte. Koszt: klucz `setup` oznacza po migracji inną kategorię
+niż przed nią. Żyje on wyłącznie w parametrze `?wymiar=tag:setup` na `/stats`,
+którego nigdzie nie zapisujemy — stary link pokaże pustą kategorię.
+
+**Warstwa HTF/LTF wynika z interwału, nie z kategorii.** Próg to `1h`, liczony
+przez `porzadekInterwalu`, nie przez wypisaną listę — dołożenie „2h" do
+`INTERWALY` samo trafi we właściwą warstwę. Osobne kategorie „Konfluencje HTF"
+i „Konfluencje LTF" byłyby duplikatem tej samej listy tagów i zmuszałyby do
+zakładania „FVG HTF" obok „FVG LTF" jako dwóch niezależnych bytów, których
+statystyki nigdy by się nie spotkały.
+
+**Ten sam tag kilka razy.** `trade_tags` dostaje `id serial primary key`
+i unikat `(trade_id, tag_id, interval)` z **`NULLS NOT DISTINCT`**. Bez tego
+modyfikatora wiersz z pustym interwałem dałby się wstawić dowolną liczbę razy
+i `onConflictDoNothing` w `saveTrade` przestałby czegokolwiek pilnować.
+W drizzle 0.45 `nullsNotDistinct()` istnieje **tylko** na `unique()`, nie na
+`uniqueIndex()` — pomyłka nie daje błędu w czasie działania, tylko rozjazd
+schematu przy następnym `generate`.
+
+**Podwójne liczenie było największym ryzykiem tej zmiany.** `groupBy`
+i `bucketize` wrzucają trade do kubełka raz na każdą wartość wymiaru, więc
+FVG na 4h i 5m dałoby `["FVG","FVG"]` i ten sam trade wpadłby dwa razy do tej
+samej grupy — zawyżając `count`, `pnl`, `sumR`, skuteczność i wagę w Edge
+Finderze. Deduplikacja siedzi w **obu pętlach**, na poziomie mechanizmu, a nie
+w każdym wymiarze tagowym z osobna: to jedyne miejsce, w którym da się o niej
+nie zapomnieć. Poprawka weszła **przed** migracją, czyli zanim baza w ogóle
+zaczęła takie dane produkować.
+
+**Interfejs.** Wiersz checkboxów `tagint:<id>` odsłaniany `peer-checked:flex`,
+rozdzielony na HTF i LTF z podpisami — podział przestaje być ukrytą regułą.
+Chip jest teraz `<label for>`, a nie opakowaniem, dzięki czemu zagnieżdżone
+checkboxy interwału nie przełączają tagu i nie potrzeba do tego
+`stopPropagation`, czyli JavaScriptu (poprzedni `<select>` tego wymagał, więc
+obietnica „działa bez JS" była wcześniej częściowo nieprawdziwa).
+
+**Pułapka do zapamiętania:** checkbox ukryty CSS-em **nadal jedzie
+w `FormData`** (`display:none` nie wyłącza kontrolki, robi to tylko
+`disabled`). Parser iteruje więc po zaznaczonych tagach, nie po kluczach
+`tagint:*` — inaczej odznaczenie tagu zostawiałoby osierocone interwały.
+Sprawdzone na żywo: po odznaczeniu tagu formularz nadal niósł `4h` i `5m`,
+a w bazie po zapisie zostało zero wierszy.
+
+**„Warunki rynkowe" skasowane migracją**, wbrew ADR-014 — `deleteTag` odmawia
+usunięcia tagu użytego w trade'ach i ma tak zostać. To jednorazowy wyjątek
+podjęty świadomie, nie furtka omijająca tamtą zasadę. Migracja czyści przy
+okazji `saved_views` z ID-ków skasowanych tagów: bez tego zapisany widok cicho
+zwracałby zero wierszy, bo `EXISTS` na nieistniejącym `tag_id` nigdy nie jest
+prawdziwy — a nic w interfejsie by tego nie wytłumaczyło.
+
+**Dług:** migracje `0010`/`0011` pisane ręcznie (`drizzle-kit generate` wymaga
+TTY), bez `meta/*_snapshot.json`. Migrator ich nie czyta, ale pierwszy przyszły
+`generate` policzy różnicę od `0009` i wyprodukuje duplikat.
+
+---
+
+## ADR-018 — kierunek trafiony mimo złej egzekucji (2026-08-24)
+
+**Kontekst.** Dziennik nie odróżniał „pomyliłem się co do kierunku" od
+„miałem rację, ale wyszedłem za wcześnie". To dwie zupełnie różne porażki,
+a skuteczność 41% może znaczyć system bez przewagi albo system z przewagą
+i złą ręką.
+
+**Prawdziwe kolumny, nie pole własne w JSONB:** `direction_correct`,
+`bad_execution_reason` (enum), `potential_r`. Te liczby wchodzą do statystyk,
+do filtrów SQL i do wymiarów Edge Findera, a JSONB nie da się na to sensownie
+zindeksować ani porównać liczbowo.
+
+**Wygranej nie zapisujemy.** „Zysk ⇒ kierunek trafiony" wyprowadza
+`lib/domain/kierunek.ts`. Zapisanie `true` do bazy byłoby denormalizacją,
+która skłamie po zmianie progu BE w ustawieniach — dokładnie pułapka z ADR-011.
+
+**Trzy stany, nie dwa.** `null` znaczy „nieocenione", `false` — „kierunek
+chybiony". Rozróżnienie niesie ukryte pole `kierunek_oceniany`, wysyłane razem
+z blokiem: bez niego odznaczony checkbox byłby nieodróżnialny od „nie pytaliśmy",
+mianownik trafności równałby się licznikowi i **metryka zawsze pokazywałaby sto
+procent**.
+
+**`potential_r` to nie `mfe_r`.** MFE mierzy ruch w trakcie trwania pozycji,
+potencjał — zasięg całego zagrania, często już po wyjściu. Formularz podpowiada
+wartość z MFE, ale ich nie utożsamia; mylenie ich odbiera sens metryce
+„utracone R".
+
+**Metryki.** Mianownikiem trafności są wyłącznie trade'y ocenione — nieoznaczona
+strata to „nie wiem", nie „kierunek chybiony". `lostR` ma **clamp na zero per
+trade**: trade lepszy od zadeklarowanego potencjału nie ma generować „ujemnej
+straty" kompensującej cudze błędy w sumie zbiorczej.
+
+**Błąd wyłapany dopiero na żywych danych:** „sufit systemu" liczony jako
+`(sumR + lostR) / count` wyszedł **niżej** niż oczekiwana wartość (+0,79R wobec
++0,94R), bo `expectancyR` dzieli przez `countWithR`, a nie przez `count`.
+Trade'y bez stopa rozwadniały sufit, który rzekomo ogranicza wartość od góry.
+Mianownik musi być ten sam po obu stronach.
+
+**Uczciwość podpisu.** Wygrane wpadają do mianownika z definicji, więc dopóki
+użytkownik nie przejrzy strat, trafność pokazuje równe sto procent — liczba
+prawdziwa i myląca naraz. Dlatego KPI i panel wymieniają liczbę trade'ów bez
+oceny, zamiast pokazywać samo „100%".
+
+**`badreason` i `directionHit` są `outcomeDerived`.** Powód złej egzekucji
+istnieje wyłącznie przy trade'ach nie-wygranych, więc Edge Finder „odkryłby",
+że kontekst „powód = niepotrzebny stop" ma oczekiwaną wartość poniżej zera —
+z definicji, a nie z obserwacji. Ta sama pułapka co przy `rrange`.
+
+**Miernik dyscypliny obniżany** o sygnał `zla_egzekucja` (waga 15) — decyzja
+użytkownika. Wyniki sprzed tej zmiany **nie są porównywalne** z późniejszymi.
+`unnecessary_sl` celowo poza miernikiem: zbyt ciasny stop to błąd planu, nie
+dyscypliny.
+
+---
+
+## ADR-019 — galeria jako osobna trasa, siatka zamiast układu justowanego (2026-08-24)
+
+**Kontekst.** Zdjęcie wykresu jest głównym nośnikiem informacji o trade'zie,
+a na liście widać było wyłącznie liczbę zrzutów. Nie dało się zadać pytania
+„pokaż wszystkie wejścia z EQ na HTF i FVG na LTF" i zobaczyć wykresów obok
+siebie.
+
+**Osobna trasa `/galeria`, nie przełącznik widoku na `/trades`.** Tabela
+i galeria odpowiadają na różne pytania i mają różne domyślne filtry (galeria
+startuje z „tylko ze zrzutem"). Wspólny jest cały aparat filtrowania: jeden
+`parseFilters`, jeden `FilterBar`, jedno `whereClause`.
+
+**Siatka o wspólnej proporcji, nie układ justowany z ADR-012.** Tamten moduł
+(`lib/domain/galeria.ts`) układa zrzuty **jednego** trade'a tak, by żaden nie
+był przycięty. Tutaj każdy kafel należy do innego trade'a i ma pod obrazkiem
+więcej metadanych niż samego obrazka — nierówne wysokości rozsypałyby rytm.
+Zdjęcie i tak nie jest przycięte: `object-contain` na tle, nie `object-cover`.
+To dwa różne moduły o mylnie podobnej nazwie i nie wolno ich scalić.
+
+**Pierwszy zrzut wsadowo, bez N+1.** `screenshotSummary` zwraca licznik
+**i** pierwszy plik jedną agregacją (`array_agg(...)[1]` po `sort_order`, `id`),
+bo licznik i tak trzeba policzyć. Przy dziesiątkach kafli to różnica między
+stałą liczbą zapytań a zapytaniem na kafel. Pojęcia „zdjęcia głównego" nadal
+nie ma (ADR-009) i nie wprowadzamy go tylnymi drzwiami — „pierwszy" znaczy
+po prostu ten sam porządek, który widać w karcie trade'a.
+
+**`next/image` odpada:** pliki leżą poza `public/`, a trasa `/api/screenshots`
+wymaga sesji. Zwykły `<img>` z `width`, `height` i `loading="lazy"` daje to
+samo bez przeskoku układu.
+
+**Paginacja zwykłymi linkami**, nie nieskończonym przewijaniem: działa bez
+JavaScriptu, da się wysłać linkiem i nie psuje powrotu z karty trade'a.
+
+**Filtr zrzutów jest trójstanowy** (`1` / `0` / brak). Dwustanowy nie miałby
+jak wyrazić opcji „tylko bez zrzutu", a w galerii brak parametru znaczy
+„tylko ze zrzutem" — dlatego zdjęcie tego filtru wymaga jawnego
+`?zezrzutem=wszystko`, sama nieobecność parametru niczego by nie wyłączyła.

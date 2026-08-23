@@ -6,7 +6,8 @@ import { Filter, X } from "lucide-react";
 
 import { Button, Input, Label, Select } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
-import { INTERWALY } from "@/lib/domain/interwaly";
+import { INTERWALY, WARSTWA_NAZWY, WARSTWY } from "@/lib/domain/interwaly";
+import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import type { FieldDef } from "@/lib/fields/fields";
 import { GROUPABLE_TYPES } from "@/lib/fields/fields";
 import type { Account, Instrument, Strategy } from "@/lib/db/schema";
@@ -175,6 +176,52 @@ export function FilterBar({
                   {i}
                 </option>
               ))}
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="warstwa">Warstwa TF</Label>
+            <Select id="warstwa" name="warstwa" defaultValue={value("warstwa")}>
+              <option value="">wszystkie</option>
+              {WARSTWY.map((w) => (
+                <option key={w} value={w}>
+                  {WARSTWA_NAZWY[w]}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="kierunek_ok">Trafność kierunku</Label>
+            <Select id="kierunek_ok" name="kierunek_ok" defaultValue={value("kierunek_ok")}>
+              <option value="">wszystkie</option>
+              <option value="tak">kierunek trafiony</option>
+              <option value="nie">kierunek chybiony</option>
+              <option value="nieocenione">nieocenione</option>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="powod">Powód złej egzekucji</Label>
+            <Select id="powod" name="powod" defaultValue={value("powod")}>
+              <option value="">wszystkie</option>
+              {POWODY.map((w) => (
+                <option key={w} value={w}>
+                  {POWOD_NAZWY[w]}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="zezrzutem">Zrzuty</Label>
+            {/* "wszystko" jest wartoscia JAWNA, nie pustym stringiem: w galerii
+                brak parametru znaczy "tylko ze zrzutem", wiec pusta opcja nie
+                mialaby jak wylaczyc tego filtru. */}
+            <Select id="zezrzutem" name="zezrzutem" defaultValue={value("zezrzutem")}>
+              <option value="wszystko">wszystkie</option>
+              <option value="1">tylko ze zrzutem</option>
+              <option value="0">tylko bez zrzutu</option>
             </Select>
           </div>
 

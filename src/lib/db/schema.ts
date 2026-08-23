@@ -14,6 +14,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -43,6 +44,13 @@ export const fieldTypeEnum = pgEnum("field_type", [
 ]);
 export const fieldScopeEnum = pgEnum("field_scope", ["trade", "backtest", "both"]);
 export const sessionStatusEnum = pgEnum("session_status", ["running", "finished", "abandoned"]);
+/* Powod, dla ktorego trafiony kierunek nie zamienil sie w zysk (ADR-018).
+   Wartosci musza sie zgadzac z POWODY w lib/domain/kierunek.ts. */
+export const badExecutionReasonEnum = pgEnum("bad_execution_reason", [
+  "unnecessary_be",
+  "unnecessary_sl",
+  "early_exit",
+]);
 export const marketSessionEnum = pgEnum("market_session", [
   "premarket",
   "rth",
@@ -135,13 +143,20 @@ export const backtestSessions = pgTable("backtest_sessions", {
 
 /* --- Tagi ----------------------------------------------------------------- */
 
-export const tagCategories = pgTable("tag_categories", {
-  id: serial().primaryKey(),
-  name: text().notNull(),
-  key: text().notNull(),
-  description: text(),
-  sortOrder: integer().notNull().default(0),
-});
+export const tagCategories = pgTable(
+  "tag_categories",
+  {
+    id: serial().primaryKey(),
+    name: text().notNull(),
+    /* Klucz jest identyfikatorem wymiaru statystyk ("tag:<key>"), wiec musi byc
+       unikalny - dwie kategorie o tym samym kluczu rozwalilyby grupowanie po
+       cichu, bez zadnego bledu (ADR-017). */
+    key: text().notNull(),
+    description: text(),
+    sortOrder: integer().notNull().default(0),
+  },
+  (t) => [uniqueIndex("tag_categories_key_idx").on(t.key)],
+);
 
 export const tags = pgTable(
   "tags",
@@ -241,10 +256,33 @@ export const trades = pgTable(
        i zeby formularz w edycji wracal z wypelnionym polem. */
     brokerAmount: bigint({ mode: "number" }),
 
+    /* --- Kierunek a egzekucja (ADR-018) -----------------------------------
+       Trzy stany, nie dwa: `null` znaczy "nieocenione", `false` - "kierunek
+       chybiony". Przy wygranej wszystkie trzy pola zostaja puste, bo
+       "zysk => kierunek trafiony" wyprowadza lib/domain/kierunek.ts. Zapisanie
+       tego wprost bylo by denormalizacja, ktora sklamie po zmianie progu BE
+       w ustawieniach (ADR-011). */
+    directionCorrect: boolean(),
+    badExecutionReason: badExecutionReasonEnum(),
+    /* Zasieg calego zagrania w R - NIE to samo co `mfeR`, ktore mierzy ruch
+       wylacznie w trakcie trwania pozycji. Roznica `potentialR - rMultiple`
+       jest miara tego, ile kosztuje egzekucja. */
+    potentialR: numeric({ precision: 12, scale: 4 }),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    /* Powod i potencjal maja sens wylacznie przy trafionym kierunku. Formularz
+       normalizuje to wczesniej (normalizujKierunek), wiec ten warunek jest
+       siatka bezpieczenstwa, a nie sciezka, ktora uzytkownik ma zobaczyc. */
+    check(
+      "trades_kierunek",
+      sql`(${t.badExecutionReason} is null and ${t.potentialR} is null) or ${t.directionCorrect} is true`,
+    ),
+    index("trades_direction_correct_idx")
+      .on(t.directionCorrect)
+      .where(sql`${t.directionCorrect} is not null`),
     index("trades_entry_idx").on(t.entryTime),
     index("trades_account_idx").on(t.accountId),
     index("trades_session_idx").on(t.backtestSessionId),
@@ -256,6 +294,11 @@ export const trades = pgTable(
 export const tradeTags = pgTable(
   "trade_tags",
   {
+    /* Klucz glowny dochodzi dopiero w ADR-017. Wczesniej para (trade_id, tag_id)
+       jednoznacznie wskazywala wiersz; teraz ten sam tag moze wisiec na trade'cie
+       kilka razy, wiec interfejs potrzebuje stabilnego identyfikatora
+       przypisania - inaczej React dostaje powtorzony `key` przy chipach. */
+    id: serial().primaryKey(),
     tradeId: integer()
       .notNull()
       .references(() => trades.id, { onDelete: "cascade" }),
@@ -266,10 +309,18 @@ export const tradeTags = pgTable(
     // opisywac wejscie z 5m i z 1h (patrz ADR-013). `text`, nie enum: lista
     // dozwolonych wartosci zyje w kodzie (lib/domain/interwaly.ts), a dolozenie
     // np. "2h" nie ma wymagac migracji schematu.
+    //
+    // Z interwalu wyprowadzamy tez warstwe HTF/LTF (ADR-017) - to NIE jest
+    // osobna kategoria tagow ani osobna kolumna.
     interval: text(),
   },
   (t) => [
-    uniqueIndex("trade_tags_idx").on(t.tradeId, t.tagId),
+    /* `unique().nullsNotDistinct()`, nie `uniqueIndex()`: drizzle 0.45 ma
+       nullsNotDistinct wylacznie na ograniczeniu, nie na indeksie. Bez tego
+       modyfikatora wiersz z pustym interwalem dalby sie wstawic dowolna liczbe
+       razy, a `onConflictDoNothing` w saveTrade przestalby czegokolwiek
+       pilnowac. */
+    unique("trade_tags_uq").on(t.tradeId, t.tagId, t.interval).nullsNotDistinct(),
     index("trade_tags_tag_idx").on(t.tagId),
   ],
 );

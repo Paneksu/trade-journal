@@ -89,10 +89,68 @@ Pola tekstowe nie trafiają do statystyk — każda wartość byłaby osobną gr
 ## Tagi
 
 *Ustawienia → Tagi*. Kategorie definiujesz sam; każda staje się osobnym wymiarem
-w statystykach i w Edge Finderze. Domyślnie są cztery: setup, błąd, warunki rynkowe, interwał.
+w statystykach i w Edge Finderze. Domyślnie są trzy:
+
+- **Konfluencje** — przesłanki, które złożyły się na wejście (EQ, FVG, przejęcie
+  płynności). Tylko tu wybierasz interwały.
+- **Setup** — nazwa całego zagrania, np. „Silver Bullet". Bez interwału. Ta
+  kategoria startuje pusta: nikt poza Tobą nie wie, jak nazywasz swoje zagrania.
+- **Błąd** — co poszło nie tak po Twojej stronie.
+
+### Interwały i podział HTF/LTF
+
+Po zaznaczeniu konfluencji pojawia się wiersz interwałów, rozdzielony na **HTF**
+(1h i wyżej) oraz **LTF** (poniżej 1h). Możesz zaznaczyć **kilka naraz**: jeśli
+to samo FVG widziałeś na 4h i na 5m, zaznacz oba — to jest osobna informacja niż
+sam fakt, że FVG było.
+
+Warstwa nie jest osobnym tagiem ani osobną kategorią. Wynika wprost z interwału,
+więc nie musisz zakładać „FVG HTF" obok „FVG LTF" — statystyki i tak rozbiją to
+na dwa wymiary: *Konfluencja HTF* i *Konfluencja LTF*. Dzięki temu Edge Finder,
+który porównuje pary wymiarów, sam znajduje kombinacje typu „EQ na HTF razem
+z FVG na LTF".
 
 Trade z trzema tagami trafia do trzech grup naraz — dlatego suma trade'ów w tabeli
-rozbicia bywa większa niż ich liczba. Tak się te tabele czyta.
+rozbicia bywa większa niż ich liczba. Tak się te tabele czyta. Ten sam tag na dwóch
+interwałach liczy się przy tym **raz**, nie dwa.
+
+## Galeria
+
+*Galeria* w menu. Kafelki: pierwszy zrzut trade'a, pod nim data, instrument, wynik
+w R i wszystkie tagi z interwałami. Klik wchodzi w kartę trade'a.
+
+Filtry są te same co na liście trade'ów, więc możesz zapytać „pokaż wszystkie
+wejścia z EQ na HTF" i obejrzeć same wykresy obok siebie. Domyślnie widać tylko
+trade'y ze zrzutem — w filtrze *Zrzuty* przełączysz to na „wszystkie".
+
+## Kierunek a egzekucja
+
+Przy trade'zie zamkniętym na stracie albo na zero pojawia się pole **„kierunek był
+dobry, zawiodła egzekucja"**. Zaznacz je, kiedy rynek poszedł tam, gdzie
+zakładałeś, ale wyszedłeś za wcześnie albo dostałeś niepotrzebne BE. Możesz
+dopisać powód i to, do ilu R doszła cena.
+
+**Potencjał to nie MFE.** MFE mierzy ruch w trakcie trwania Twojej pozycji,
+potencjał — zasięg całego zagrania, także po Twoim wyjściu. Formularz podpowiada
+wartość z MFE, ale to dwie różne liczby; mylenie ich odbiera sens metryce
+„utracone R".
+
+Przy wygranej pola nie ma — kierunek trafiony wynika z wyniku i nie trzeba tego
+zaznaczać.
+
+Statystyki dostają z tego panel **„Kierunek a egzekucja"**:
+
+- **Trafność kierunku** — jak często miałeś rację, niezależnie od tego, czy
+  egzekucja to udźwignęła. Wygrane liczą się jako trafione z definicji, więc
+  dopóki nie przejrzysz strat, wynik jest zawyżony — panel wypisze, ile trade'ów
+  czeka na ocenę.
+- **Straty techniczne** — trafiony kierunek, wynik mimo to ujemny.
+- **Utracone R** — ile R zostawiłeś na stole.
+- **Sufit systemu** — oczekiwana wartość, jaką dałyby te same wejścia przy czystej
+  egzekucji.
+
+Zaznaczone niepotrzebne BE i za wczesne wyjście obniżają też miernik dyscypliny.
+Niepotrzebny stop — nie: zbyt ciasny stop to błąd planu, nie ręki.
 
 ## Strategie i checklista
 
@@ -141,8 +199,12 @@ Traktuj wyniki jak hipotezy do sprawdzenia, nie jak wyrocznię.
 ## Miernik dyscypliny
 
 Ocenia zachowanie, nie wynik. Sto punktów minus kary za: trade'y bez stopa, niepełne
-checklisty, powiększanie pozycji po stracie, wejścia w ciągu pięciu minut od straty
-i ryzyko przekraczające półtora raza Twoją własną medianę.
+checklisty, powiększanie pozycji po stracie, wejścia w ciągu pięciu minut od straty,
+zepsutą egzekucję przy trafionym kierunku i ryzyko przekraczające półtora raza Twoją
+własną medianę.
+
+Uwaga: sygnał „zepsuta egzekucja" doszedł 24 sierpnia 2026 i przesunął skalę.
+Wyniki sprzed tej daty nie porównują się wprost z późniejszymi.
 
 Przy każdym sygnale są numery trade'ów — klikalne, żeby dało się sprawdzić, o co chodzi.
 

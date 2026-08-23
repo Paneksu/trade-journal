@@ -35,12 +35,19 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     rulesMet: 3,
     hasRules: true,
     hasStop: true,
+    directionCorrect: null,
+    kierunekTrafiony: null,
+    badExecutionReason: null,
+    potentialR: null,
     tags: [],
     custom: {},
     ...n,
   };
 }
 
+/* Kazde wywolanie to OSOBNE przypisanie, wiec `assignmentId` rosnie nawet gdy
+   `id` tagu sie powtarza - dokladnie tak, jak zwraca to baza (ADR-017). */
+let kolejnePrzypisanie = 0;
 function tag(
   id: number,
   name: string,
@@ -48,7 +55,16 @@ function tag(
   category = "Setup",
   categoryKey = "setup",
 ) {
-  return { id, name, category, categoryKey, color: "#fff", interval };
+  kolejnePrzypisanie += 1;
+  return {
+    assignmentId: kolejnePrzypisanie,
+    id,
+    name,
+    category,
+    categoryKey,
+    color: "#fff",
+    interval,
+  };
 }
 
 describe("groupBy", () => {
@@ -148,5 +164,41 @@ describe("dimensionsForFields", () => {
       { key: "ukryte", label: "Ukryte", type: "select", inStats: false },
     ]);
     expect(dims.map((w) => w.key)).toEqual(["field:nastroj"]);
+  });
+});
+
+describe("ten sam tag na kilku interwalach (ADR-017)", () => {
+  it("nie liczy trade'a dwa razy w tej samej grupie", () => {
+    // FVG zauwazone na 4h i na 5m to dwa wiersze w trade_tags, ale jeden trade.
+    // Bez deduplikacji count wynosilby 2, a pnl 20 000 zamiast 10 000.
+    const trades = [
+      trade({
+        id: 1,
+        pnl: 10_000,
+        tags: [tag(7, "FVG", "4h"), tag(7, "FVG", "5m")],
+      }),
+    ];
+    const grupy = groupBy(trades, dimension("tag:setup"), { progi });
+    expect(grupy).toHaveLength(1);
+    expect(grupy[0].stats.count).toBe(1);
+    expect(grupy[0].stats.pnl).toBe(10_000);
+  });
+
+  it("rozne tagi tego samego trade'a nadal daja osobne grupy", () => {
+    const trades = [
+      trade({ id: 1, tags: [tag(7, "FVG", "4h"), tag(8, "EQ", "4h")] }),
+    ];
+    const grupy = groupBy(trades, dimension("tag:setup"), { progi });
+    expect(grupy.map((g) => g.key).sort()).toEqual(["EQ", "FVG"]);
+    for (const g of grupy) expect(g.stats.count).toBe(1);
+  });
+
+  it("wymiar interwalu rozdziela ten sam tag na dwie grupy", () => {
+    // Tu duplikat jest pozadany: to sa dwie rozne wartosci wymiaru.
+    const trades = [
+      trade({ id: 1, tags: [tag(7, "FVG", "4h"), tag(7, "FVG", "5m")] }),
+    ];
+    const grupy = groupBy(trades, dimension("interval"), { progi });
+    expect(grupy.map((g) => g.key)).toEqual(["5m", "4h"]);
   });
 });

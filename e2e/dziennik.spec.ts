@@ -537,3 +537,80 @@ test("filtr wynik=be zgadza sie z liczba trade'ow ze statystyk na granicy progu 
   });
   await expect(kafelekWynik).toContainText(new RegExp(`${zTabeli}\\s*trade`));
 });
+
+test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }) => {
+  /*
+   * Sedno ADR-017. Sprawdzamy trzy rzeczy naraz, bo kazda osobno wygladalaby
+   * na dzialajaca:
+   *  1. chipy interwalow odslaniaja sie po zaznaczeniu tagu (czysty CSS),
+   *  2. dwa interwaly zapisuja sie jako DWA przypisania, nie jedno,
+   *  3. ponowny zapis bez zmian nie mnozy wierszy.
+   */
+  await page.goto("/trades");
+  const wiersz = page.locator("table tbody tr").first();
+  await wiersz.locator("a").first().click();
+  await page.getByRole("link", { name: /edytuj/i }).first().click();
+  await page.waitForURL(/\/edit$/);
+
+  const pierwszaKonfluencja = page.locator('input[name="tag"]').first();
+  const idTagu = await pierwszaKonfluencja.getAttribute("value");
+  const chip = page.locator(`label[for="tag-${idTagu}"]`);
+
+  if (!(await pierwszaKonfluencja.isChecked())) await chip.click();
+
+  const grupa = page.locator(`[aria-label^="Interwały dla konfluencji"]`).first();
+  await expect(grupa).toBeVisible();
+
+  await page.locator(`label[for="tagint-${idTagu}-4h"]`).click();
+  await page.locator(`label[for="tagint-${idTagu}-5m"]`).click();
+  await page.getByRole("button", { name: /zapisz zmiany/i }).click();
+  await page.waitForURL(/\/trades\/\d+$/);
+
+  // Na karcie trade'a ta sama nazwa tagu ma pojawic sie DWA razy - raz na
+  // kazdym interwale. Jeden chip znaczylby, ze drugi interwal przepadl.
+  await expect(page.getByText("4h", { exact: false }).first()).toBeVisible();
+
+  const adresKarty = page.url();
+  await page.goto(`${adresKarty}/edit`);
+  await expect(page.locator(`#tagint-${idTagu}-4h`)).toBeChecked();
+  await expect(page.locator(`#tagint-${idTagu}-5m`)).toBeChecked();
+
+  // Ponowny zapis bez zmian: nadal dwa przypisania, nie cztery.
+  await page.getByRole("button", { name: /zapisz zmiany/i }).click();
+  await page.waitForURL(/\/trades\/\d+$/);
+  await page.goto(`${adresKarty}/edit`);
+  const zaznaczone = await page.locator(`input[name="tagint:${idTagu}"]:checked`).count();
+  expect(zaznaczone).toBe(2);
+});
+
+test("pole kierunku pojawia sie tylko przy stracie, nie przy wygranej", async ({ page }) => {
+  // ADR-018: przy wygranej pytanie nie ma sensu, bo trafnosc wynika z wyniku.
+  await page.goto("/trades?wynik=zysk");
+  await page.locator("table tbody tr").first().locator("a").first().click();
+  await page.getByRole("link", { name: /edytuj/i }).first().click();
+  await page.waitForURL(/\/edit$/);
+  await expect(page.locator('input[name="directionCorrect"]')).toHaveCount(0);
+  await expect(page.getByText(/kierunek trafiony/i).first()).toBeVisible();
+
+  await page.goto("/trades?wynik=strata");
+  await page.locator("table tbody tr").first().locator("a").first().click();
+  await page.getByRole("link", { name: /edytuj/i }).first().click();
+  await page.waitForURL(/\/edit$/);
+  await expect(page.locator('input[name="directionCorrect"]')).toHaveCount(1);
+  // Ukryte pole odrozniajace "kierunek chybiony" od "nie pytalismy" (ADR-018).
+  await expect(page.locator('input[name="kierunek_oceniany"]')).toHaveCount(1);
+});
+
+test("galeria pokazuje kafle ze zrzutem i filtruje po tagu", async ({ page }) => {
+  await page.goto("/galeria");
+  await expect(page.getByRole("heading", { name: "Galeria" })).toBeVisible();
+
+  const kafle = page.locator("main ul > li");
+  const ile = await kafle.count();
+  if (ile > 0) {
+    // Domyslnie tylko trade'y ze zrzutem (ADR-019), wiec kazdy kafel ma obraz.
+    await expect(kafle.first().locator("img")).toHaveAttribute("loading", "lazy");
+    await kafle.first().locator("a").click();
+    await expect(page).toHaveURL(/\/trades\/\d+$/);
+  }
+});

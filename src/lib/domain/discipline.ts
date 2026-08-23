@@ -5,6 +5,11 @@
  * odhaczone, czy pozycja rosla po stracie, czy wejscie padlo tuz po stracie.
  * Kazdy sygnal ma wage; wynik to sto minus suma wag przemnozonych przez udzial
  * trade'ow, ktore go wywolaly.
+ *
+ * UWAGA (ADR-018): dolozenie sygnalu "zla_egzekucja" przesunelo skale. Wyniki
+ * sprzed tej zmiany NIE sa porownywalne z pozniejszymi - to swiadomy koszt,
+ * przyjety dlatego, ze niepotrzebne BE i za wczesne wyjscie sa zachowaniem,
+ * a ten miernik jest wlasnie o zachowaniu.
  */
 
 import type { TradeForAnalysis } from "./types";
@@ -56,6 +61,14 @@ const DEFINITIONS = [
     weight: 20,
   },
   {
+    code: "zla_egzekucja",
+    title: "Zepsuta egzekucja przy dobrym kierunku",
+    description:
+      "Kierunek był trafiony, ale trade skończył się niepotrzebnym BE albo za wczesnym wyjściem. " +
+      "Niepotrzebny stop celowo nie liczy się tutaj — zbyt ciasny stop to błąd planu, nie dyscypliny.",
+    weight: 15,
+  },
+  {
     code: "risk_above_norm",
     title: "Ryzyko ponad własną normę",
     description: "Ryzyko przekroczyło półtora raza medianę pozostałych trade'ów.",
@@ -87,6 +100,12 @@ export function scoreDiscipline(
   ordered.forEach((t, i) => {
     if (!t.hasStop) add("no_stop", t.id);
     if (t.hasRules && t.rulesMet < t.ruleCount) add("broken_rules", t.id);
+    if (
+      t.kierunekTrafiony === true &&
+      (t.badExecutionReason === "unnecessary_be" || t.badExecutionReason === "early_exit")
+    ) {
+      add("zla_egzekucja", t.id);
+    }
     if (riskMedian !== null && t.riskAmount !== null && t.riskAmount > riskMedian * 1.5) {
       add("risk_above_norm", t.id);
     }

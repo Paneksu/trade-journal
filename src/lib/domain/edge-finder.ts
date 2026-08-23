@@ -47,7 +47,12 @@ type Options = {
 function bucketize(trades: TradeForAnalysis[], dim: Dimension): Map<string, TradeForAnalysis[]> {
   const buckets = new Map<string, TradeForAnalysis[]>();
   for (const t of trades) {
-    for (const w of dim.values(t)) {
+    // `new Set` jak w `groupBy` (ADR-017): tag powtorzony na kilku interwalach
+    // nie moze wpasc dwa razy do tego samego kubelka. Tutaj konsekwencje sa
+    // gorsze niz w tabeli - duplikat zawyza probke, przez co kontekst przechodzi
+    // prog `minSample`, na ktory naprawde nie zasluzyl, a przy parach wymiarow
+    // duplikaty z `listB` propaguja sie jeszcze do przeciecia.
+    for (const w of new Set(dim.values(t))) {
       const list = buckets.get(w);
       if (list) list.push(t);
       else buckets.set(w, [t]);

@@ -1,4 +1,5 @@
 import type { Direction, MarketSession } from "./calc";
+import type { PowodZlejEgzekucji } from "./kierunek";
 import type { Wynik } from "./outcome";
 import type { TradeStat } from "./stats";
 
@@ -27,7 +28,22 @@ export type TradeForAnalysis = TradeStat & {
   rulesMet: number;
   hasRules: boolean;
   hasStop: boolean;
+  /** Trafnosc kierunku policzona raz w `queries/trades.ts` (ADR-018) - jak `wynik`,
+      po to, zeby wymiary i komponenty nie musialy znac progow BE.
+      `null` znaczy "nieocenione", `false` - "kierunek chybiony". */
+  kierunekTrafiony: boolean | null;
+  badExecutionReason: PowodZlejEgzekucji | null;
+  potentialR: number | null;
+  /**
+   * UWAGA: lista moze zawierac ten sam `id` tagu wielokrotnie - raz na kazdy
+   * interwal, na ktorym ta konfluencja wystapila (ADR-017). To jest kontrakt,
+   * na ktorym opiera sie reszta modulu:
+   *  - do klucza Reacta uzywaj `assignmentId`, nigdy `id`,
+   *  - przy grupowaniu wartosci wymiaru przechodza przez `new Set`.
+   */
   tags: {
+    /** Identyfikator przypisania (trade_tags.id) - jedyna wartosc unikalna w tej liscie. */
+    assignmentId: number;
     id: number;
     name: string;
     category: string;
