@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { dayNotes, savedViews, screenshots } from "@/lib/db/schema";
 import { deleteDayDir, deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
+import { czyInterwal } from "@/lib/domain/interwaly";
 import { bladLimitu } from "@/lib/screenshots-limit";
 import { countTradesOnDay, countSessionTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
@@ -190,6 +191,11 @@ export async function addDayScreenshots(d: FormData): Promise<ActionState> {
   const limit = bladLimitu(stan.ile, files.length);
   if (limit) return { error: limit };
 
+  // Jeden, wspolny interwal dla calej paczki - patrz komentarz przy
+  // `interwalZFormularza` w lib/actions/trades.ts (ADR-015), ten sam wzor.
+  const interwalRaw = text(d, "interval");
+  const interval = interwalRaw !== null && czyInterwal(interwalRaw) ? interwalRaw : null;
+
   let sortOrder = stan.ostatni + 1;
 
   for (const file of files) {
@@ -202,6 +208,7 @@ export async function addDayScreenshots(d: FormData): Promise<ActionState> {
         width: saved.width,
         height: saved.height,
         sortOrder: sortOrder++,
+        interval,
       });
     } catch (error) {
       return { error: `Zrzut się nie wgrał: ${(error as Error).message}` };
@@ -219,6 +226,17 @@ export async function removeDayScreenshot(id: number): Promise<ActionState> {
 
   await db.delete(screenshots).where(eq(screenshots.id, id));
   await deleteScreenshot(s.file, s.thumbnail);
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Poprawka interwalu po fakcie - patrz `setScreenshotInterval` w actions/trades.ts (ADR-015). */
+export async function setDayScreenshotInterval(id: number, interval: string): Promise<ActionState> {
+  await requireSession();
+  const [s] = await db.select().from(screenshots).where(eq(screenshots.id, id)).limit(1);
+  if (!s || s.dayNoteId === null) return { error: "Nie ma takiego zrzutu." };
+  const wartosc = interval !== "" && czyInterwal(interval) ? interval : null;
+  await db.update(screenshots).set({ interval: wartosc }).where(eq(screenshots.id, id));
   revalidatePath("/", "layout");
   return { ok: true };
 }

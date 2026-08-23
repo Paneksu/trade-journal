@@ -9,6 +9,7 @@ import {
   proporcja,
   wzrostKafla,
 } from "@/lib/domain/galeria";
+import { INTERWALY } from "@/lib/domain/interwaly";
 import { Lightbox } from "./lightbox";
 import type { Shot } from "./typy";
 
@@ -40,12 +41,15 @@ export function ScreenshotGrid({
   shots,
   opis,
   onUsun,
+  onZmienInterval,
   className,
 }: {
   shots: Shot[];
   opis: string;
   /** Podane tylko tam, gdzie zrzuty wolno kasowac. */
   onUsun?: (id: number) => Promise<void> | void;
+  /** Podane tam, gdzie wolno tez poprawic interwal - te same miejsca co `onUsun`. */
+  onZmienInterval?: (id: number, interval: string) => Promise<void> | void;
   className?: string;
 }) {
   const [podglad, setPodglad] = useState<number | null>(null);
@@ -70,7 +74,7 @@ export function ScreenshotGrid({
               <button
                 type="button"
                 onClick={() => setPodglad(i)}
-                aria-label={`Powiększ zrzut ${i + 1} z ${shots.length}`}
+                aria-label={`Powiększ zrzut ${i + 1} z ${shots.length}${s.interval ? ` — interwał ${s.interval}` : ""}`}
                 className="block h-full w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border border-line transition-colors duration-150 hover:border-faint focus-visible:border-accent"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -85,6 +89,16 @@ export function ScreenshotGrid({
                   className="block h-full w-full object-contain"
                 />
               </button>
+              {onZmienInterval ? (
+                <IntervalEdit
+                  id={s.id}
+                  interval={s.interval}
+                  numer={i + 1}
+                  onZmien={onZmienInterval}
+                />
+              ) : (
+                s.interval && <IntervalBadge interval={s.interval} />
+              )}
               {onUsun && <UsunZrzut id={s.id} onUsun={onUsun} />}
             </figure>
           ))}
@@ -116,6 +130,64 @@ function Wypelniacze() {
       style={{ flexGrow: 999, flexBasis: `${BAZA_WYSOKOSCI_WIERSZA}rem`, height: 0 }}
     />
   ));
+}
+
+/**
+ * Etykieta samego interwalu - tlo w pelni kryjace (`bg-bg`), nie `/80` jak
+ * przy koszu obok. Etykieta niesie informacje (ADR-015), wiec obnizanie
+ * kontrastu przez polprzezroczystosc na losowym, jasnym fragmencie wykresu
+ * jest dokladnie tym, co dzis oblalo audyt dostepnosci - stad zero `opacity`
+ * na tekscie i tlo bez kanalu alfa.
+ */
+function IntervalBadge({ interval }: { interval: string }) {
+  return (
+    <span className="pointer-events-none absolute bottom-2 left-2 rounded-[var(--radius-control)] border border-line-strong bg-bg px-1.5 py-0.5 text-xs font-medium text-text">
+      {interval}
+    </span>
+  );
+}
+
+/**
+ * Interwal jako `<select>` zamiast statycznej etykiety - tam, gdzie zrzut
+ * wolno tez kasowac, wolno tez poprawic, po co go wgrano (ADR-015). Zapis
+ * idzie od razu przy zmianie, bez osobnego przycisku "zapisz": to jedno pole,
+ * a nie formularz z wieloma polami na raz.
+ */
+function IntervalEdit({
+  id,
+  interval,
+  numer,
+  onZmien,
+}: {
+  id: number;
+  interval: string | null;
+  numer: number;
+  onZmien: (id: number, interval: string) => Promise<void> | void;
+}) {
+  const [pending, startTransition] = useTransition();
+
+  return (
+    <select
+      value={interval ?? ""}
+      disabled={pending}
+      aria-label={`Interwał zrzutu ${numer}`}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => {
+        const w = e.target.value;
+        startTransition(async () => {
+          await onZmien(id, w);
+        });
+      }}
+      className="absolute bottom-2 left-2 cursor-pointer rounded-[var(--radius-control)] border border-line-strong bg-bg px-1.5 py-0.5 text-xs font-medium text-text disabled:opacity-50"
+    >
+      <option value="">interwał —</option>
+      {INTERWALY.map((i) => (
+        <option key={i} value={i}>
+          {i}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 function UsunZrzut({

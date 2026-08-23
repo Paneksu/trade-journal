@@ -432,3 +432,56 @@ Treść `window.confirm` przy kasowaniu tagu (`components/settings/forms.tsx`,
 `components/trades/tag-manager.tsx`) została poprawiona — do tej pory
 obiecywała, że tag "zniknie z trade'ów, które go mają", co po tej zmianie
 przestało być prawdą: usunięcie użytego tagu teraz się nie powiedzie.
+
+---
+
+## ADR-015 — interwał zrzutu, osobno od interwału tagu (2026-08-23)
+
+Zrzut ekranu dostał własną kolumnę `screenshots.interval` (`text`, nullable —
+to samo uzasadnienie co przy `trade_tags.interval` w ADR-013: lista
+dozwolonych wartości żyje w kodzie, `lib/domain/interwaly.ts`, dołożenie
+np. "2h" nie ma wymagać migracji schematu).
+
+**Dlaczego to nie jest ten sam interwał co przy tagu.** Tag opisuje setup —
+"wybicie" zauważone na 5m. Zrzut opisuje konkretny obraz — wykres otwarty na
+1h. Jeden trade miewa po kilka zrzutów z różnych interwałów naraz (wejście na
+5m, kontekst z 1h, potwierdzenie z D), więc próba utożsamienia tych dwóch pól
+zmuszałaby do wyboru jednego interwału dla całego trade'a i kłamałaby o
+pozostałych zrzutach. Migracja `drizzle/0008_interwal_zrzutu.sql` dokłada
+kolumnę bez żadnego przepisywania danych — nie ma z czego wywnioskować
+interwału istniejących zrzutów wstecz.
+
+**Dwa różne miejsca wyboru, bo dwa różne przepływy wgrywania.**
+
+- **Dogrywanie do istniejącego wpisu** (`ScreenshotUploader`, trade w edycji
+  i dzień dziennika) — jeden `<select name="interval">` nad strefą wgrywania,
+  wspólny dla całej paczki. Typowy przepływ to kilka zrzutów z tego samego
+  interwału pod rząd (Ctrl+V kilka razy z rzędu z tej samej platformy), więc
+  wartość zostaje zapamiętana w stanie komponentu między wgraniami zamiast
+  zerować się po każdym pliku — przestawianie selecta za każdym razem byłoby
+  karą za normalne użycie.
+- **Nowy trade** (`NewTradeShots`) — interwał wybierany per plik w podglądzie,
+  bo tu widać wszystkie miniatury naraz i naraz można wgrywać zrzuty z kilku
+  interwałów. Pliki i interwały jadą równoległymi polami `shot`/`shotint`
+  (multipart formularza trade'a, wpis nie ma jeszcze id — ADR-009), parowane
+  po indeksie funkcją `sparujZInterwalami`
+  (`src/lib/domain/interwaly.ts`), nie po treści. Cicha zamiana interwałów
+  między zdjęciami przy przesunięciu indeksów jest dokładnie tym błędem,
+  którego nikt by nie zauważył na oko — stąd czysta, testowana funkcja
+  zamiast parowania w locie w komponencie.
+
+**Poprawka po fakcie.** Wszędzie, gdzie zrzut wolno skasować (`onUsun`), wolno
+też poprawić mu interwał — `setScreenshotInterval` /
+`setDayScreenshotInterval` w `lib/actions/{trades,journal}.ts`, wołane bez
+zagnieżdżonego `<form>` (formularz trade'a jest jednym `<form>`, wzorzec z
+`tag-manager.tsx`). W `ScreenshotGrid` etykieta interwału jest wtedy od razu
+`<select>`, nie statycznym tekstem — nie ma osobnego trybu "podgląd" i trybu
+"edycja".
+
+**Etykieta bez `opacity`.** Interwał na kaflu i w powiększeniu ma pełne,
+kryjące tło (`bg-bg`, bez kanału alfa) i tekst w pełnym kontraście
+(`text-text`), nie `text-faint` ani `opacity-*` — dokładnie to zawiodło dziś
+w audycie dostępności `trades-table.tsx`. Tło pod tekstem musi być
+nieprzezroczyste, bo leży na dowolnym, nieprzewidywalnym fragmencie zdjęcia
+wykresu — półprzezroczyste tło (jak przy przycisku kosza obok, `bg-bg/80`)
+dawałoby nieprzewidywalny kontrast zależny od tego, co akurat jest pod spodem.

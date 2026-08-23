@@ -285,6 +285,12 @@ export const screenshots = pgTable(
     height: integer(),
     sortOrder: integer().notNull().default(0),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // Interwal, z jakiego pochodzi ten konkretny obraz - nie do mylenia z
+    // "trade_tags"."interval" (ADR-013), ktory opisuje setup tagu. Jeden
+    // trade miewa zrzuty z kilku interwalow naraz, wiec te dwie rzeczy nie
+    // dadza sie utozsamic (ADR-015). `text`, nie enum, z tego samego powodu
+    // co przy tagach: lista zyje w lib/domain/interwaly.ts.
+    interval: text(),
   },
   (t) => [
     index("screenshots_trade_idx").on(t.tradeId),

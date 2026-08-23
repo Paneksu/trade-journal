@@ -8,7 +8,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { instruments, screenshots, tradeTags, trades } from "@/lib/db/schema";
 import { computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc";
-import { czyInterwal } from "@/lib/domain/interwaly";
+import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import { cleanValues, fieldsForScope, readFromForm, validateValues } from "@/lib/fields/fields";
 import { getFields, instrumentSpec } from "@/lib/queries/dictionaries";
 import { deleteScreenshot, deleteTradeDir, saveScreenshot } from "@/lib/screenshots";
@@ -64,7 +64,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const statusRaw = text(data, "status") ?? "closed";
 
   // Limit sprawdzamy przed zapisem, zeby nie zostawic trade'a z polowa zdjec.
-  const nowe = zrzutyZFormularza(data);
+  const nowe = zrzutyNoweZInterwalami(data);
   const limit = bladLimitu(id ? await policzZrzuty(id) : 0, nowe.length);
   if (limit) return { ok: false, error: limit };
 
@@ -213,7 +213,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   // Formularz przysyla pliki tylko przy nowym trade'cie; w edycji zrzuty leca
   // osobno przez `addTradeScreenshots`, wiec licznik zaczyna od zera dopiero
   // wtedy, gdy trade faktycznie zadnych nie ma.
-  const shotError = await wgrajZrzuty(savedId, zrzutyZFormularza(data));
+  const shotError = await wgrajZrzuty(savedId, nowe);
   if (shotError) return { ok: false, id: savedId, error: `Trade zapisany, ale ${shotError}` };
 
   revalidatePath("/", "layout");
@@ -234,8 +234,35 @@ export async function deleteTrade(id: number): Promise<void> {
 
 /* --- Zrzuty --------------------------------------------------------------- */
 
-function zrzutyZFormularza(data: FormData): File[] {
-  return data.getAll("shot").filter((w): w is File => w instanceof File && w.size > 0);
+type ZrzutZInterwalem = { file: File; interval: string | null };
+
+/**
+ * Zrzuty nowego trade'a: wpis nie ma jeszcze id, wiec pliki jada tym samym
+ * multipartem co reszta formularza (ADR-009). Kazdy plik ma wlasny interwal
+ * wybrany w podgladzie (`NewTradeShots`), przeslany rownolegle w "shotint" -
+ * parujemy je po indeksie (`sparujZInterwalami`), nie po tresci, zeby
+ * przesuniecie ktoregokolwiek pliku nigdy nie podmienilo cudzego interwalu.
+ */
+function zrzutyNoweZInterwalami(data: FormData): ZrzutZInterwalem[] {
+  const pliki = data.getAll("shot");
+  const interwaly = data.getAll("shotint").map((w) => String(w));
+  return sparujZInterwalami(pliki, interwaly)
+    .filter(
+      (p): p is { plik: File; interval: Interwal | null } =>
+        p.plik instanceof File && p.plik.size > 0,
+    )
+    .map((p) => ({ file: p.plik, interval: p.interval }));
+}
+
+/**
+ * Jeden, wspolny interwal dla calej paczki - dogrywanie zrzutow do
+ * istniejacego wpisu ma jeden select nad strefa wgrywania (ADR-015), nie
+ * wybor per plik jak przy nowym trade'cie, bo tam wszystkie pliki w paczce
+ * zwykle pochodza z tego samego interwalu.
+ */
+function interwalZFormularza(data: FormData): string | null {
+  const w = text(data, "interval");
+  return w !== null && czyInterwal(w) ? w : null;
 }
 
 async function policzZrzuty(tradeId: number): Promise<number> {
@@ -251,8 +278,8 @@ async function policzZrzuty(tradeId: number): Promise<number> {
  * juz lezy w bazie - inaczej zdjecie dograne pozniej wskakiwaloby na poczatek.
  * Zwraca komunikat bledu albo null.
  */
-async function wgrajZrzuty(tradeId: number, files: File[]): Promise<string | null> {
-  if (files.length === 0) return null;
+async function wgrajZrzuty(tradeId: number, items: ZrzutZInterwalem[]): Promise<string | null> {
+  if (items.length === 0) return null;
 
   const [stan] = await db
     .select({ ostatni: sql<number>`coalesce(max(${screenshots.sortOrder}), -1)::int` })
@@ -260,7 +287,7 @@ async function wgrajZrzuty(tradeId: number, files: File[]): Promise<string | nul
     .where(eq(screenshots.tradeId, tradeId));
   let sortOrder = (stan?.ostatni ?? -1) + 1;
 
-  for (const file of files) {
+  for (const { file, interval } of items) {
     try {
       const saved = await saveScreenshot({ kind: "trade", id: tradeId }, file);
       await db.insert(screenshots).values({
@@ -270,6 +297,7 @@ async function wgrajZrzuty(tradeId: number, files: File[]): Promise<string | nul
         width: saved.width,
         height: saved.height,
         sortOrder: sortOrder++,
+        interval,
       });
     } catch (error) {
       return `zrzut się nie wgrał: ${(error as Error).message}`;
@@ -284,13 +312,17 @@ export async function addTradeScreenshots(data: FormData): Promise<FormState> {
   const tradeId = integer(data, "tradeId");
   if (!tradeId) return { ok: false, error: "Nie wiem, do którego trade'a przypiąć zrzut." };
 
-  const files = zrzutyZFormularza(data);
+  const files = data.getAll("shot").filter((w): w is File => w instanceof File && w.size > 0);
   if (files.length === 0) return { ok: false, error: "Nie widzę obrazu do wgrania." };
 
   const limit = bladLimitu(await policzZrzuty(tradeId), files.length);
   if (limit) return { ok: false, error: limit };
 
-  const blad = await wgrajZrzuty(tradeId, files);
+  const interval = interwalZFormularza(data);
+  const blad = await wgrajZrzuty(
+    tradeId,
+    files.map((file) => ({ file, interval })),
+  );
   if (blad) return { ok: false, error: blad[0].toUpperCase() + blad.slice(1) };
 
   revalidatePath("/", "layout");
@@ -304,6 +336,25 @@ export async function removeScreenshot(screenshotId: number): Promise<FormState>
   await db.delete(screenshots).where(eq(screenshots.id, screenshotId));
   await deleteScreenshot(s.file, s.thumbnail);
   // Licznik zrzutow siedzi tez w tabeli trade'ow, wiec odswiezamy caly uklad.
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/**
+ * Poprawka interwalu po fakcie - tam, gdzie zrzut wolno tez skasowac
+ * (ADR-015). Pusty string czysci interwal, wartosc spoza `INTERWALY` jest
+ * cicho odrzucana (zapisuje sie `null`), zamiast oddawac blad za pomylke w
+ * kliknieciu.
+ */
+export async function setScreenshotInterval(
+  screenshotId: number,
+  interval: string,
+): Promise<FormState> {
+  await requireSession();
+  const [s] = await db.select().from(screenshots).where(eq(screenshots.id, screenshotId)).limit(1);
+  if (!s) return { ok: false, error: "Nie ma takiego zrzutu." };
+  const wartosc = interval !== "" && czyInterwal(interval) ? interval : null;
+  await db.update(screenshots).set({ interval: wartosc }).where(eq(screenshots.id, screenshotId));
   revalidatePath("/", "layout");
   return { ok: true };
 }

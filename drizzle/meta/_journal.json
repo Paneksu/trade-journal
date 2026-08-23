@@ -57,6 +57,13 @@
       "when": 1787520000000,
       "tag": "0007_interwal_przy_tagu",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787530000000,
+      "tag": "0008_interwal_zrzutu",
+      "breakpoints": true
     }
   ]
 }

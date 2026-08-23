@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { czyInterwal, INTERWALY, porzadekInterwalu } from "./interwaly";
+import { czyInterwal, INTERWALY, porzadekInterwalu, sparujZInterwalami } from "./interwaly";
 
 describe("czyInterwal", () => {
   it("przyjmuje kazda wartosc z listy", () => {
@@ -33,5 +33,43 @@ describe("porzadekInterwalu", () => {
       (a, b) => porzadekInterwalu(a) - porzadekInterwalu(b),
     );
     expect(posortowane).toEqual(INTERWALY);
+  });
+});
+
+describe("sparujZInterwalami", () => {
+  it("paruje po indeksie, nie po wartosci", () => {
+    const pliki = ["a.png", "b.png", "c.png"];
+    const wynik = sparujZInterwalami(pliki, ["5m", "1h", "D"]);
+    expect(wynik).toEqual([
+      { plik: "a.png", interval: "5m" },
+      { plik: "b.png", interval: "1h" },
+      { plik: "c.png", interval: "D" },
+    ]);
+  });
+
+  it("nie przesuwa interwalow, gdy jeden plik nie ma wyboru (pusty string)", () => {
+    // Dokladnie ten blad, ktorego nikt nie zauwazy: gdyby puste pozycje byly
+    // pomijane zamiast trzymac miejsce, drugi i trzeci plik dostalyby
+    // interwaly nalezace do sasiadow.
+    const pliki = ["a.png", "b.png", "c.png"];
+    const wynik = sparujZInterwalami(pliki, ["5m", "", "D"]);
+    expect(wynik).toEqual([
+      { plik: "a.png", interval: "5m" },
+      { plik: "b.png", interval: null },
+      { plik: "c.png", interval: "D" },
+    ]);
+  });
+
+  it("wartosc spoza listy zamienia sie w null, nie odrzuca pary", () => {
+    const wynik = sparujZInterwalami(["a.png"], ["7m"]);
+    expect(wynik).toEqual([{ plik: "a.png", interval: null }]);
+  });
+
+  it("brakujacy interwal na koncu listy (krotsza tablica) daje null", () => {
+    const wynik = sparujZInterwalami(["a.png", "b.png"], ["5m"]);
+    expect(wynik).toEqual([
+      { plik: "a.png", interval: "5m" },
+      { plik: "b.png", interval: null },
+    ]);
   });
 });

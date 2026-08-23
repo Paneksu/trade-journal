@@ -161,6 +161,13 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
     { name: "wykres-2.png", mimeType: "image/png", buffer: await png("#3a1d33") },
   ]);
 
+  // Interwal per plik (ADR-015) - kazdy zrzut w podgladzie dostaje wlasny
+  // wybor, drugi zostaje bez interwalu ("—"), zeby test pokryl tez brak
+  // wartosci obok wartosci ustawionej.
+  await page
+    .getByRole("combobox", { name: "Interwał zrzutu 1" })
+    .selectOption("5m");
+
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
@@ -175,13 +182,30 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
   const adres = await obraz.getAttribute("src");
   expect(adres).toContain("-mini.webp");
 
-  // Powiekszenie: strzalki przewijaja, Escape zamyka.
-  await page.getByRole("button", { name: "Powiększ zrzut 1 z 2" }).click();
+  // Interwal zapisany przy pierwszym zrzucie jest widoczny na kaflu (jako
+  // edytowalny select, bo tu wolno tez kasowac - ADR-015), drugi zostal bez
+  // wyboru i pokazuje pusta opcje.
+  const wyborInterwalu1 = page.getByRole("combobox", { name: "Interwał zrzutu 1" });
+  await expect(wyborInterwalu1).toHaveValue("5m");
+  const wyborInterwalu2 = page.getByRole("combobox", { name: "Interwał zrzutu 2" });
+  await expect(wyborInterwalu2).toHaveValue("");
+
+  // Poprawka interwalu po fakcie, bez przeladowania strony ani zagniezdzonego
+  // formularza (wzorzec z tag-manager.tsx).
+  await wyborInterwalu2.selectOption("1h");
+  await expect(wyborInterwalu2).toHaveValue("1h");
+  await page.reload();
+  await expect(page.getByRole("combobox", { name: "Interwał zrzutu 2" })).toHaveValue("1h");
+
+  // Powiekszenie: strzalki przewijaja, Escape zamyka, interwal widoczny.
+  await page.getByRole("button", { name: /Powiększ zrzut 1 z 2/ }).click();
   const okno = page.locator("dialog[open]");
   await expect(okno).toBeVisible();
   await expect(okno.getByText("1 / 2")).toBeVisible();
+  await expect(okno.getByText("5m", { exact: true })).toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(okno.getByText("2 / 2")).toBeVisible();
+  await expect(okno.getByText("1h", { exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator("dialog[open]")).toHaveCount(0);
 

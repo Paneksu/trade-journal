@@ -35,3 +35,25 @@ export function czyInterwal(w: string | null | undefined): w is Interwal {
 export function porzadekInterwalu(w: Interwal): number {
   return INTERWALY.indexOf(w);
 }
+
+/**
+ * Paruje pliki zrzutow z interwalami wybranymi dla kazdego z nich po indeksie
+ * - nie po nazwie czy zawartosci. Uzywane przy nowym trade'cie (formularz
+ * wysyla rownolegle "shot" i "shotint"), gdzie kazdy plik ma osobny interwal
+ * wybrany w podgladzie. Cicha zamiana interwalow miedzy zdjeciami przy
+ * przesunieciu indeksow jest dokladnie tym bledem, ktorego nikt by nie
+ * zauwazyl - stad wydzielona, czysta funkcja pokryta testem.
+ *
+ * Wartosc spoza `INTERWALY` (albo brak wartosci na danej pozycji) zamienia
+ * sie w `null`, nie odrzuca calej pary - jeden zle wypelniony wybor nie ma
+ * blokowac wgrania pozostalych plikow.
+ */
+export function sparujZInterwalami<T>(
+  pliki: readonly T[],
+  interwaly: readonly (string | null | undefined)[],
+): { plik: T; interval: Interwal | null }[] {
+  return pliki.map((plik, i) => {
+    const w = interwaly[i];
+    return { plik, interval: czyInterwal(w) ? w : null };
+  });
+}

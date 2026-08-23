@@ -3,9 +3,14 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ClipboardPaste } from "lucide-react";
 
-import { ErrorMessage } from "@/components/ui/base";
-import { addDayScreenshots, removeDayScreenshot } from "@/lib/actions/journal";
-import { addTradeScreenshots, removeScreenshot } from "@/lib/actions/trades";
+import { ErrorMessage, Label, Select } from "@/components/ui/base";
+import {
+  addDayScreenshots,
+  removeDayScreenshot,
+  setDayScreenshotInterval,
+} from "@/lib/actions/journal";
+import { addTradeScreenshots, removeScreenshot, setScreenshotInterval } from "@/lib/actions/trades";
+import { INTERWALY } from "@/lib/domain/interwaly";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { ScreenshotGrid } from "./screenshot-grid";
 import type { CelZrzutow, Shot } from "./typy";
@@ -17,6 +22,11 @@ import type { CelZrzutow, Shot } from "./typy";
  *
  * Wklejanie ze schowka jest glowna droga - zrzut z platformy leci Ctrl+V, bez
  * zapisywania pliku na dysk. Pole wyboru pliku zostaje dla telefonu.
+ *
+ * Interwal (ADR-015): jeden `<select>` nad strefa wgrywania, wspolny dla
+ * calej paczki. Wartosc zostaje w stanie miedzy wgraniami - typowy przeplyw
+ * to kilka zrzutow z tego samego interwalu pod rzad, wiec przestawianie
+ * selecta za kazdym razem byloby kara za normalne uzycie.
  */
 
 export function ScreenshotUploader({
@@ -31,6 +41,7 @@ export function ScreenshotUploader({
   const [pending, startTransition] = useTransition();
   const [blad, setBlad] = useState<string | null>(null);
   const [wgrane, setWgrane] = useState(false);
+  const [interwal, setInterwal] = useState("");
   // Znacznik gotowosci nasluchu zapisujemy wprost w DOM, nie w stanie: reguly
   // Reacta slusznie zabraniaja setState w ciele efektu, a atrybut jest tu tylko
   // sygnalem "Ctrl+V juz dziala" - dla testu i dla podgladu w przegladarce.
@@ -57,6 +68,7 @@ export function ScreenshotUploader({
         dane.set("backtestSessionId", String(cel.backtestSessionId));
     }
     for (const f of obrazy) dane.append("shot", f);
+    if (interwal) dane.set("interval", interwal);
 
     setBlad(null);
     startTransition(async () => {
@@ -96,13 +108,35 @@ export function ScreenshotUploader({
     else await removeDayScreenshot(id);
   }
 
+  async function zmienInterval(id: number, w: string) {
+    if (cel.typ === "trade") await setScreenshotInterval(id, w);
+    else await setDayScreenshotInterval(id, w);
+  }
+
   return (
     <div className="space-y-3 p-4">
       {/* Zdjecia ida pierwsze - to one sa trescia wpisu. Strefa wgrywania
           zostaje pod nimi, blizej miejsca, w ktorym konczy sie ogladanie. */}
-      <ScreenshotGrid shots={shots} opis={opis} onUsun={usun} />
+      <ScreenshotGrid shots={shots} opis={opis} onUsun={usun} onZmienInterval={zmienInterval} />
 
       {blad && <ErrorMessage>{blad}</ErrorMessage>}
+
+      <div className="space-y-1.5">
+        <Label htmlFor="zrzut-interwal">Interwał nowych zrzutów</Label>
+        <Select
+          id="zrzut-interwal"
+          value={interwal}
+          onChange={(e) => setInterwal(e.target.value)}
+          className="max-w-40"
+        >
+          <option value="">— nie podano —</option>
+          {INTERWALY.map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </Select>
+      </div>
 
       <div
         onDragOver={(e) => e.preventDefault()}

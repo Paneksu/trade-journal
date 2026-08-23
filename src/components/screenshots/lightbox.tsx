@@ -90,6 +90,11 @@ export function Lightbox({
             <span className="liczba px-1 text-xs text-muted" aria-live="polite">
               {i + 1} / {shots.length}
             </span>
+            {s.interval && (
+              <span className="rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-1.5 py-0.5 text-xs font-medium text-text">
+                {s.interval}
+              </span>
+            )}
             {shots.length > 1 && (
               <button
                 type="button"

@@ -5,6 +5,8 @@ export type Shot = {
   thumbnail: string | null;
   width: number | null;
   height: number | null;
+  /** Interwal, z jakiego pochodzi ten obraz - ADR-015. Osobny od interwalu tagu. */
+  interval: string | null;
 };
 
 /**

@@ -12,6 +12,7 @@ import {
   proporcja,
   wzrostKafla,
 } from "@/lib/domain/galeria";
+import { INTERWALY } from "@/lib/domain/interwaly";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 
 /**
@@ -25,9 +26,17 @@ import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
  * uploadem) - proporcja startuje z `PROPORCJA_DOMYSLNA` i doklada sie w
  * `onLoad` obrazu z `img.naturalWidth/naturalHeight`, jedno przerysowanie po
  * zaladowaniu kazdego pliku.
+ *
+ * Interwal (ADR-015) jest tu wybierany per plik, nie jedna wartoscia dla
+ * calej paczki jak w `ScreenshotUploader` - w podgladzie widac wszystkie
+ * miniatury naraz, wiec tutaj (w przeciwienstwie do dogrywania do istniejacego
+ * wpisu) uzytkownik moze naraz wgrywac zrzuty z roznych interwalow. Wartosci
+ * ida w polu rownoleglym "shotint" (jeden `<select name="shotint">` na kazda
+ * pozycje, w tej samej kolejnosci co pliki) - serwer paruje je po indeksie
+ * funkcja `sparujZInterwalami`.
  */
 
-type Pozycja = { file: File; podglad: string; proporcja: number };
+type Pozycja = { file: File; podglad: string; proporcja: number; interval: string };
 
 export function NewTradeShots() {
   // Adres podgladu powstaje razem z pozycja, nie w efekcie - inaczej kazde
@@ -69,6 +78,7 @@ export function NewTradeShots() {
         file: f,
         podglad: URL.createObjectURL(f),
         proporcja: PROPORCJA_DOMYSLNA,
+        interval: "",
       })),
     ]);
   }
@@ -87,6 +97,10 @@ export function NewTradeShots() {
     setPliki((p) =>
       p.map((x) => (x === pozycja ? { ...x, proporcja: proporcja(szer, wys) } : x)),
     );
+  }
+
+  function zmienInterval(pozycja: Pozycja, interval: string) {
+    setPliki((p) => p.map((x) => (x === pozycja ? { ...x, interval } : x)));
   }
 
   useEffect(() => {
@@ -156,7 +170,12 @@ export function NewTradeShots() {
       {blad && <ErrorMessage>{blad}</ErrorMessage>}
 
       {pliki.length > 0 && (
-        <NowaGaleria pliki={pliki} onUsun={usun} onZaladowane={naZaladowane} />
+        <NowaGaleria
+          pliki={pliki}
+          onUsun={usun}
+          onZaladowane={naZaladowane}
+          onZmienInterval={zmienInterval}
+        />
       )}
     </div>
   );
@@ -174,10 +193,12 @@ function NowaGaleria({
   pliki,
   onUsun,
   onZaladowane,
+  onZmienInterval,
 }: {
   pliki: Pozycja[];
   onUsun: (i: number) => void;
   onZaladowane: (pozycja: Pozycja, szer: number, wys: number) => void;
+  onZmienInterval: (pozycja: Pozycja, interval: string) => void;
 }) {
   const proporcje = pliki.map((p) => p.proporcja);
 
@@ -203,6 +224,23 @@ function NowaGaleria({
             }}
             className="block h-full w-full object-contain rounded-[var(--radius-control)] border border-line"
           />
+          {/* Interwal per plik, nie jedna wartosc dla calej paczki - ADR-015.
+              Tlo w pelni kryjace (bez kanalu alfa), zeby etykieta zostala
+              czytelna na kazdym, nawet jasnym fragmencie zrzutu. */}
+          <select
+            name="shotint"
+            value={p.interval}
+            onChange={(e) => onZmienInterval(p, e.target.value)}
+            aria-label={`Interwał zrzutu ${i + 1}`}
+            className="absolute bottom-2 left-2 cursor-pointer rounded-[var(--radius-control)] border border-line-strong bg-bg px-1.5 py-0.5 text-xs font-medium text-text"
+          >
+            <option value="">interwał —</option>
+            {INTERWALY.map((iw) => (
+              <option key={iw} value={iw}>
+                {iw}
+              </option>
+            ))}
+          </select>
           <button
             type="button"
             onClick={() => onUsun(i)}
