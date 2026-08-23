@@ -3,18 +3,18 @@ import { describe, expect, it } from "vitest";
 import { scoreDiscipline } from "./discipline";
 import { findEdges } from "./edge-finder";
 import { dimension } from "./grouping";
+import { DOMYSLNE_PROGI } from "./outcome";
 import { assessSample, expectancyInterval, requiredSample } from "./sample-size";
 import type { TradeForAnalysis } from "./types";
 
+const progi = DOMYSLNE_PROGI;
 let counter = 0;
 
 function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
   counter += 1;
   return {
     id: counter,
-    pnlNet: 10_000,
-    pnlGross: 10_400,
-    commission: 400,
+    pnl: 10_000,
     rMultiple: 1,
     riskAmount: 10_000,
     durationS: 600,
@@ -23,6 +23,7 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     contracts: 1,
     maeR: null,
     mfeR: null,
+    wynik: "zysk",
     direction: "long",
     accountId: 1,
     accountName: "Glowne",
@@ -51,19 +52,19 @@ function series(howMany: number, n: Partial<TradeForAnalysis>): TradeForAnalysis
 
 describe("findEdges", () => {
   const trades = [
-    ...series(16, { marketSession: "rth", pnlNet: 10_000, rMultiple: 1 }),
-    ...series(16, { marketSession: "overnight", pnlNet: -10_000, rMultiple: -1 }),
+    ...series(16, { marketSession: "rth", pnl: 10_000, rMultiple: 1 }),
+    ...series(16, { marketSession: "overnight", pnl: -10_000, rMultiple: -1 }),
   ];
 
   it("wskazuje kontekst o najwyzszej oczekiwanej wartosci", () => {
-    const w = findEdges(trades, [dimension("session")], { pairs: false });
+    const w = findEdges(trades, [dimension("session")], { progi, pairs: false });
     expect(w.edges[0].conditions[0].value).toBe("sesja główna");
     expect(w.edges[0].deltaR).toBeCloseTo(1, 6);
     expect(w.edges[0].count).toBe(16);
   });
 
   it("wskazuje wyciek po drugiej stronie", () => {
-    const w = findEdges(trades, [dimension("session")], { pairs: false });
+    const w = findEdges(trades, [dimension("session")], { progi, pairs: false });
     expect(w.leaks[0].conditions[0].value).toBe("noc");
     expect(w.leaks[0].deltaR).toBeCloseTo(-1, 6);
   });
@@ -73,14 +74,14 @@ describe("findEdges", () => {
       ...series(20, { instrumentSymbol: "NQ" }),
       ...series(3, { instrumentSymbol: "ES" }),
     ];
-    const w = findEdges(small, [dimension("instrument")], { minSample: 15, pairs: false });
+    const w = findEdges(small, [dimension("instrument")], { progi, minSample: 15, pairs: false });
     expect(w.edges.concat(w.leaks).some((z) => z.conditions[0].value === "ES")).toBe(false);
     expect(w.skippedTooSmall).toBe(1);
   });
 
   it("nie zglasza kontekstu obejmujacego cala probe", () => {
     const uniform = series(20, { instrumentSymbol: "NQ" });
-    const w = findEdges(uniform, [dimension("instrument")], { pairs: false });
+    const w = findEdges(uniform, [dimension("instrument")], { progi, pairs: false });
     expect(w.edges).toHaveLength(0);
     expect(w.leaks).toHaveLength(0);
   });
@@ -89,20 +90,21 @@ describe("findEdges", () => {
     // Przedzial R jest funkcja wyniku - "trade'y z +2R do +3R maja 100% skutecznosci"
     // to tautologia, a nie przewaga.
     const mixed = [
-      ...series(20, { rMultiple: 2.5, pnlNet: 25_000 }),
-      ...series(20, { rMultiple: -1, pnlNet: -10_000 }),
+      ...series(20, { rMultiple: 2.5, pnl: 25_000 }),
+      ...series(20, { rMultiple: -1, pnl: -10_000 }),
     ];
-    const w = findEdges(mixed, [dimension("rrange")], { minSample: 15, pairs: false });
+    const w = findEdges(mixed, [dimension("rrange")], { progi, minSample: 15, pairs: false });
     expect(w.edges).toHaveLength(0);
     expect(w.leaks).toHaveLength(0);
   });
 
   it("pomija wymiar, ktory ma tylko jedna wartosc", () => {
     const oneAccount = [
-      ...series(16, { instrumentSymbol: "NQ", pnlNet: 10_000, rMultiple: 1 }),
-      ...series(16, { instrumentSymbol: "ES", pnlNet: -10_000, rMultiple: -1 }),
+      ...series(16, { instrumentSymbol: "NQ", pnl: 10_000, rMultiple: 1 }),
+      ...series(16, { instrumentSymbol: "ES", pnl: -10_000, rMultiple: -1 }),
     ];
     const w = findEdges(oneAccount, [dimension("account"), dimension("instrument")], {
+      progi,
       minSample: 15,
     });
     const wszystkie = w.edges.concat(w.leaks);
@@ -111,12 +113,13 @@ describe("findEdges", () => {
 
   it("znajduje przeciecie dwoch wymiarow", () => {
     const mixed = [
-      ...series(16, { instrumentSymbol: "NQ", direction: "long", pnlNet: 20_000, rMultiple: 2 }),
-      ...series(16, { instrumentSymbol: "NQ", direction: "short", pnlNet: -10_000, rMultiple: -1 }),
-      ...series(16, { instrumentSymbol: "ES", direction: "long", pnlNet: -10_000, rMultiple: -1 }),
-      ...series(16, { instrumentSymbol: "ES", direction: "short", pnlNet: -10_000, rMultiple: -1 }),
+      ...series(16, { instrumentSymbol: "NQ", direction: "long", pnl: 20_000, rMultiple: 2 }),
+      ...series(16, { instrumentSymbol: "NQ", direction: "short", pnl: -10_000, rMultiple: -1 }),
+      ...series(16, { instrumentSymbol: "ES", direction: "long", pnl: -10_000, rMultiple: -1 }),
+      ...series(16, { instrumentSymbol: "ES", direction: "short", pnl: -10_000, rMultiple: -1 }),
     ];
     const w = findEdges(mixed, [dimension("instrument"), dimension("direction")], {
+      progi,
       minSample: 15,
     });
     expect(w.edges[0].conditions).toHaveLength(2);
@@ -147,15 +150,15 @@ describe("scoreDiscipline", () => {
 
   it("wykrywa powiekszenie pozycji po stracie", () => {
     const w = scoreDiscipline([
-      trade({ pnlNet: -10_000, contracts: 1 }),
-      trade({ pnlNet: 5_000, contracts: 3 }),
+      trade({ pnl: -10_000, contracts: 1 }),
+      trade({ pnl: 5_000, contracts: 3 }),
     ]);
     expect(w.signals.find((s) => s.code === "size_up_after_loss")?.count).toBe(1);
   });
 
   it("wykrywa wejscie tuz po stracie tego samego dnia", () => {
     const first = trade({
-      pnlNet: -10_000,
+      pnl: -10_000,
       entryTime: new Date("2026-03-02T14:00:00Z"),
       durationS: 600,
     });
@@ -166,7 +169,7 @@ describe("scoreDiscipline", () => {
 
   it("nie uznaje za odwet wejscia po dlugiej przerwie", () => {
     const first = trade({
-      pnlNet: -10_000,
+      pnl: -10_000,
       entryTime: new Date("2026-03-02T14:00:00Z"),
       durationS: 600,
     });

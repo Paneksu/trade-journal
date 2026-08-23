@@ -14,7 +14,7 @@ import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
 import { dimension, dimensionsForFields, dimensionsForTags } from "@/lib/domain/grouping";
 import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
-import { getAccounts, getFields, getTagCategories } from "@/lib/queries/dictionaries";
+import { getAccounts, getFields, getProgi, getTagCategories } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayNotes } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
@@ -48,8 +48,9 @@ export default async function DashboardPage({
   ]);
 
   const trades = await getTrades({ ...EMPTY_FILTERS, from });
+  const progi = await getProgi();
   const closed = closedOnly(trades);
-  const stats = computeStats(closed);
+  const stats = computeStats(closed, progi);
 
   const account = accounts.find((k) => !k.archived) ?? accounts[0];
   const currency = account?.currency ?? settings.baseCurrency;
@@ -82,7 +83,11 @@ export default async function DashboardPage({
     ...dimensionsForTags(tagCategories),
     ...dimensionsForFields(fields),
   ];
-  const edges = findEdges(closed, dimensions, { minSample: settings.minSample, maxResults: 5 });
+  const edges = findEdges(closed, dimensions, {
+    progi,
+    minSample: settings.minSample,
+    maxResults: 5,
+  });
   const discipline = scoreDiscipline(closed);
 
   if (trades.length === 0) {

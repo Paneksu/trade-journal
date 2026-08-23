@@ -24,7 +24,7 @@ export function GroupTable({
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-line">
-            {["Wartość", "Trade'y", "Wynik netto", "Śr. R", "Skuteczność", "Profit factor", "Śr. czas"].map(
+            {["Wartość", "Trade'y", "Wynik", "Śr. R", "Skuteczność", "Profit factor", "Śr. czas"].map(
               (h, i) => (
                 <th
                   key={h}
@@ -53,8 +53,8 @@ export function GroupTable({
                   )}
                 </td>
                 <td className="liczba px-3 py-2 text-right text-muted">{int(g.stats.count)}</td>
-                <td className={cx("liczba px-3 py-2 text-right font-medium", pnlClass(g.stats.pnlNet))}>
-                  {money(g.stats.pnlNet, { currency, sign: true })}
+                <td className={cx("liczba px-3 py-2 text-right font-medium", pnlClass(g.stats.pnl))}>
+                  {money(g.stats.pnl, { currency, sign: true })}
                 </td>
                 <td className={cx("liczba px-3 py-2 text-right", pnlClass(g.stats.expectancyR))}>
                   {rValue(g.stats.expectancyR)}

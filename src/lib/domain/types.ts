@@ -1,4 +1,5 @@
 import type { Direction, MarketSession } from "./calc";
+import type { Wynik } from "./outcome";
 import type { TradeStat } from "./stats";
 
 /**
@@ -7,6 +8,9 @@ import type { TradeStat } from "./stats";
  * a caly modul domeny operuje juz tylko na nim.
  */
 export type TradeForAnalysis = TradeStat & {
+  /** Zysk/strata/be, policzone raz w `queries/trades.ts` (ADR-011) - komponenty
+      czytaja gotowe pole i nie znaja progow. */
+  wynik: Wynik;
   direction: Direction;
   accountId: number;
   accountName: string;
@@ -23,7 +27,15 @@ export type TradeForAnalysis = TradeStat & {
   rulesMet: number;
   hasRules: boolean;
   hasStop: boolean;
-  tags: { id: number; name: string; category: string; categoryKey: string; color: string }[];
+  tags: {
+    id: number;
+    name: string;
+    category: string;
+    categoryKey: string;
+    color: string;
+    /** Interwal tego konkretnego przypisania tagu do trade'a, nie tagu samego (ADR-013). */
+    interval: string | null;
+  }[];
   custom: Record<string, unknown>;
 };
 

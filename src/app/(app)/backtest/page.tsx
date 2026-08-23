@@ -6,7 +6,13 @@ import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats } from "@/lib/domain/stats";
-import { getAccounts, getBacktestSessions, getInstruments, getStrategies } from "@/lib/queries/dictionaries";
+import {
+  getAccounts,
+  getBacktestSessions,
+  getInstruments,
+  getProgi,
+  getStrategies,
+} from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { money, num, percent, pnlClass, rValue, tradesCount } from "@/lib/format";
@@ -32,6 +38,7 @@ export default async function BacktestPage() {
 
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
   const closed = closedOnly(allBacktestTrades);
+  const progi = await getProgi();
 
   return (
     <div className="space-y-4">
@@ -60,7 +67,7 @@ export default async function BacktestPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           {sessions.map((s) => {
             const sessionTrades = closed.filter((t) => t.backtestSessionId === s.id);
-            const stats = computeStats(sessionTrades);
+            const stats = computeStats(sessionTrades, progi);
             const sample = assessSample(stats.count, s.targetTrades, settings.minSample);
 
             return (
@@ -80,8 +87,8 @@ export default async function BacktestPage() {
                   <div className="grid grid-cols-4 gap-3 px-4 py-3">
                     <div>
                       <p className="etykieta">Wynik</p>
-                      <p className={cx("liczba mt-0.5 text-sm font-medium", pnlClass(stats.pnlNet))}>
-                        {money(stats.pnlNet, { currency, sign: true })}
+                      <p className={cx("liczba mt-0.5 text-sm font-medium", pnlClass(stats.pnl))}>
+                        {money(stats.pnl, { currency, sign: true })}
                       </p>
                     </div>
                     <div>

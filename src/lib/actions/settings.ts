@@ -94,7 +94,6 @@ export async function saveInstrument(_p: ActionState, d: FormData): Promise<Acti
     // W formularzu wartosc ticku podaje sie w dolarach, w bazie w tysiecznych.
     tickValue: Math.round(tickValue * 1000),
     currency: text(d, "currency") ?? "USD",
-    commissionPerContract: cents(d, "commissionPerContract") ?? 0,
     rthFrom: text(d, "rthFrom") ?? "09:30",
     rthTo: text(d, "rthTo") ?? "16:00",
     exchangeTimezone: text(d, "exchangeTimezone") ?? "America/New_York",
@@ -132,6 +131,13 @@ export async function saveSettings(_p: ActionState, d: FormData): Promise<Action
   const minSample = Math.round(number(d, "minSample") ?? 15);
   if (minSample < 3) return { error: "Próg istotności poniżej trzech trade'ów nie ma sensu." };
 
+  // Prog BE w tysiecznych R (np. 0,10R -> 100) - patrz ADR-011.
+  const beProgRMille = Math.round((number(d, "beProgR") ?? 0.1) * 1000);
+  if (beProgRMille < 0) return { error: "Próg BE w R nie może być ujemny." };
+
+  const beProgNaKontrakt = cents(d, "beProgNaKontrakt") ?? 200;
+  if (beProgNaKontrakt < 0) return { error: "Zapasowy próg BE na kontrakt nie może być ujemny." };
+
   await db
     .update(settings)
     .set({
@@ -141,6 +147,8 @@ export async function saveSettings(_p: ActionState, d: FormData): Promise<Action
       minSample,
       tradingHoursFrom: text(d, "tradingHoursFrom"),
       tradingHoursTo: text(d, "tradingHoursTo"),
+      beProgRMille,
+      beProgNaKontrakt,
       updatedAt: new Date(),
     })
     .where(eq(settings.id, 1));

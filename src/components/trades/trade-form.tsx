@@ -8,6 +8,7 @@ import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader
 import type { Shot } from "@/components/screenshots/typy";
 import { FieldInputs } from "./field-inputs";
 import { NewTradeShots } from "./new-trade-shots";
+import { TagManager } from "./tag-manager";
 import { TagPicker } from "./tag-picker";
 import {
   Button,
@@ -23,9 +24,10 @@ import {
 import { cx } from "@/lib/classes";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { saveTrade, type FormState } from "@/lib/actions/trades";
-import { commissionFor, computeTrade, exitPriceForNet, type Direction } from "@/lib/domain/calc";
+import { computeTrade, exitPriceForAmount, type Direction } from "@/lib/domain/calc";
+import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { FieldDef } from "@/lib/fields/fields";
-import { money, num, price, rValue } from "@/lib/format";
+import { money, num, price, rValue, wynikClass, WYNIK_NAZWY } from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
 /* Formularz trade'a. Liczy wynik na zywo tym samym modulem, ktory liczy go
@@ -38,7 +40,6 @@ export type FormInstrument = {
   name: string;
   tickSize: string;
   tickValue: number;
-  commissionPerContract: number;
   rthFrom: string;
   rthTo: string;
   exchangeTimezone: string;
@@ -63,11 +64,10 @@ export type TradeFormValues = {
   takeProfit?: string;
   mae?: string;
   mfe?: string;
-  commission?: string;
   note?: string;
   executionRating?: number | null;
   rulesMet?: string[];
-  tags?: number[];
+  tags?: { id: number; interval: string | null }[];
   custom?: Record<string, unknown>;
   shots?: Shot[];
 };
@@ -106,18 +106,23 @@ export function TradeForm({
   strategies,
   sessions,
   tags,
+  tagCategories,
   fields,
   values,
   backtestSessionId,
+  progi,
 }: {
   accounts: FormAccount[];
   instruments: FormInstrument[];
   strategies: FormStrategy[];
   sessions: FormSession[];
   tags: TagWithCategory[];
+  tagCategories: { id: number; name: string }[];
   fields: FieldDef[];
   values: TradeFormValues;
   backtestSessionId?: number | null;
+  /** Progi BE z ustawien - liczone przez serwerowego rodzica (ADR-011). */
+  progi: Progi;
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(saveTrade, { ok: false });
   const [stay, setStay] = useState(false);
@@ -133,7 +138,6 @@ export function TradeForm({
   const [exitPrice, setExitPrice] = useState(values.exitPrice ?? "");
   const [contracts, setContracts] = useState(values.contracts ?? "1");
   const [stopLoss, setStopLoss] = useState(values.stopLoss ?? "");
-  const [commission, setCommission] = useState(values.commission ?? "");
   const [netTarget, setNetTarget] = useState("");
   const [showExtras, setShowExtras] = useState(Boolean(values.mae || values.mfe));
 
@@ -156,14 +160,13 @@ export function TradeForm({
     return {
       tickSize: Number(instrument.tickSize),
       tickValue: Number(instrument.tickValue),
-      commissionPerContract: Number(instrument.commissionPerContract),
       rthFrom: instrument.rthFrom,
       rthTo: instrument.rthTo,
       exchangeTimezone: instrument.exchangeTimezone,
     };
   }, [instrument]);
 
-  /* Cena wyjscia wyliczona z wpisanego wyniku netto. Jednokierunkowe: liczy sie
+  /* Cena wyjscia wyliczona z wpisanego wyniku. Jednokierunkowe: liczy sie
      tylko z netTarget w dol do exitPrice, nigdy odwrotnie - inaczej byloby kolo. */
   const derivedExit = useMemo(() => {
     if (!spec || netTarget.trim() === "") return null;
@@ -172,16 +175,14 @@ export function TradeForm({
     const target = parse(netTarget);
     if (entry === null || size === null || size <= 0 || target === null) return null;
 
-    const fee = parse(commission);
-    return exitPriceForNet({
+    return exitPriceForAmount({
       instrument: spec,
       direction,
       contracts: size,
       entryPrice: entry,
-      targetNet: Math.round(target * 100),
-      commission: fee === null ? commissionFor(size, spec.commissionPerContract) : Math.round(fee * 100),
+      target: Math.round(target * 100),
     });
-  }, [netTarget, entryPrice, contracts, direction, spec, commission]);
+  }, [netTarget, entryPrice, contracts, direction, spec]);
 
   /* Do pola ceny wchodzi surowa liczba, nie wersja sformatowana lokalnie.
      Formatowanie przycielo by miejsca po przecinku, gdy cena wejscia jest
@@ -201,7 +202,6 @@ export function TradeForm({
     const size = parse(contracts);
     if (entry === null || size === null || size <= 0) return null;
 
-    const fee = parse(commission);
     return computeTrade({
       instrument: spec,
       direction,
@@ -212,11 +212,21 @@ export function TradeForm({
       takeProfit: null,
       mae: null,
       mfe: null,
-      commission: fee === null ? commissionFor(size, spec.commissionPerContract) : Math.round(fee * 100),
       entryTime: new Date(),
       exitTime: parse(effectiveExit) === null ? null : new Date(),
     });
-  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss, commission]);
+  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss]);
+
+  /* Kategoria (zysk/strata/be) liczona tym samym `wynikTrade`, co statystyki -
+     zeby podglad w formularzu nigdy nie klamal wobec tego, co pokaze tabela
+     po zapisie (ADR-011). */
+  const wynik = useMemo(() => {
+    if (preview?.pnl === null || preview?.pnl === undefined) return null;
+    return wynikTrade(
+      { pnl: preview.pnl, riskAmount: preview.riskAmount, contracts: parse(contracts) ?? 0 },
+      progi,
+    );
+  }, [preview, contracts, progi]);
 
   /* Komunikat pod polem kwoty - cisza nie jest opcja, uzytkownik ma wiedziec,
      dlaczego cena sie nie policzyla albo o ile odbiega od wpisanej kwoty.
@@ -231,7 +241,7 @@ export function TradeForm({
     // Cena z przecinkiem dziesietnym, ale bez `price` - to obcieloby miejsca
     // po przecinku, gdy cena wejscia jest dokladniejsza niz tick instrumentu.
     const cena = String(derivedExit.exitPrice).replace(".", ",");
-    return `Cena na siatce ticków to ${cena}, co daje netto ${money(derivedExit.pnlNet, {
+    return `Cena na siatce ticków to ${cena}, co daje wynik ${money(derivedExit.pnl, {
       currency,
     })}, czyli o ${money(Math.abs(derivedExit.diff), { currency })} ${kierunek} niż wpisane.`;
   }, [netTarget, derivedExit, currency]);
@@ -434,33 +444,10 @@ export function TradeForm({
                   defaultValue={values.takeProfit ?? ""}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="commission" hint="Puste = z katalogu instrumentu">
-                  Prowizja ({currency})
-                </Label>
-                <Input
-                  id="commission"
-                  name="commission"
-                  inputMode="decimal"
-                  placeholder={
-                    instrument
-                      ? num(
-                          (Number(instrument.commissionPerContract) *
-                            (parse(contracts) ?? 1)) /
-                            100,
-                          2,
-                        )
-                      : ""
-                  }
-                  value={commission}
-                  onChange={(e) => setCommission(e.target.value)}
-                />
-              </div>
-
               {/* Pole bez atrybutu name - do zapisu idzie tylko wyliczona cena wyjscia.
-                  Stoi pod prowizja i pod cena wyjscia, bo z obu tych liczb korzysta. */}
+                  Stoi pod cena wyjscia, bo z niej korzysta. */}
               <div className="space-y-1.5">
-                <Label htmlFor="netTarget" hint="Wynik netto, po prowizji">
+                <Label htmlFor="netTarget" hint="Wynik trade'a">
                   Kwota z brokera ({currency})
                 </Label>
                 <Input
@@ -581,8 +568,16 @@ export function TradeForm({
 
               <div>
                 <Label>Tagi</Label>
-                <div className="mt-1.5">
+                <div className="mt-1.5 space-y-3">
+                  {/* PULAPKA (ADR-013): TagPicker nie moze dostac `key` liczonego
+                      z listy tagow (np. tags.length albo JSON.stringify(tags)).
+                      Zapis w TagManager ponizej robi revalidatePath, wiec `tags`
+                      tutaj odswieza sie samo z serwera bez przeladowania strony -
+                      ale gdyby TagPicker mial klucz zalezny od tej listy, kazda
+                      zmiana tagu remontowalaby cale poddrzewo i kasowala zarowno
+                      zaznaczenia tagow, jak i wpisane juz pola reszty formularza. */}
                   <TagPicker tags={tags} selected={values.tags ?? []} />
+                  <TagManager tags={tags} categories={tagCategories} />
                 </div>
               </div>
 
@@ -648,28 +643,16 @@ export function TradeForm({
               <DataPoint label="Ticki">{preview?.ticks ?? "—"}</DataPoint>
               <DataPoint label="Ticki ryzyka">{preview?.riskTicks ?? "—"}</DataPoint>
               <DataPoint
-                label="Wynik brutto"
+                label="Wynik"
                 valueClassName={
-                  (preview?.pnlGross ?? 0) > 0
+                  (preview?.pnl ?? 0) > 0
                     ? "text-profit"
-                    : (preview?.pnlGross ?? 0) < 0
+                    : (preview?.pnl ?? 0) < 0
                       ? "text-loss"
                       : undefined
                 }
               >
-                {money(preview?.pnlGross ?? null, { currency, sign: true })}
-              </DataPoint>
-              <DataPoint
-                label="Wynik netto"
-                valueClassName={
-                  (preview?.pnlNet ?? 0) > 0
-                    ? "text-profit"
-                    : (preview?.pnlNet ?? 0) < 0
-                      ? "text-loss"
-                      : undefined
-                }
-              >
-                {money(preview?.pnlNet ?? null, { currency, sign: true })}
+                {money(preview?.pnl ?? null, { currency, sign: true })}
               </DataPoint>
               <DataPoint label="Ryzyko">{money(preview?.riskAmount ?? null, { currency })}</DataPoint>
               <DataPoint
@@ -684,6 +667,11 @@ export function TradeForm({
               >
                 {rValue(preview?.rMultiple ?? null)}
               </DataPoint>
+              {wynik && (
+                <DataPoint label="Kategoria" valueClassName={wynikClass(wynik)}>
+                  {WYNIK_NAZWY[wynik]}
+                </DataPoint>
+              )}
             </div>
             {instrument && (
               <p className="border-t border-line px-4 py-2.5 text-xs text-faint">

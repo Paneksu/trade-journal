@@ -36,8 +36,8 @@ i utrzymanie są cięższe od problemu, który mieliśmy rozwiązać.
   całkowitą: NQ = 5000, ES = 12500, ZN = 15625.
 - **Ruch ceny liczymy w tickach, nie w punktach.** Zaokrąglenie do pełnego ticku zdejmuje
   błąd zmiennoprzecinkowy raz, na wejściu, zamiast propagować go przez wszystkie statystyki.
-- **R liczymy z wyniku netto, ryzyko bez prowizji.** Ryzyko to odległość do stopa razy
-  wartość ticku. Prowizja obciąża wynik, a nie ryzyko.
+- **R liczymy z wyniku, ryzyko z odległości do stopa.** Ryzyko to odległość do stopa razy
+  wartość ticku; prowizja w modelu nie istnieje - patrz ADR-010.
 
 ---
 
@@ -223,3 +223,212 @@ Uzgodnione przed budową, wypisane, żeby nie wracało jako brak:
 bezpiecznie zapamiętać, i zgłasza to jako ostrzeżenie `react-hooks/incompatible-library`.
 Ostrzeżenia nie wyciszamy: jest prawdziwe, komponent po prostu nie korzysta z memoizacji.
 Tabela działa poprawnie, a wyłączenie reguły ukryłoby przyszłe, realne problemy.
+
+---
+
+## ADR-010 — prowizja poza modelem (2026-08-23)
+
+Prowizja została usunięta z modelu danych: `instruments.commissionPerContract`,
+`trades.commission` i `trades.pnlGross` znikły, a `pnlNet` przemianowano na
+jedną kolumnę `pnl`. Powód jest wprost od użytkownika: jej nie chce. Bez
+prowizji brutto i netto to zawsze ta sama liczba, więc trzymanie dwóch
+kolumn i dwóch podpisów w interfejsie („Wynik brutto" / „Wynik netto")
+opisywałoby rozróżnienie, które nie istnieje.
+
+Migracja `drizzle/0005_bez_prowizji.sql` przepisuje stare trade'y na dawne
+`pnl_gross` (czyli wynik bez odjętej prowizji) i przelicza za nimi
+`r_multiple` - w przeciwnym razie stare trade'y zostałyby na zawsze
+obciążone prowizją, a każda ich kolejna edycja liczyłaby wynik już bez niej,
+więc dwa identyczne trade'y (jeden edytowany, jeden nie) pokazywałyby różny
+wynik. `exitPriceForNet` przemianowano na `exitPriceForAmount` (`targetNet` →
+`target`) - nazwa „netto" przestała mieć desygnat, skoro nie ma już od czego
+odejmować.
+
+Pole „Kwota z brokera" w formularzu trade'a zostaje - to nadal wygodny
+sposób wpisania wyniku bez liczenia ceny wyjścia ręcznie, tylko przestało
+być kwotą „po prowizji".
+
+---
+
+## ADR-011 — wynik BE (2026-08-23)
+
+Wynik trade'a ma trzy stany, nie dwa: zysk, strata, be. Stop przesunięty na
+zero rzadko wychodzi dokładnie na 0,00 - trade wyprowadzony na +7 USD dziś
+liczy się jako wygrana i zawyża skuteczność. Próg BE skaluje się wielkością
+trade'a: ułamek ryzyka w tysięcznych R (domyślnie 0,100R), a gdy trade nie ma
+stopa - zapasowy próg kwotowy na kontrakt (domyślnie 2,00 USD).
+
+**Skala progu - liczby całkowite, nie `numeric`.** `settings.beProgRMille`
+(integer, tysięczne R) i `settings.beProgNaKontrakt` (bigint, centy). Gdyby
+próg siedział w `numeric`, TS liczyłby `0.1 * risk` w double, a Postgres w
+arytmetyce `numeric` - na samej granicy przedziału obie strony mogłyby dać
+inną odpowiedź. Na liczbach całkowitych `round(progRMille * risk / 1000)`
+jest identyczne po obu stronach (`src/lib/domain/outcome.ts`, funkcje
+`progBE`/`sqlProgBE` i `wynikTrade`/`sqlWynik` - jeden wzór, dwie postacie).
+Granica jest domknięta: `pnl` równe progowi co do centa to `be`, nie `zysk`
+ani `strata`. Test parzystości TS↔SQL siedzi w `e2e/dziennik.spec.ts`
+(trzy trade'y na granicy 0,09R/0,10R/0,11R, potem `/trades?wynik=be` i
+`/stats?wynik=be` muszą zgadzać się co do liczby).
+
+**BE poza mianownikiem skuteczności.** `winRate = wins / (wins + losses)`,
+nie `wins / count`. Inaczej im lepiej ktoś przesuwa stopy na zero, tym gorzej
+wyglądałby system - `breakEvenWinRate` (próg opłacalności) i tak porównuje się
+z trade'ami rozstrzygniętymi, więc mianownik `winRate` musi być ten sam zbiór.
+Z tego samego powodu `profitFactor`, `avgWin`, `avgLoss` i `payoff` liczą się
+wyłącznie z trade'ów zysk/strata - BE nie wchodzi do żadnej z sum.
+
+**BE nie rusza serii.** `L, BE, L` to nadal seria dwóch strat, nie jeden ani
+trzy. Gałąź `be` w `computeStats` nie dotyka `winStreak`/`lossStreak` - w
+przeciwieństwie do dawnego `flat`, które zerowało oba liczniki.
+
+**Kalendarz bez progu.** Kolor kafla miesiąca w `MonthGrid` liczy się dalej z
+sumy dziennego `pnl`/`R`, nie z liczby trade'ów BE - dzień nie ma własnego
+stopa, więc nie ma z czego liczyć progu na poziomie dnia. Opis dnia pod
+kafelkiem dokłada `X BE`, gdy takie trade'y są, ale kolor zostaje po sumie.
+
+**`scoreDiscipline` świadomie zostaje przy znaku `pnl`.** Miernik dyscypliny
+(`src/lib/domain/discipline.ts`) używa `previous.pnl >= 0`, żeby rozpoznać
+"poprzedni trade był stratny" przy sygnale odwetu i powiększania pozycji po
+stracie - to pytanie o zachowanie po jakiejkolwiek nie-wygranej, nie o
+kategorię BE. Przepisanie na `wynikTrade` zmieniłoby znaczenie sygnału bez
+korzyści: trade BE poprzedzający kolejne wejście nie jest tym samym ryzykiem
+psychologicznym co strata, ale nie jest też jej przeciwieństwem - zostawiamy
+istniejące zachowanie i zapisujemy to tutaj, żeby nie wróciło jako błąd w
+kolejnym audycie.
+
+Migracja `drizzle/0006_wynik_be.sql` dokłada dwie kolumny do `settings` z
+sensownymi wartościami domyślnymi (0,100R, 2,00 USD) - istniejące wiersze nie
+wymagają przeliczenia, bo `wynik` liczy się w locie z `pnl`/`riskAmount`/
+`contracts`, a nie jest kolumną w `trades`.
+
+---
+
+## ADR-012 — zrzut zawsze w pełnym kadrze (2026-08-23)
+
+Siatka zrzutów opisana w ADR-009 (stała wysokość wiersza, „kafel główny"
+przy 3 i 5 zdjęciach) przycinała obraz przez `object-cover`, gdy trade miał
+więcej niż jedno zdjęcie. Powód zmiany jest wprost od użytkownika: przycięty
+zrzut nie jest wiarygodnym dowodem transakcji — kawałek świecy albo poziomu
+uciętego poza kadrem jest gorszy niż brak zrzutu, bo sprawia wrażenie dowodu,
+którym nie jest.
+
+Zamiast tego galeria (`src/lib/domain/galeria.ts`) liczy **układ justowany**
+jak w Google Photos/Flickr, jako jedno drzewo DOM (`flex flex-wrap`): każdy
+kafel dostaje `flex-basis` proporcjonalny do własnej szerokości przy
+wspólnej bazowej wysokości wiersza (`BAZA_WYSOKOSCI_WIERSZA`) i `flex-grow`
+równy własnej proporcji szerokość/wysokość. Przy wspólnej wysokości wiersza
+każdy kafel wychodzi wtedy dokładnie na swoją naturalną szerokość — zero
+przycięcia, zero pasów. Zawijanie do kolejnych wierszy robi sam CSS
+(`flex-wrap`) na podstawie szerokości kontenera, więc responsywność telefon
+↔ desktop nie potrzebuje osobnego przelicznika w JS.
+
+Pierwsza wersja tego ADR renderowała dwa równoległe warianty w DOM
+(`hidden sm:block` / `sm:hidden`), żeby uniknąć przeskoku układu po
+hydratacji przy przeliczniku opartym na `matchMedia` — koszt uznany wtedy za
+akceptowalny, bo obrazy pobierają się raz niezależnie od tego, w którym
+wariancie akurat siedzi `<img>`. Code review pokazało, że koszt jest wyższy,
+niż wyglądał: każdy zrzut renderuje się **dwa razy** w DOM, co psuje testy
+e2e liczące obrazy (`img[src^="/api/screenshots/"]` widzi 2× więcej niż
+faktycznie jest) i dostępność (zdublowany `<img>` z tym samym `alt` czyta się
+w czytniku ekranu dwukrotnie). CSS `flex-wrap` daje responsywność bez
+przeliczania w JS, więc nie ma powodu do dwóch wariantów — jedno drzewo
+wystarcza i renderuje się poprawnie w pierwszym malowaniu tak samo jak dwa.
+
+Ostatni, niepełny wiersz: przy jednym drzewie DOM nie da się już (jak
+poprzednio w JS) policzyć z góry, które kafle trafią do ostatniego wiersza —
+o tym decyduje `flex-wrap` w przeglądarce. Domknięcie jest więc też czystym
+CSS: na końcu listy siedzi kilka niewidocznych wypełniaczy (`height: 0`,
+`aria-hidden`) z bardzo dużym `flex-grow`. Który wypełniacz wyląduje w
+niepełnym wierszu, zależy od przeglądarki — to mniej deterministyczne niż
+jawne liczenie wierszy w JS, ale akceptowalne: efekt końcowy (żaden
+pojedynczy zrzut nie rozdyma się na całą szerokość panelu) jest ten sam.
+
+**Koszt zapisany świadomie:** wiersze galerii mają teraz nierówne wysokości
+zależne od proporcji zdjęć w danym wpisie, zamiast równych rzędów jak w
+starym układzie. To może wyglądać mniej estetycznie niż poprzednia siatka —
+akceptowane w zamian za to, że żaden zrzut nigdy nie traci fragmentu obrazu.
+
+Stare funkcje `ukladSiatki`, `klasaKafla`, `czyPion` i stała `WIERSZ` zostały
+usunięte z `galeria.ts` razem z ich testami; nie ma po nich zależności poza
+`screenshot-grid.tsx` i `new-trade-shots.tsx`, oba przepisane na nowe API.
+Funkcje `wiersze`/`proporcjaWiersza` z pierwszej wersji tego ADR poszły w
+ich ślady przy przejściu na jedno drzewo DOM — podział na wiersze i
+domykanie ostatniego robi teraz CSS, nie JS.
+
+---
+
+## ADR-013 — interwał jako atrybut przypisania tagu (2026-08-23)
+
+Interwał przestał być osobną kategorią tagów (`timeframe`: "1 min", "5 min",
+"15 min", "1 h"). Zamiast tego każde przypisanie tagu do trade'a
+(`trade_tags`) ma własną, opcjonalną kolumnę `interval` — jeden tag
+"wybicie" może więc opisywać wejście zauważone na 5m i osobno na 1h, czego
+osobna kategoria tagów nigdy nie potrafiła wyrazić bez dublowania tagów
+("wybicie 5m", "wybicie 1h", ...).
+
+Lista dozwolonych wartości (`src/lib/domain/interwaly.ts`, stała
+`INTERWALY`) jest w kodzie, nie w bazie: kolumna to `text`, nie enum
+Postgresa. Dołożenie "2h" nie ma wymagać migracji schematu. Kolejność listy
+(`30s 1m 2m 3m 4m 5m 15m 30m 1h 4h D W M`) jest kolejnością wyświetlania
+i sortowania w całej aplikacji — nigdy alfabetyczną (`porzadekInterwalu`),
+bo alfabetycznie "1h" wyprzedza "1m", a czasowo jest odwrotnie.
+
+Zapis idzie osobnym polem `name="tagint:<tagId>"` obok checkboksa
+`name="tag"`, nie jedną zakodowaną wartością typu `"12:5m"` — nazwa `tag`
+jest współdzielona z `filter-bar.tsx` i z masowym tagowaniem `tagMany`
+w `actions/trades.ts`, które o interwale nic nie wiedzą i muszą dalej
+działać bez zmian. `tagMany` zawsze wstawia `interval: null`: tagowanie
+zbiorcze z tabeli nie ma kontekstu pojedynczego trade'a, więc nie ma z
+czego wybrać interwału.
+
+**`TagPicker`** pokazuje `<select>` interwału czystym CSS-em przez
+`peer-checked:` w momencie zaznaczenia tagu — bez JavaScriptu. To wymusza
+kolejność w DOM (`<input class="peer">` → chip → `<select>`), bo `peer-*`
+działa tylko na późniejsze rodzeństwo tego samego rodzica.
+
+**Wymiar `interval` w `grouping.ts`** nie jest `outcomeDerived` — interwał
+jest wyborem użytkownika przy tagowaniu, nie wartością wyliczoną z wyniku
+trade'a, więc Edge Finder wolno mu go używać. Trade z tagami na dwóch
+interwałach trafia do obu grup, zgodnie z istniejącą konwencją modułu dla
+wymiarów tagowych. Dimension zyskał opcjonalne pole `sortValues`: bez niego
+`groupBy` sortuje malejąco po wyniku grupy, co dla skali czasowej nie ma
+sensu (1m powinno stać przed 1h niezależnie od tego, który z nich jest
+bardziej zyskowny).
+
+### Migracja `drizzle/0007_interwal_przy_tagu.sql`
+
+Stare tagi kategorii `timeframe` są przepisywane na kolumnę `interval`
+pozostałych przypisań tego samego trade'a (`"1 min"→"1m"`, `"5 min"→"5m"`,
+`"15 min"→"15m"`, `"1 h"→"1h"`), potem kasowane razem z kategorią. Trade
+oznaczony dwoma tagami interwałowymi naraz (błąd sprzed migracji) dostaje
+ten niższy w kolejności z `INTERWALY` — drobniejszy interwał niesie więcej
+informacji.
+
+**Znany brzeg, zaakceptowany świadomie:** trade otagowany WYŁĄCZNIE tagiem
+interwałowym (bez żadnego innego tagu) traci interwał po tej migracji — nie
+ma innego przypisania `trade_tags`, na którym mógłby zawisnąć. Odzyskanie
+tej informacji wymagałoby trzymania jej gdzieś tymczasowo poza modelem
+docelowym; uznaliśmy to za nadmiarowe dla jednorazowej migracji.
+
+---
+
+## ADR-014 — kasowanie tagu tylko gdy nieużywany (2026-08-23)
+
+`deleteTag` liczy `count(*)` w `trade_tags` i przy wyniku większym od zera
+odmawia z komunikatem kierującym do archiwizacji, zamiast po cichu kasować
+tag razem z jego przypisaniami (tak działało to wcześniej — usunięcie
+definicji tagu wyrywało go z historii trade'ów bez ostrzeżenia, a
+statystyki, które już go policzyły, zostawały bez wyjaśnienia rozjazdu).
+Nowa `archiveTag` (wzorem istniejącej `archiveField`) daje ten sam efekt
+widoczności — tag znika z wyboru przy nowych trade'ach — bez utraty danych.
+
+`deleteTagCategory` jest zamknięte tym samym licznikiem (sumą użyć
+wszystkich tagów kategorii), żeby nie było furtką omijającą regułę: kasowanie
+kategorii kaskadowo zdejmuje jej tagi i ich przypisania (`onDelete:
+"cascade"`), więc bez tej blokady wystarczyłoby skasować kategorię zamiast
+pojedynczego tagu, żeby obejść zakaz.
+
+Treść `window.confirm` przy kasowaniu tagu (`components/settings/forms.tsx`,
+`components/trades/tag-manager.tsx`) została poprawiona — do tej pory
+obiecywała, że tag "zniknie z trade'ów, które go mają", co po tej zmianie
+przestało być prawdą: usunięcie użytego tagu teraz się nie powiedzie.

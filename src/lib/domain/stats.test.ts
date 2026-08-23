@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import { DOMYSLNE_PROGI } from "./outcome";
 import { computeStats, dailyPnl, emptyStats, equityCurve, rHistogram, type TradeStat } from "./stats";
 
-/** Piec zamknietych tradeow: +200, -100, +300, -100, -50 USD. Suma: +250 USD. */
+const progi = DOMYSLNE_PROGI;
+
+/** Piec zamknietych tradeow: +200, -100, +300, -100, -50 USD. Suma: +250 USD.
+    Ryzyko 100 USD na kazdym - prog BE domyslny to 10 USD, wiec zaden z nich
+    nie wpada w BE. */
 function sample(): TradeStat[] {
   const dane: [number, number | null][] = [
     [20_000, 2],
@@ -13,9 +18,7 @@ function sample(): TradeStat[] {
   ];
   return dane.map(([pnl, r], idx) => ({
     id: idx + 1,
-    pnlNet: pnl,
-    pnlGross: pnl + 400,
-    commission: 400,
+    pnl,
     rMultiple: r,
     riskAmount: 10_000,
     durationS: 600 * (idx + 1),
@@ -28,11 +31,11 @@ function sample(): TradeStat[] {
 }
 
 describe("computeStats", () => {
-  const s = computeStats(sample());
+  const s = computeStats(sample(), progi);
 
-  it("liczy wynik netto i podzial na wygrane oraz przegrane", () => {
+  it("liczy wynik i podzial na wygrane oraz przegrane", () => {
     expect(s.count).toBe(5);
-    expect(s.pnlNet).toBe(25_000);
+    expect(s.pnl).toBe(25_000);
     expect(s.wins).toBe(2);
     expect(s.losses).toBe(3);
     expect(s.winRate).toBeCloseTo(0.4, 6);
@@ -85,34 +88,113 @@ describe("computeStats", () => {
 
 describe("przypadki brzegowe", () => {
   it("pusta lista daje zerowe statystyki, a nie bledy dzielenia", () => {
-    const s = computeStats([]);
+    const s = computeStats([], progi);
     expect(s).toEqual(emptyStats());
     expect(s.profitFactor).toBeNull();
     expect(s.winRate).toBe(0);
   });
 
   it("brak strat oznacza brak profit factora, a nie nieskonczonosc", () => {
-    const s = computeStats(sample().filter((t) => t.pnlNet > 0));
+    const s = computeStats(
+      sample().filter((t) => t.pnl > 0),
+      progi,
+    );
     expect(s.profitFactor).toBeNull();
     expect(s.payoff).toBeNull();
     expect(s.breakEvenWinRate).toBeNull();
   });
 
-  it("trade na zero nie liczy sie ani do wygranych, ani do przegranych", () => {
+  it("trade w widelkach progu BE nie liczy sie ani do wygranych, ani do przegranych", () => {
     const dane = sample();
-    dane[0].pnlNet = 0;
-    const s = computeStats(dane);
+    dane[0].pnl = 0;
+    const s = computeStats(dane, progi);
     expect(s.wins).toBe(1);
     expect(s.losses).toBe(3);
-    expect(s.flat).toBe(1);
+    expect(s.be).toBe(1);
   });
 
   it("trade'y bez stopa nie psuja statystyk w R", () => {
     const dane = sample().map((t) => ({ ...t, rMultiple: null }));
-    const s = computeStats(dane);
+    const s = computeStats(dane, progi);
     expect(s.expectancyR).toBeNull();
     expect(s.countWithR).toBe(0);
-    expect(s.pnlNet).toBe(25_000);
+    expect(s.pnl).toBe(25_000);
+  });
+});
+
+describe("wynik BE (ADR-011)", () => {
+  /** Ryzyko 10 000 centow, prog domyslny 0,100R -> 1000 centow (10 USD). */
+  function trade(id: number, pnl: number, extra: Partial<TradeStat> = {}): TradeStat {
+    return {
+      id,
+      pnl,
+      rMultiple: null,
+      riskAmount: 10_000,
+      durationS: null,
+      entryTime: new Date(2026, 2, id, 12, 0),
+      tradingDay: `2026-03-${String(id).padStart(2, "0")}`,
+      contracts: 1,
+      maeR: null,
+      mfeR: null,
+      ...extra,
+    };
+  }
+
+  it("BE zostaje poza mianownikiem skutecznosci", () => {
+    // 2 zyski, 1 strata, 1 BE - skutecznosc liczy sie z 3, nie z 4.
+    const s = computeStats(
+      [trade(1, 20_000), trade(2, 20_000), trade(3, -10_000), trade(4, 500)],
+      progi,
+    );
+    expect(s.count).toBe(4);
+    expect(s.wins).toBe(2);
+    expect(s.losses).toBe(1);
+    expect(s.be).toBe(1);
+    expect(s.winRate).toBeCloseTo(2 / 3, 6);
+  });
+
+  it("profit factor ignoruje trade'y BE", () => {
+    const s = computeStats([trade(1, 20_000), trade(2, -10_000), trade(3, 500)], progi);
+    // suma zyskow 20000, suma strat 10000 - BE (500) nie wchodzi do zadnej z sum.
+    expect(s.profitFactor).toBeCloseTo(2, 6);
+  });
+
+  it("BE w srodku serii wygranych nie przerywa jej ani nie przedluza", () => {
+    const s = computeStats(
+      [trade(1, 20_000), trade(2, 500), trade(3, 20_000)],
+      progi,
+    );
+    // W, BE, W - seria wygranych trwa 2, nie 1 i nie 3.
+    expect(s.maxWinStreak).toBe(2);
+    expect(s.currentStreak).toBe(2);
+  });
+
+  it("BE w srodku serii przegranych nie przerywa jej ani nie przedluza", () => {
+    const s = computeStats(
+      [trade(1, -20_000), trade(2, 500), trade(3, -20_000)],
+      progi,
+    );
+    // L, BE, L - seria strat trwa 2.
+    expect(s.maxLossStreak).toBe(2);
+    expect(s.currentStreak).toBe(-2);
+  });
+
+  it("liczy beRate jako udzial BE w calej probce", () => {
+    const s = computeStats([trade(1, 20_000), trade(2, 500), trade(3, 500), trade(4, 500)], progi);
+    expect(s.be).toBe(3);
+    expect(s.beRate).toBeCloseTo(0.75, 6);
+  });
+
+  it("bez stopa uzywa progu kwotowego na kontrakt", () => {
+    // Bez ryzyka prog to 200 centow na kontrakt (domyslny) - 2 kontrakty = 400.
+    const bezStopu = trade(1, 400, { riskAmount: null, contracts: 2 });
+    const s = computeStats([bezStopu], progi);
+    expect(s.be).toBe(1);
+
+    const nadProgiem = trade(2, 401, { riskAmount: null, contracts: 2 });
+    const s2 = computeStats([nadProgiem], progi);
+    expect(s2.wins).toBe(1);
+    expect(s2.be).toBe(0);
   });
 });
 

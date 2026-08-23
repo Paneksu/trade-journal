@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { customFields, tagCategories, tags } from "@/lib/db/schema";
+import { customFields, tagCategories, tags, tradeTags } from "@/lib/db/schema";
 import { toKey, TYPES_WITH_OPTIONS, type FieldType } from "@/lib/fields/fields";
 import type { ActionState } from "./settings";
 
@@ -49,12 +49,32 @@ export async function saveTagCategory(_p: ActionState, d: FormData): Promise<Act
   return { ok: true };
 }
 
+/**
+ * Kasowanie kategorii kaskadowo zdejmuje jej tagi i ich przypisania do
+ * trade'ow (klucz obcy `onDelete: "cascade"`). Bez tej samej blokady, co
+ * `deleteTag`, kategoria bylaby furtka omijajaca zasade "tag da sie usunac
+ * tylko gdy nieuzywany" - wystarczyloby skasowac kategorie zamiast tagu.
+ */
 export async function deleteTagCategory(id: number): Promise<ActionState> {
   await requireSession();
-  // Kaskada zdejmie tagi tej kategorii razem z ich przypisaniami do trade'ow.
+  const uzyc = await policzUzyciaKategorii(id);
+  if (uzyc > 0) {
+    return {
+      error: `Kategoria ma tagi użyte w ${uzyc} trade'ach. Zarchiwizuj tagi zamiast kasować kategorię.`,
+    };
+  }
   await db.delete(tagCategories).where(eq(tagCategories.id, id));
   revalidatePath("/", "layout");
   return { ok: true };
+}
+
+async function policzUzyciaKategorii(categoryId: number): Promise<number> {
+  const [w] = await db
+    .select({ ile: sql<number>`count(*)::int` })
+    .from(tradeTags)
+    .innerJoin(tags, eq(tradeTags.tagId, tags.id))
+    .where(eq(tags.categoryId, categoryId));
+  return w?.ile ?? 0;
 }
 
 /* --- Tagi ----------------------------------------------------------------- */
@@ -87,9 +107,33 @@ export async function saveTag(_p: ActionState, d: FormData): Promise<ActionState
   return { ok: true };
 }
 
+/**
+ * Kasowanie odmawia, gdy tag siedzi na choc jednym trade - inaczej usuniecie
+ * definicji po cichu wyrywaloby tag z historii, a statystyki, ktore juz go
+ * policzyly, zostawalyby bez wyjasnienia rozjazdu. `archiveTag` daje ten sam
+ * efekt widocznosci (tag znika z wyboru przy nowych trade'ach) bez utraty
+ * danych.
+ */
 export async function deleteTag(id: number): Promise<ActionState> {
   await requireSession();
+  const [w] = await db
+    .select({ ile: sql<number>`count(*)::int` })
+    .from(tradeTags)
+    .where(eq(tradeTags.tagId, id));
+  const uzyc = w?.ile ?? 0;
+  if (uzyc > 0) {
+    return {
+      error: `Tag jest użyty w ${uzyc} trade'ach. Zarchiwizuj go zamiast kasować.`,
+    };
+  }
   await db.delete(tags).where(eq(tags.id, id));
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+export async function archiveTag(id: number, archived: boolean): Promise<ActionState> {
+  await requireSession();
+  await db.update(tags).set({ archived }).where(eq(tags.id, id));
   revalidatePath("/", "layout");
   return { ok: true };
 }

@@ -21,6 +21,8 @@ export default async function GeneralSettingsPage() {
             minSample: settings.minSample,
             tradingHoursFrom: settings.tradingHoursFrom,
             tradingHoursTo: settings.tradingHoursTo,
+            beProgRMille: settings.beProgRMille,
+            beProgNaKontrakt: settings.beProgNaKontrakt,
           }}
         />
       </Panel>

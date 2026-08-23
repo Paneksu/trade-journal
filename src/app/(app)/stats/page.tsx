@@ -25,6 +25,7 @@ import {
   getAccounts,
   getFields,
   getInstruments,
+  getProgi,
   getStrategies,
   getTagCategories,
   getTags,
@@ -57,8 +58,9 @@ export default async function StatsPage({
       getTrades(filters),
     ]);
 
+  const progi = await getProgi();
   const closed = closedOnly(trades);
-  const stats = computeStats(closed);
+  const stats = computeStats(closed, progi);
   const account = accounts.find((k) => k.id === filters.accounts[0]) ?? accounts[0];
   const currency = account?.currency ?? settings.baseCurrency;
 
@@ -68,7 +70,7 @@ export default async function StatsPage({
     ...dimensionsForFields(fields),
   ];
   const chosen = allDimensions.find((d) => d.key === dimensionKey) ?? dimension("instrument");
-  const groups = groupBy(closed, chosen);
+  const groups = groupBy(closed, chosen, { progi });
 
   const curve = equityCurve(closed, account?.startingBalance ?? 0).map((p) => ({
     index: p.index,
@@ -86,7 +88,11 @@ export default async function StatsPage({
   const interval = expectancyInterval(stats.expectancyR, stats.stdevR, stats.countWithR);
   const needed = requiredSample(stats.stdevR, 0.2);
 
-  const edges = findEdges(closed, allDimensions, { minSample: settings.minSample, maxResults: 5 });
+  const edges = findEdges(closed, allDimensions, {
+    progi,
+    minSample: settings.minSample,
+    maxResults: 5,
+  });
   const discipline = scoreDiscipline(closed);
 
   return (
@@ -182,7 +188,7 @@ export default async function StatsPage({
               <GroupBars
                 data={groups.map((g) => ({
                   label: g.label,
-                  value: unit === "cash" ? g.stats.pnlNet : g.stats.sumR,
+                  value: unit === "cash" ? g.stats.pnl : g.stats.sumR,
                   count: g.stats.count,
                 }))}
                 currency={currency}
@@ -242,12 +248,10 @@ export default async function StatsPage({
               </DataPoint>
               <DataPoint label="Średni czas trzymania">{duration(stats.avgDurationS)}</DataPoint>
 
-              <DataPoint label="Trade'y bez zmiany">{int(stats.flat)}</DataPoint>
-              <DataPoint label="Suma kontraktów">{int(stats.totalContracts)}</DataPoint>
-              <DataPoint label="Prowizje">{money(stats.commissions, { currency })}</DataPoint>
-              <DataPoint label="Prowizje do wyniku brutto">
-                {stats.pnlGross === 0 ? "—" : percent(stats.commissions / Math.abs(stats.pnlGross))}
+              <DataPoint label="Trade'y na zero (BE)">
+                {`${int(stats.be)} (${percent(stats.beRate)})`}
               </DataPoint>
+              <DataPoint label="Suma kontraktów">{int(stats.totalContracts)}</DataPoint>
             </div>
           </Panel>
         </>

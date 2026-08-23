@@ -3,6 +3,8 @@
  * ze spacja nierozdzielajaca miedzy liczba a jednostka, zeby nic sie nie lamalo.
  */
 
+import type { Wynik } from "./domain/outcome";
+
 const NBSP = " ";
 const MINUS = "−";
 const DASH = "—";
@@ -162,6 +164,20 @@ export function tickDecimals(tickSize?: string | number | null): number {
 export function pnlClass(value: number | null | undefined): string {
   if (value === null || value === undefined || value === 0) return "text-flat";
   return value > 0 ? "text-profit" : "text-loss";
+}
+
+/** Nazwy wynikow do etykiet i badge'y - BE wielkimi literami, reszta po polsku. */
+export const WYNIK_NAZWY: Record<Wynik, string> = {
+  zysk: "zysk",
+  strata: "strata",
+  be: "BE",
+};
+
+/** Klasa koloru dla wyniku BE (ADR-011) - taka sama konwencja jak `pnlClass`. */
+export function wynikClass(w: Wynik): string {
+  if (w === "zysk") return "text-profit";
+  if (w === "strata") return "text-loss";
+  return "text-flat";
 }
 
 /** Poprawna polska odmiana rzeczownika po liczbie. */

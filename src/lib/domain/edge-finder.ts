@@ -8,6 +8,7 @@
  */
 
 import type { Dimension } from "./grouping";
+import type { Progi } from "./outcome";
 import { computeStats, type Stats } from "./stats";
 import type { TradeForAnalysis } from "./types";
 
@@ -18,7 +19,7 @@ export type Finding = {
   share: number;
   expectancyR: number | null;
   expectancyCash: number;
-  pnlNet: number;
+  pnl: number;
   winRate: number;
   /** Roznica oczekiwanej wartosci wzgledem calej proby, w R. */
   deltaR: number | null;
@@ -36,6 +37,7 @@ export type EdgeFinderResult = {
 };
 
 type Options = {
+  progi: Progi;
   minSample?: number;
   maxResults?: number;
   /** Czy szukac takze przeciec dwoch wymiarow naraz. */
@@ -57,11 +59,11 @@ function bucketize(trades: TradeForAnalysis[], dim: Dimension): Map<string, Trad
 export function findEdges(
   trades: TradeForAnalysis[],
   dimensions: Dimension[],
-  options: Options = {},
+  options: Options,
 ): EdgeFinderResult {
   const minSample = options.minSample ?? 15;
   const maxResults = options.maxResults ?? 5;
-  const baseline = computeStats(trades);
+  const baseline = computeStats(trades, options.progi);
   const candidates: Finding[] = [];
   let checked = 0;
   let skipped = 0;
@@ -75,7 +77,7 @@ export function findEdges(
     // Kontekst obejmujacy cala probe nie niesie zadnej informacji.
     if (list.length === trades.length) return;
 
-    const s = computeStats(list);
+    const s = computeStats(list, options.progi);
     const deltaR =
       s.expectancyR !== null && baseline.expectancyR !== null
         ? s.expectancyR - baseline.expectancyR
@@ -89,7 +91,7 @@ export function findEdges(
       share: trades.length > 0 ? s.count / trades.length : 0,
       expectancyR: s.expectancyR,
       expectancyCash: s.expectancyCash,
-      pnlNet: s.pnlNet,
+      pnl: s.pnl,
       winRate: s.winRate,
       deltaR,
       deltaCash,

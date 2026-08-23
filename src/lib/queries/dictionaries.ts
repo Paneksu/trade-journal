@@ -2,6 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { asc, eq } from "drizzle-orm";
 
+import { getSettings } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import {
   accounts,
@@ -13,6 +14,7 @@ import {
   tagCategories,
   tags,
 } from "@/lib/db/schema";
+import { progiZUstawien, type Progi } from "@/lib/domain/outcome";
 import type { FieldDef } from "@/lib/fields/fields";
 
 /** Slowniki uzywane niemal na kazdym ekranie. Cache trzyma je na jeden render. */
@@ -68,11 +70,15 @@ export const getSavedViews = cache(async () =>
   db.select().from(savedViews).orderBy(asc(savedViews.name)),
 );
 
+/** Progi BE aktualnie zapisane w ustawieniach. Cache trzyma je na jeden render,
+    zeby getTrades/getTrade i whereClause w obrebie jednej strony liczyly
+    dokladnie ten sam prog (ADR-011). */
+export const getProgi = cache(async (): Promise<Progi> => progiZUstawien(await getSettings()));
+
 /** Instrument w postaci wymaganej przez modul obliczen. */
 export function instrumentSpec(i: {
   tickSize: string;
   tickValue: number;
-  commissionPerContract: number;
   rthFrom: string;
   rthTo: string;
   exchangeTimezone: string;
@@ -80,7 +86,6 @@ export function instrumentSpec(i: {
   return {
     tickSize: Number(i.tickSize),
     tickValue: Number(i.tickValue),
-    commissionPerContract: Number(i.commissionPerContract),
     rthFrom: i.rthFrom,
     rthTo: i.rthTo,
     exchangeTimezone: i.exchangeTimezone,

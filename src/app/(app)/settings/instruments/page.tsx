@@ -27,7 +27,7 @@ export default async function InstrumentsSettingsPage() {
               {i.symbol} <span className="font-sans font-normal text-muted">— {i.name}</span>
             </span>
           }
-          description={`tick ${price(i.tickSize, i.tickSize)} = ${money(Math.round(i.tickValue / 10), { currency: i.currency })} · prowizja ${money(i.commissionPerContract, { currency: i.currency })} za kontrakt · sesja ${i.rthFrom}–${i.rthTo} ${i.exchangeTimezone}${i.active ? "" : " · nieaktywny"}`}
+          description={`tick ${price(i.tickSize, i.tickSize)} = ${money(Math.round(i.tickValue / 10), { currency: i.currency })} · sesja ${i.rthFrom}–${i.rthTo} ${i.exchangeTimezone}${i.active ? "" : " · nieaktywny"}`}
         >
           <InstrumentForm
             values={{
@@ -38,7 +38,6 @@ export default async function InstrumentsSettingsPage() {
               tickSize: i.tickSize,
               tickValue: i.tickValue,
               currency: i.currency,
-              commissionPerContract: i.commissionPerContract,
               rthFrom: i.rthFrom,
               rthTo: i.rthTo,
               exchangeTimezone: i.exchangeTimezone,

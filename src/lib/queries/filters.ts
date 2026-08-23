@@ -1,6 +1,8 @@
 import { and, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import { trades } from "@/lib/db/schema";
+import { czyInterwal } from "@/lib/domain/interwaly";
+import { sqlWynik, type Progi, type Wynik } from "@/lib/domain/outcome";
 
 /**
  * Filtry tabeli i statystyk. Jedno miejsce, w ktorym adres URL zamienia sie
@@ -15,10 +17,12 @@ export type Filters = {
   instruments: number[];
   strategies: number[];
   tags: number[];
+  /** Interwal przypisania tagu (ADR-013), nie interwal instrumentu. */
+  intervals: string[];
   direction: "long" | "short" | null;
   status: string | null;
   sessions: string[];
-  outcome: "win" | "loss" | null;
+  outcome: Wynik | null;
   search: string | null;
   /** "live" = dziennik realny, "backtest" = symulacje, "all" = oba zbiory */
   source: "live" | "backtest" | "all";
@@ -33,6 +37,7 @@ export const EMPTY_FILTERS: Filters = {
   instruments: [],
   strategies: [],
   tags: [],
+  intervals: [],
   direction: null,
   status: null,
   sessions: [],
@@ -83,10 +88,12 @@ export function parseFilters(p: SearchParams): Filters {
     instruments: numbers(p.instrument),
     strategies: numbers(p.strategia),
     tags: numbers(p.tag),
+    intervals: texts(p.interwal).filter(czyInterwal),
     direction: direction === "long" ? "long" : direction === "short" ? "short" : null,
     status: one("status"),
     sessions: texts(p.rynek),
-    outcome: outcome === "zysk" ? "win" : outcome === "strata" ? "loss" : null,
+    outcome:
+      outcome === "zysk" || outcome === "strata" || outcome === "be" ? outcome : null,
     search: one("szukaj"),
     source: source === "backtest" ? "backtest" : source === "wszystko" ? "all" : "live",
     backtestSession: session ? Number(session) : null,
@@ -106,10 +113,11 @@ export function toSearchParams(f: Filters): URLSearchParams {
   if (f.instruments.length) p.set("instrument", f.instruments.join(","));
   if (f.strategies.length) p.set("strategia", f.strategies.join(","));
   if (f.tags.length) p.set("tag", f.tags.join(","));
+  if (f.intervals.length) p.set("interwal", f.intervals.join(","));
   put("kierunek", f.direction);
   put("status", f.status);
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
-  if (f.outcome) p.set("wynik", f.outcome === "win" ? "zysk" : "strata");
+  if (f.outcome) p.set("wynik", f.outcome);
   put("szukaj", f.search);
   if (f.source !== "live") p.set("zrodlo", f.source === "all" ? "wszystko" : "backtest");
   put("sesja", f.backtestSession);
@@ -126,6 +134,7 @@ export function activeFilterCount(f: Filters): number {
   if (f.instruments.length) n += 1;
   if (f.strategies.length) n += 1;
   if (f.tags.length) n += 1;
+  if (f.intervals.length) n += 1;
   if (f.direction) n += 1;
   if (f.status) n += 1;
   if (f.sessions.length) n += 1;
@@ -136,7 +145,7 @@ export function activeFilterCount(f: Filters): number {
 }
 
 /** Warunki SQL wspolne dla tabeli, statystyk i wykresow. */
-export function whereClause(f: Filters): SQL | undefined {
+export function whereClause(f: Filters, progi: Progi): SQL | undefined {
   const w: (SQL | undefined)[] = [];
 
   if (f.source === "live") w.push(isNull(trades.backtestSessionId));
@@ -158,8 +167,15 @@ export function whereClause(f: Filters): SQL | undefined {
   if (f.sessions.length) {
     w.push(or(...f.sessions.map((session) => sql`${trades.marketSession}::text = ${session}`)));
   }
-  if (f.outcome === "win") w.push(sql`${trades.pnlNet} > 0`);
-  if (f.outcome === "loss") w.push(sql`${trades.pnlNet} < 0`);
+  if (f.outcome) {
+    w.push(
+      sqlWynik(
+        { pnl: trades.pnl, riskAmount: trades.riskAmount, contracts: trades.contracts },
+        progi,
+        f.outcome,
+      ),
+    );
+  }
 
   if (f.search) {
     const pattern = `%${f.search}%`;
@@ -173,6 +189,16 @@ export function whereClause(f: Filters): SQL | undefined {
     );
     w.push(
       sql`EXISTS (SELECT 1 FROM trade_tags tt WHERE tt.trade_id = ${trades.id} AND tt.tag_id IN (${ids}))`,
+    );
+  }
+
+  if (f.intervals.length) {
+    const values = sql.join(
+      f.intervals.map((iv) => sql`${iv}`),
+      sql`, `,
+    );
+    w.push(
+      sql`EXISTS (SELECT 1 FROM trade_tags tt WHERE tt.trade_id = ${trades.id} AND tt.interval IN (${values}))`,
     );
   }
 

@@ -1,75 +1,77 @@
 import { describe, expect, it } from "vitest";
 
-import { czyPion, klasaKafla, ukladSiatki } from "./galeria";
+import {
+  BAZA_WYSOKOSCI_WIERSZA,
+  PROPORCJA_DOMYSLNA,
+  bazaKafla,
+  proporcja,
+  wzrostKafla,
+} from "./galeria";
 
-/*
- * Siatka zrzutow ma jeden cel: przy kazdej liczbie zdjec od 1 do 8 uklad ma
- * byc pelny, bez sierocego kafla wiszacego w ostatnim rzedzie. Test pilnuje
- * granic, bo to jedyne miejsce, gdzie liczba zdjec zmienia wyglad.
- */
-
-describe("ukladSiatki", () => {
-  it("pojedynczy zrzut zajmuje calosc", () => {
-    expect(ukladSiatki(1)).toBe("grid-cols-1");
+describe("proporcja", () => {
+  it("bez wymiarow zwraca wartosc domyslna", () => {
+    expect(proporcja(null, null)).toBe(PROPORCJA_DOMYSLNA);
+    expect(proporcja(1920, null)).toBe(PROPORCJA_DOMYSLNA);
+    expect(proporcja(null, 1080)).toBe(PROPORCJA_DOMYSLNA);
   });
 
-  it("dwa zrzuty schodza do jednej kolumny na waskim ekranie", () => {
-    expect(ukladSiatki(2)).toContain("grid-cols-1");
-    expect(ukladSiatki(2)).toContain("sm:grid-cols-2");
+  it("wysokosc zero (dzielenie przez zero) tez zwraca wartosc domyslna", () => {
+    expect(proporcja(1920, 0)).toBe(PROPORCJA_DOMYSLNA);
   });
 
-  it("od trzech do czterech trzyma dwie kolumny", () => {
-    expect(ukladSiatki(3)).toContain("grid-cols-2");
-    expect(ukladSiatki(4)).toContain("grid-cols-2");
-  });
-
-  it("kazdy uklad poza pojedynczym zdjeciem ma rowne wiersze", () => {
-    for (const n of [2, 3, 4, 5, 8]) expect(ukladSiatki(n)).toContain("auto-rows-");
-    expect(ukladSiatki(1)).not.toContain("auto-rows-");
-  });
-
-  it("od pieciu dokłada trzecia kolumne na szerokim ekranie", () => {
-    expect(ukladSiatki(5)).toContain("lg:grid-cols-3");
-    expect(ukladSiatki(8)).toContain("lg:grid-cols-3");
+  it("liczy aspect-ratio z podanych wymiarow", () => {
+    expect(proporcja(1920, 1080)).toBeCloseTo(1920 / 1080);
+    expect(proporcja(1080, 1920)).toBeCloseTo(1080 / 1920);
   });
 });
 
-describe("klasaKafla", () => {
-  it("jedyny zrzut rozpycha sie na cala szerokosc", () => {
-    expect(klasaKafla(0, 1, false)).toBe("col-span-full");
-  });
-
-  it("przy trzech i pieciu pierwszy poziomy zrzut jest glowny", () => {
-    expect(klasaKafla(0, 3, false)).toBe("col-span-2");
-    expect(klasaKafla(0, 5, false)).toBe("col-span-2");
-  });
-
-  it("pionowy zrzut nie zostaje glowny - rozciagniety w poziomie bylby przyciety", () => {
-    expect(klasaKafla(0, 3, true)).toBe("");
-    expect(klasaKafla(0, 5, true)).toBe("");
-  });
-
-  it("przy parzystej liczbie siatka jest rowna, bez wyroznien", () => {
-    expect(klasaKafla(0, 2, false)).toBe("");
-    expect(klasaKafla(0, 4, false)).toBe("");
-    expect(klasaKafla(0, 8, false)).toBe("");
-  });
-
-  it("dalsze zrzuty nigdy nie sa glowne", () => {
-    expect(klasaKafla(1, 3, false)).toBe("");
-    expect(klasaKafla(2, 5, false)).toBe("");
+describe("wzrostKafla", () => {
+  it("zwraca proporcje zdjecia jako flex-grow", () => {
+    const proporcje = [1.5, 0.6, 2.1];
+    expect(wzrostKafla(0, proporcje)).toBe(1.5);
+    expect(wzrostKafla(1, proporcje)).toBe(0.6);
+    expect(wzrostKafla(2, proporcje)).toBe(2.1);
   });
 });
 
-describe("czyPion", () => {
-  it("bez wymiarow zakladamy poziom - tak wyglada zrzut z platformy", () => {
-    expect(czyPion(null, null)).toBe(false);
-    expect(czyPion(1920, null)).toBe(false);
+describe("bazaKafla", () => {
+  it("flex-basis to proporcja razy baza wysokosci wiersza", () => {
+    const proporcje = [1.5, 0.6, 2.1];
+    expect(bazaKafla(0, proporcje, BAZA_WYSOKOSCI_WIERSZA)).toBeCloseTo(
+      1.5 * BAZA_WYSOKOSCI_WIERSZA,
+    );
+    expect(bazaKafla(1, proporcje, BAZA_WYSOKOSCI_WIERSZA)).toBeCloseTo(
+      0.6 * BAZA_WYSOKOSCI_WIERSZA,
+    );
   });
 
-  it("rozpoznaje orientacje po wymiarach", () => {
-    expect(czyPion(1080, 1920)).toBe(true);
-    expect(czyPion(1920, 1080)).toBe(false);
-    expect(czyPion(1000, 1000)).toBe(false);
+  it("jest proporcjonalna do aspect ratio - nic nie jest normalizowane wzgledem calego wiersza", () => {
+    // Zadna suma nie jest liczona w JS (to teraz robi CSS flex-wrap), wiec
+    // podwojenie proporcji musi dokladnie podwoic flex-basis, niezaleznie od
+    // tego, ile innych zdjec jest w tablicy.
+    const proporcje = [0.8, 1.6];
+    const bazowa = [proporcje[0], proporcje[0] * 2];
+    expect(bazaKafla(0, bazowa, BAZA_WYSOKOSCI_WIERSZA)).toBeCloseTo(
+      bazaKafla(1, bazowa, BAZA_WYSOKOSCI_WIERSZA) / 2,
+    );
+  });
+});
+
+describe("regresja - zaden eksport nie wraca do starego ukladu przycinajacego", () => {
+  it("zaden wynik nie zawiera 'object-cover' ani 'auto-rows-'", () => {
+    const proporcje = [1.5, 0.6, 2.1, 1.0];
+
+    const wyniki = [
+      proporcja(1920, 1080),
+      proporcja(null, null),
+      wzrostKafla(0, proporcje),
+      bazaKafla(0, proporcje, BAZA_WYSOKOSCI_WIERSZA),
+      PROPORCJA_DOMYSLNA,
+      BAZA_WYSOKOSCI_WIERSZA,
+    ];
+
+    const zserializowane = JSON.stringify(wyniki);
+    expect(zserializowane).not.toContain("object-cover");
+    expect(zserializowane).not.toContain("auto-rows-");
   });
 });

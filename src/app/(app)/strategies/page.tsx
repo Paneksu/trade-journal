@@ -4,7 +4,7 @@ import { GroupTable } from "@/components/stats/group-table";
 import { EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 import { dimension, groupBy } from "@/lib/domain/grouping";
-import { getAccounts, getInstruments, getStrategies } from "@/lib/queries/dictionaries";
+import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 
@@ -22,7 +22,8 @@ export default async function StrategiesPage() {
 
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
   const closed = closedOnly(trades);
-  const groups = groupBy(closed, dimension("strategy"));
+  const progi = await getProgi();
+  const groups = groupBy(closed, dimension("strategy"), { progi });
 
   return (
     <div className="space-y-4">
@@ -41,7 +42,7 @@ export default async function StrategiesPage() {
             <GroupBars
               data={groups.map((g) => ({
                 label: g.label,
-                value: g.stats.pnlNet,
+                value: g.stats.pnl,
                 count: g.stats.count,
               }))}
               currency={currency}

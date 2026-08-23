@@ -7,7 +7,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { instruments, screenshots, tradeTags, trades } from "@/lib/db/schema";
-import { commissionFor, computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc";
+import { computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc";
+import { czyInterwal } from "@/lib/domain/interwaly";
 import { cleanValues, fieldsForScope, readFromForm, validateValues } from "@/lib/fields/fields";
 import { getFields, instrumentSpec } from "@/lib/queries/dictionaries";
 import { deleteScreenshot, deleteTradeDir, saveScreenshot } from "@/lib/screenshots";
@@ -48,12 +49,6 @@ function integer(data: FormData, key: string): number | null {
 function optionalId(data: FormData, key: string): number | null {
   const n = integer(data, key);
   return n !== null && n > 0 ? n : null;
-}
-
-/** Kwota w formularzu podawana jest w dolarach, w bazie trzymamy centy. */
-function cents(data: FormData, key: string): number | null {
-  const n = number(data, key);
-  return n === null ? null : Math.round(n * 100);
 }
 
 export async function saveTrade(_previous: FormState, data: FormData): Promise<FormState> {
@@ -121,11 +116,6 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const mae = number(data, "mae");
   const mfe = number(data, "mfe");
 
-  // Puste pole prowizji oznacza "policz z katalogu instrumentow".
-  const commissionRaw = cents(data, "commission");
-  const commission =
-    commissionRaw ?? commissionFor(contracts, Number(instrument.commissionPerContract));
-
   const result = computeTrade({
     instrument: instrumentSpec(instrument),
     direction,
@@ -136,7 +126,6 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     takeProfit,
     mae,
     mfe,
-    commission,
     entryTime,
     exitTime: status === "closed" ? exitTime : null,
   });
@@ -170,15 +159,13 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     takeProfit: takeProfit === null ? null : String(takeProfit),
     mae: mae === null ? null : String(mae),
     mfe: mfe === null ? null : String(mfe),
-    commission,
     note: text(data, "note"),
     executionRating: integer(data, "executionRating"),
     rulesMet: data.getAll("rule").map(String),
     custom: values,
     ticks: result.ticks,
     riskTicks: result.riskTicks,
-    pnlGross: result.pnlGross,
-    pnlNet: result.pnlNet,
+    pnl: result.pnl,
     riskAmount: result.riskAmount,
     rMultiple: result.rMultiple === null ? null : result.rMultiple.toFixed(4),
     maeR: result.maeR === null ? null : result.maeR.toFixed(4),
@@ -201,6 +188,9 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   }
 
   // --- tagi ---
+  // Interwal siedzi w osobnym polu "tagint:<id>" obok checkboxa "tag" - nie
+  // w jednej zakodowanej wartosci ("12:5m"), bo nazwa "tag" jest wspoldzielona
+  // z filter-bar.tsx i z tagMany, ktore o interwale nic nie wiedza.
   const selectedTags = data
     .getAll("tag")
     .map((w) => Number(w))
@@ -209,7 +199,13 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   if (selectedTags.length > 0) {
     await db
       .insert(tradeTags)
-      .values(selectedTags.map((tagId) => ({ tradeId: savedId, tagId })))
+      .values(
+        selectedTags.map((tagId) => {
+          const raw = data.get(`tagint:${tagId}`);
+          const interval = typeof raw === "string" && czyInterwal(raw) ? raw : null;
+          return { tradeId: savedId, tagId, interval };
+        }),
+      )
       .onConflictDoNothing();
   }
 
@@ -318,9 +314,12 @@ export async function tagMany(tradeIds: number[], tagId: number, add: boolean): 
   if (tradeIds.length === 0) return;
 
   if (add) {
+    // Tagowanie masowe z tabeli nie zna kontekstu pojedynczego trade'a, wiec
+    // interwal przypisania zawsze zostaje pusty - uzytkownik dopowie go
+    // recznie w karcie trade'a, jesli ma sens.
     await db
       .insert(tradeTags)
-      .values(tradeIds.map((tradeId) => ({ tradeId, tagId })))
+      .values(tradeIds.map((tradeId) => ({ tradeId, tagId, interval: null })))
       .onConflictDoNothing();
   } else {
     await db

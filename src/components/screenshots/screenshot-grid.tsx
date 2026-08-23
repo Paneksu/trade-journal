@@ -3,18 +3,38 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 
-import { cx } from "@/lib/classes";
-import { czyPion, klasaKafla, ukladSiatki } from "@/lib/domain/galeria";
+import {
+  BAZA_WYSOKOSCI_WIERSZA,
+  bazaKafla,
+  proporcja,
+  wzrostKafla,
+} from "@/lib/domain/galeria";
 import { Lightbox } from "./lightbox";
 import type { Shot } from "./typy";
 
 /**
- * Siatka zrzutow - jedna dla karty trade'a, panelu dnia i sesji backtestu.
+ * Galeria zrzutow - jedna dla karty trade'a, panelu dnia i sesji backtestu.
+ * Uklad justowany (jak Google Photos): kazdy kafel dostaje wspolna bazowa
+ * wysokosc wiersza przez `flex-basis`, a `flex-grow` proporcjonalny do
+ * aspect ratio dobija go do naturalnej szerokosci - zero przyciecia, zero
+ * pasow. Jedno drzewo DOM (`flex flex-wrap`): zawijanie do kolejnych wierszy
+ * na waskim ekranie robi sam CSS na podstawie szerokosci kontenera, bez
+ * osobnego wariantu ukladu w JS/DOM.
  *
  * Na miejscu lezy wylacznie miniatura; pelny plik wchodzi dopiero w
  * powiekszeniu. Przy osmiu zdjeciach roznica to kilkanascie megabajtow na
  * jedno wejscie na strone.
+ *
+ * Ostatni, niepelny wiersz: bez domkniecia flex-grow rozdalby jedyny kafel w
+ * wierszu na cala szerokosc kontenera (kazda linia flex-wrap rozdziela
+ * naddatek osobno). Zamiast liczyc to w JS (jak poprzednio przez podzial na
+ * wiersze), na koncu siedzi kilka niewidocznych wypelniaczy z duzym
+ * flex-grow - one przechwytuja naddatek w ktorymkolwiek wierszu akurat jest
+ * niepelny, wiec prawdziwe zdjecia zawsze zostaja przy swojej naturalnej
+ * szerokosci.
  */
+
+const LICZBA_WYPELNIACZY = 6;
 
 export function ScreenshotGrid({
   shots,
@@ -31,17 +51,21 @@ export function ScreenshotGrid({
   const [podglad, setPodglad] = useState<number | null>(null);
   if (shots.length === 0) return null;
 
-  const jeden = shots.length === 1;
+  const proporcje = shots.map((s) => proporcja(s.width, s.height));
 
   return (
     <>
-      <div className={cx("grid gap-2", ukladSiatki(shots.length), className)}>
-        {shots.map((s, i) => {
-          const pion = czyPion(s.width, s.height);
-          return (
+      <div className={className}>
+        <div className="flex flex-wrap gap-2">
+          {shots.map((s, i) => (
             <figure
               key={s.id}
-              className={cx("relative h-full", klasaKafla(i, shots.length, pion))}
+              style={{
+                flexGrow: wzrostKafla(i, proporcje),
+                flexBasis: `${bazaKafla(i, proporcje, BAZA_WYSOKOSCI_WIERSZA)}rem`,
+                aspectRatio: proporcje[i],
+              }}
+              className="relative min-w-0"
             >
               <button
                 type="button"
@@ -55,21 +79,17 @@ export function ScreenshotGrid({
                   alt={`Zrzut ${i + 1} z ${shots.length} — ${opis}`}
                   width={s.width ?? undefined}
                   height={s.height ?? undefined}
-                  className={cx(
-                    "w-full",
-                    // Jedyne zdjecie pokazujemy w calosci - wykres ma byc
-                    // czytelny bez klikania. Reszta wypelnia rowny kafel;
-                    // pelny kadr jest o jedno klikniecie stad.
-                    jeden
-                      ? "max-h-[70vh] object-contain"
-                      : "h-full object-cover",
-                  )}
+                  /* object-contain, nie fill: kafel ma juz proporcje zdjecia, ale gdy
+                     wymiarow brakuje w bazie, proporcja spada na domyslne 16/9 -
+                     wtedy `fill` rozciagnalby wykres, a `contain` tylko doda pasek. */
+                  className="block h-full w-full object-contain"
                 />
               </button>
               {onUsun && <UsunZrzut id={s.id} onUsun={onUsun} />}
             </figure>
-          );
-        })}
+          ))}
+          <Wypelniacze />
+        </div>
       </div>
 
       <Lightbox
@@ -81,6 +101,21 @@ export function ScreenshotGrid({
       />
     </>
   );
+}
+
+/**
+ * Niewidoczne elementy domykajace ostatni wiersz - patrz komentarz przy
+ * `LICZBA_WYPELNIACZY` wyzej. Wysokosc zero i `aria-hidden`, wiec nie zajmuja
+ * miejsca w pionie ani nie wchodza w droge czytnikowi ekranu.
+ */
+function Wypelniacze() {
+  return Array.from({ length: LICZBA_WYPELNIACZY }, (_, i) => (
+    <span
+      key={i}
+      aria-hidden
+      style={{ flexGrow: 999, flexBasis: `${BAZA_WYSOKOSCI_WIERSZA}rem`, height: 0 }}
+    />
+  ));
 }
 
 function UsunZrzut({

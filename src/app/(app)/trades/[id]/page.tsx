@@ -9,11 +9,23 @@ import { requireSession } from "@/lib/auth/guard";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
 import { computeStats } from "@/lib/domain/stats";
 import { formatValue } from "@/lib/fields/fields";
-import { getFields, getStrategies } from "@/lib/queries/dictionaries";
+import { getFields, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { closedOnly, getScreenshots, getTrade, getTrades } from "@/lib/queries/trades";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
-import { dateTime, duration, int, longDate, money, num, percent, pnlClass, price, rValue } from "@/lib/format";
+import {
+  dateTime,
+  duration,
+  int,
+  longDate,
+  money,
+  num,
+  percent,
+  pnlClass,
+  price,
+  rValue,
+  wynikClass,
+} from "@/lib/format";
 
 export const metadata = { title: "Trade — Dziennik tradingowy" };
 
@@ -41,7 +53,8 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
         await getTrades({ ...EMPTY_FILTERS, strategies: [trade.strategyId] }),
       )
     : [];
-  const strategyStats = computeStats(sameStrategy);
+  const progi = await getProgi();
+  const strategyStats = computeStats(sameStrategy, progi);
 
   return (
     <div className="space-y-4">
@@ -77,10 +90,13 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               {trade.direction}
             </span>
             <span className="text-sm text-faint">{num(trade.contracts, 0)} kontr.</span>
-            <span className={cx("liczba text-xl font-semibold", pnlClass(trade.pnlNet))}>
+            <span className={cx("liczba text-xl font-semibold", wynikClass(trade.wynik))}>
               {trade.status === "closed"
-                ? money(trade.pnlNet, { currency: trade.currency, sign: true })
+                ? money(trade.pnl, { currency: trade.currency, sign: true })
                 : TRADE_STATUS_NAMES[trade.status]}
+              {trade.status === "closed" && trade.wynik === "be" && (
+                <span className="ml-1 text-sm opacity-70">BE</span>
+              )}
             </span>
             <span className={cx("liczba text-sm", pnlClass(trade.rMultiple))}>
               {rValue(trade.rMultiple)}
@@ -133,12 +149,6 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
             <DataPoint label="Ticki" valueClassName={pnlClass(trade.ticks)}>
               {int(trade.ticks)}
             </DataPoint>
-            <DataPoint label="Wynik brutto" valueClassName={pnlClass(trade.pnlGross)}>
-              {money(trade.pnlGross, { currency: trade.currency, sign: true })}
-            </DataPoint>
-            <DataPoint label="Prowizja">
-              {money(trade.commission, { currency: trade.currency })}
-            </DataPoint>
             <DataPoint label="Czas trzymania">{duration(trade.durationS)}</DataPoint>
 
             <DataPoint label="MAE">
@@ -171,8 +181,13 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
                 <p className="etykieta mb-1.5">Tagi</p>
                 <div className="flex flex-wrap gap-1.5">
                   {trade.tags.map((t) => (
-                    <Badge key={t.id} color={t.color} title={t.category}>
+                    <Badge
+                      key={t.id}
+                      color={t.color}
+                      title={t.interval ? `${t.category} · ${t.interval}` : t.category}
+                    >
                       {t.name}
+                      {t.interval && <span className="opacity-60"> {t.interval}</span>}
                     </Badge>
                   ))}
                 </div>

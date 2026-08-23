@@ -13,7 +13,9 @@ import {
   tradeTags,
   trades,
 } from "@/lib/db/schema";
+import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { TradeForAnalysis } from "@/lib/domain/types";
+import { getProgi } from "./dictionaries";
 import { whereClause, type Filters } from "./filters";
 
 /**
@@ -46,15 +48,13 @@ const columns = {
   takeProfit: trades.takeProfit,
   mae: trades.mae,
   mfe: trades.mfe,
-  commission: trades.commission,
   note: trades.note,
   executionRating: trades.executionRating,
   rulesMet: trades.rulesMet,
   custom: trades.custom,
   ticks: trades.ticks,
   riskTicks: trades.riskTicks,
-  pnlGross: trades.pnlGross,
-  pnlNet: trades.pnlNet,
+  pnl: trades.pnl,
   riskAmount: trades.riskAmount,
   rMultiple: trades.rMultiple,
   maeR: trades.maeR,
@@ -100,24 +100,27 @@ function baseQuery() {
 type Row = Awaited<ReturnType<typeof baseQuery>>[number];
 type TagRow = TradeForAnalysis["tags"][number];
 
-function build(row: Row, rowTags: TagRow[], screenshotCount: number): TradeRecord {
+function build(row: Row, rowTags: TagRow[], screenshotCount: number, progi: Progi): TradeRecord {
   const met = (row.rulesMet ?? []) as string[];
   const rules = (row.strategyRules ?? []) as { id: string }[];
 
+  const pnl = Number(row.pnl ?? 0);
+  const riskAmount = row.riskAmount === null ? null : Number(row.riskAmount);
+  const contracts = Number(row.contracts);
+
   return {
     id: row.id,
-    pnlNet: Number(row.pnlNet ?? 0),
-    pnlGross: Number(row.pnlGross ?? 0),
-    commission: Number(row.commission ?? 0),
+    pnl,
     rMultiple: row.rMultiple === null ? null : Number(row.rMultiple),
-    riskAmount: row.riskAmount === null ? null : Number(row.riskAmount),
+    riskAmount,
     durationS: row.durationS,
     entryTime: row.entryTime,
     tradingDay: row.tradingDay ?? "",
-    contracts: Number(row.contracts),
+    contracts,
     maeR: row.maeR === null ? null : Number(row.maeR),
     mfeR: row.mfeR === null ? null : Number(row.mfeR),
 
+    wynik: wynikTrade({ pnl, riskAmount, contracts }, progi),
     direction: row.direction,
     accountId: row.accountId,
     accountName: row.accountName,
@@ -169,6 +172,7 @@ async function tagsForTrades(ids: number[]): Promise<Map<number, TagRow[]>> {
       color: tags.color,
       category: tagCategories.name,
       categoryKey: tagCategories.key,
+      interval: tradeTags.interval,
     })
     .from(tradeTags)
     .innerJoin(tags, eq(tradeTags.tagId, tags.id))
@@ -184,6 +188,7 @@ async function tagsForTrades(ids: number[]): Promise<Map<number, TagRow[]>> {
       category: w.category,
       categoryKey: w.categoryKey,
       color: w.color,
+      interval: w.interval,
     });
     map.set(w.tradeId, list);
   }
@@ -204,15 +209,19 @@ async function screenshotCounts(ids: number[]): Promise<Map<number, number>> {
 }
 
 export async function getTrades(f: Filters, limit?: number): Promise<TradeRecord[]> {
+  // Progi pobrane raz, przed budowa zapytania: ten sam prog musi filtrowac
+  // (whereClause) i etykietowac wiersze (build) - inaczej filtr `wynik=be`
+  // i kolumna "Wynik" moglyby sobie przeczyc w tym samym renderze.
+  const progi = await getProgi();
   const query = baseQuery()
-    .where(whereClause(f))
+    .where(whereClause(f, progi))
     .orderBy(desc(trades.entryTime), desc(trades.id));
   const rows = limit ? await query.limit(limit) : await query;
 
   const ids = rows.map((r) => r.id);
   const [tagMap, shotMap] = await Promise.all([tagsForTrades(ids), screenshotCounts(ids)]);
 
-  return rows.map((r) => build(r, tagMap.get(r.id) ?? [], shotMap.get(r.id) ?? 0));
+  return rows.map((r) => build(r, tagMap.get(r.id) ?? [], shotMap.get(r.id) ?? 0, progi));
 }
 
 /** Tylko zamkniete trade'y - podstawa wszystkich statystyk. */
@@ -223,8 +232,12 @@ export function closedOnly(list: TradeRecord[]): TradeRecord[] {
 export async function getTrade(id: number): Promise<TradeRecord | null> {
   const rows = await baseQuery().where(eq(trades.id, id)).limit(1);
   if (rows.length === 0) return null;
-  const [tagMap, shotMap] = await Promise.all([tagsForTrades([id]), screenshotCounts([id])]);
-  return build(rows[0], tagMap.get(id) ?? [], shotMap.get(id) ?? 0);
+  const [tagMap, shotMap, progi] = await Promise.all([
+    tagsForTrades([id]),
+    screenshotCounts([id]),
+    getProgi(),
+  ]);
+  return build(rows[0], tagMap.get(id) ?? [], shotMap.get(id) ?? 0, progi);
 }
 
 export async function getScreenshots(tradeId: number) {

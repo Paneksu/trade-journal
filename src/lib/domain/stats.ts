@@ -5,13 +5,18 @@
  * Tam, gdzie miara nie ma sensu (brak strat, brak stopa), zwracamy `null`,
  * nigdy zera ani nieskonczonosci - zero klamie w interfejsie, a nieskonczonosc
  * psuje wykresy.
+ *
+ * `progi` nie ma wartosci domyslnej - kompilator ma wskazac kazde wywolanie,
+ * zeby nikt nie policzyl statystyk z progiem "z powietrza". Klasyfikacja
+ * kazdego trade'a jako zysk/strata/be idzie przez `wynikTrade` (ADR-011) -
+ * to jedyne miejsce w module, ktore decyduje, czy trade jest wygrana.
  */
+
+import { wynikTrade, type Progi } from "./outcome";
 
 export type TradeStat = {
   id: number;
-  pnlNet: number;
-  pnlGross: number;
-  commission: number;
+  pnl: number;
   rMultiple: number | null;
   riskAmount: number | null;
   durationS: number | null;
@@ -26,11 +31,10 @@ export type Stats = {
   count: number;
   wins: number;
   losses: number;
-  flat: number;
+  be: number;
+  beRate: number;
   winRate: number;
-  pnlNet: number;
-  pnlGross: number;
-  commissions: number;
+  pnl: number;
   avgWin: number | null;
   avgLoss: number | null;
   payoff: number | null;
@@ -60,11 +64,10 @@ export function emptyStats(): Stats {
     count: 0,
     wins: 0,
     losses: 0,
-    flat: 0,
+    be: 0,
+    beRate: 0,
     winRate: 0,
-    pnlNet: 0,
-    pnlGross: 0,
-    commissions: 0,
+    pnl: 0,
     avgWin: null,
     avgLoss: null,
     payoff: null,
@@ -110,7 +113,7 @@ function stdev(values: number[]): number | null {
   return Math.sqrt(sum / (values.length - 1));
 }
 
-export function computeStats(list: TradeStat[]): Stats {
+export function computeStats(list: TradeStat[], progi: Progi): Stats {
   if (list.length === 0) return emptyStats();
 
   const ordered = chronologically(list);
@@ -132,25 +135,24 @@ export function computeStats(list: TradeStat[]): Stats {
 
   for (const t of ordered) {
     s.count += 1;
-    s.pnlNet += t.pnlNet;
-    s.pnlGross += t.pnlGross;
-    s.commissions += t.commission;
+    s.pnl += t.pnl;
     s.totalContracts += t.contracts;
 
-    if (t.pnlNet > 0) {
+    const wynik = wynikTrade(t, progi);
+    if (wynik === "zysk") {
       s.wins += 1;
-      profits.push(t.pnlNet);
+      profits.push(t.pnl);
       winStreak += 1;
       lossStreak = 0;
-    } else if (t.pnlNet < 0) {
+    } else if (wynik === "strata") {
       s.losses += 1;
-      losses.push(-t.pnlNet);
+      losses.push(-t.pnl);
       lossStreak += 1;
       winStreak = 0;
     } else {
-      s.flat += 1;
-      winStreak = 0;
-      lossStreak = 0;
+      // BE ani nie przerywa, ani nie przedluza serii (ADR-011): kto przesuwa
+      // stopy na zero, nie powinien tym samym ruchem zaczynac nowej serii.
+      s.be += 1;
     }
     s.maxWinStreak = Math.max(s.maxWinStreak, winStreak);
     s.maxLossStreak = Math.max(s.maxLossStreak, lossStreak);
@@ -167,16 +169,20 @@ export function computeStats(list: TradeStat[]): Stats {
     if (t.maeR !== null) maeValues.push(t.maeR);
     if (t.mfeR !== null) mfeValues.push(t.mfeR);
 
-    equity += t.pnlNet;
+    equity += t.pnl;
     peak = Math.max(peak, equity);
     s.maxDrawdown = Math.max(s.maxDrawdown, peak - equity);
 
-    s.best = s.best === null ? t.pnlNet : Math.max(s.best, t.pnlNet);
-    s.worst = s.worst === null ? t.pnlNet : Math.min(s.worst, t.pnlNet);
+    s.best = s.best === null ? t.pnl : Math.max(s.best, t.pnl);
+    s.worst = s.worst === null ? t.pnl : Math.min(s.worst, t.pnl);
   }
 
   s.currentStreak = winStreak > 0 ? winStreak : -lossStreak;
-  s.winRate = s.count > 0 ? s.wins / s.count : 0;
+  // BE poza mianownikiem (ADR-011): skutecznosc porownuje sie z progiem
+  // oplacalnosci wyliczonym z payoffu, czyli z trade'ow rozstrzygnietych.
+  // Inaczej im lepiej ktos przesuwa stopy na zero, tym gorzej wygladalby system.
+  s.winRate = s.wins + s.losses > 0 ? s.wins / (s.wins + s.losses) : 0;
+  s.beRate = s.count > 0 ? s.be / s.count : 0;
   s.avgWin = mean(profits);
   s.avgLoss = mean(losses);
   s.payoff =
@@ -186,7 +192,7 @@ export function computeStats(list: TradeStat[]): Stats {
   const sumLosses = losses.reduce((a, b) => a + b, 0);
   s.profitFactor = sumLosses > 0 ? sumProfits / sumLosses : null;
 
-  s.expectancyCash = Math.round(s.pnlNet / s.count);
+  s.expectancyCash = Math.round(s.pnl / s.count);
   s.countWithR = rValues.length;
   s.expectancyR = mean(rValues);
   s.stdevR = stdev(rValues);
@@ -235,7 +241,7 @@ export function equityCurve(list: TradeStat[], startingBalance = 0): EquityPoint
   let peak = startingBalance;
 
   ordered.forEach((t, i) => {
-    equity += t.pnlNet;
+    equity += t.pnl;
     equityR += t.rMultiple ?? 0;
     peak = Math.max(peak, equity);
     points.push({
@@ -257,7 +263,7 @@ export function dailyPnl(list: TradeStat[]): { day: string; pnl: number; count: 
   const map = new Map<string, { day: string; pnl: number; count: number; r: number }>();
   for (const t of list) {
     const wpis = map.get(t.tradingDay) ?? { day: t.tradingDay, pnl: 0, count: 0, r: 0 };
-    wpis.pnl += t.pnlNet;
+    wpis.pnl += t.pnl;
     wpis.count += 1;
     wpis.r += t.rMultiple ?? 0;
     map.set(t.tradingDay, wpis);

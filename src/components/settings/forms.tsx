@@ -15,7 +15,16 @@ import {
 } from "@/components/ui/base";
 import type { ActionState } from "@/lib/actions/settings";
 import { deleteAccount, deleteInstrument, saveAccount, saveInstrument, saveSettings } from "@/lib/actions/settings";
-import { archiveField, deleteField, deleteTag, deleteTagCategory, saveField, saveTag, saveTagCategory } from "@/lib/actions/taxonomy";
+import {
+  archiveField,
+  archiveTag,
+  deleteField,
+  deleteTag,
+  deleteTagCategory,
+  saveField,
+  saveTag,
+  saveTagCategory,
+} from "@/lib/actions/taxonomy";
 import { changePassword, type PasswordState } from "@/lib/actions/auth";
 import { TYPE_HINTS, TYPE_NAMES, TYPES_WITH_OPTIONS, type FieldDef, type FieldType } from "@/lib/fields/fields";
 
@@ -217,7 +226,6 @@ export type InstrumentValues = {
   tickSize?: string;
   tickValue?: number;
   currency?: string;
-  commissionPerContract?: number;
   rthFrom?: string;
   rthTo?: string;
   exchangeTimezone?: string;
@@ -285,17 +293,6 @@ export function InstrumentForm({
             inputMode="decimal"
             required
             defaultValue={values.tickValue ? values.tickValue / 1000 : ""}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={`ins-commission-${key}`} hint="Za kontrakt, w obie strony">
-            Prowizja
-          </Label>
-          <Input
-            id={`ins-commission-${key}`}
-            name="commissionPerContract"
-            inputMode="decimal"
-            defaultValue={values.commissionPerContract ? values.commissionPerContract / 100 : ""}
           />
         </div>
         <div className="space-y-1.5">
@@ -428,7 +425,7 @@ export function TagCategoryForm({
         {values.id && (
           <DeleteButton
             onDelete={() => deleteTagCategory(values.id as number)}
-            question="Usunąć kategorię razem ze wszystkimi jej tagami? Tagi znikną też z trade'ów."
+            question="Usunąć kategorię razem ze wszystkimi jej tagami? Jeśli którykolwiek z nich jest użyty w trade'ach, usunięcie się nie powiedzie — zarchiwizuj go wtedy zamiast kasować."
           />
         )}
       </div>
@@ -454,6 +451,7 @@ export function TagForm({
   onDone?: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveTag, {});
+  const [archivePending, startArchiveTransition] = useTransition();
   const key = values.id ?? "new";
 
   return (
@@ -502,11 +500,25 @@ export function TagForm({
           </Button>
         )}
         {values.id && (
-          <DeleteButton
-            onDelete={() => deleteTag(values.id as number)}
-            question="Usunąć tag? Zniknie też z trade'ów, które go mają."
-            label=""
-          />
+          <>
+            <Button
+              type="button"
+              size="s"
+              disabled={archivePending}
+              onClick={() =>
+                startArchiveTransition(async () => {
+                  await archiveTag(values.id as number, !values.archived);
+                })
+              }
+            >
+              {values.archived ? "Przywróć" : "Ukryj zamiast usuwać"}
+            </Button>
+            <DeleteButton
+              onDelete={() => deleteTag(values.id as number)}
+              question="Usunąć tag? Jeśli jest użyty w choćby jednym trade, usunięcie się nie powiedzie — użyj przycisku archiwizacji obok."
+              label=""
+            />
+          </>
         )}
       </div>
 
@@ -708,6 +720,8 @@ export function GeneralSettingsForm({
     minSample: number;
     tradingHoursFrom: string | null;
     tradingHoursTo: string | null;
+    beProgRMille: number;
+    beProgNaKontrakt: number;
   };
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveSettings, {});
@@ -761,6 +775,34 @@ export function GeneralSettingsForm({
             name="tradingHoursTo"
             type="time"
             defaultValue={values.tradingHoursTo ?? ""}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="beProgR"
+            hint="Wynik w tym ulamku ryzyka albo blizej zera liczy sie jako BE"
+          >
+            Próg BE (w R)
+          </Label>
+          <Input
+            id="beProgR"
+            name="beProgR"
+            inputMode="decimal"
+            defaultValue={values.beProgRMille / 1000}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="beProgNaKontrakt"
+            hint="Uzywany, gdy trade nie ma stopa - liczony na kontrakt"
+          >
+            Zapasowy próg BE na kontrakt
+          </Label>
+          <Input
+            id="beProgNaKontrakt"
+            name="beProgNaKontrakt"
+            inputMode="decimal"
+            defaultValue={values.beProgNaKontrakt / 100}
           />
         </div>
       </div>

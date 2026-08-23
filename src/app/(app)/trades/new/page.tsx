@@ -7,7 +7,9 @@ import {
   getBacktestSessions,
   getFields,
   getInstruments,
+  getProgi,
   getStrategies,
+  getTagCategories,
   getTags,
 } from "@/lib/queries/dictionaries";
 import { lastUsed } from "@/lib/queries/trades";
@@ -23,15 +25,18 @@ export default async function NewTradePage({
   const { sesja } = await searchParams;
   const sessionId = sesja ? Number(sesja) : null;
 
-  const [accounts, instruments, strategies, sessions, tags, fields, last] = await Promise.all([
-    getAccounts(),
-    getInstruments(),
-    getStrategies(),
-    getBacktestSessions(),
-    getTags(),
-    getFields(),
-    lastUsed(),
-  ]);
+  const [accounts, instruments, strategies, sessions, tags, categories, fields, last, progi] =
+    await Promise.all([
+      getAccounts(),
+      getInstruments(),
+      getStrategies(),
+      getBacktestSessions(),
+      getTags(),
+      getTagCategories(),
+      getFields(),
+      lastUsed(),
+      getProgi(),
+    ]);
 
   const active = accounts.filter((k) => !k.archived);
   const activeInstruments = instruments.filter((i) => i.active);
@@ -51,8 +56,10 @@ export default async function NewTradePage({
         strategies={strategies.filter((s) => s.active)}
         sessions={sessions.filter((s) => s.status === "running")}
         tags={tags}
+        tagCategories={categories}
         fields={fieldsForScope(fields, sessionId !== null)}
         backtestSessionId={sessionId}
+        progi={progi}
         values={{
           accountId: last.accountId,
           instrumentId: last.instrumentId,

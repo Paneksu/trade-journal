@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import type { TradeRecord } from "@/lib/queries/trades";
-import { dateTime, money, pnlClass, price, rValue } from "@/lib/format";
+import { dateTime, money, pnlClass, price, rValue, wynikClass } from "@/lib/format";
 
 /**
  * Zwiezla lista trade'ow do pulpitu i podgladu dnia.
@@ -74,10 +74,13 @@ export function TradeList({
             <span
               className={cx(
                 "liczba w-[5.5rem] shrink-0 text-right text-sm font-medium sm:w-24",
-                pnlClass(t.pnlNet),
+                wynikClass(t.wynik),
               )}
             >
-              {t.status === "closed" ? money(t.pnlNet, { currency: t.currency, sign: true }) : "otwarty"}
+              {t.status === "closed" ? money(t.pnl, { currency: t.currency, sign: true }) : "otwarty"}
+              {t.status === "closed" && t.wynik === "be" && (
+                <span className="ml-1 text-xs opacity-70">BE</span>
+              )}
             </span>
           </Link>
         </li>

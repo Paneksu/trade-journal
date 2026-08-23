@@ -18,7 +18,7 @@ import { cx } from "@/lib/classes";
 import { deleteMany, tagMany } from "@/lib/actions/trades";
 import { SESSION_NAMES, TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import { formatValue, type FieldDef } from "@/lib/fields/fields";
-import { dateTime, duration, int, money, num, pnlClass, price, rValue } from "@/lib/format";
+import { dateTime, duration, int, money, num, pnlClass, price, rValue, wynikClass } from "@/lib/format";
 import type { TradeRecord } from "@/lib/queries/trades";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
@@ -154,16 +154,32 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         },
       },
       {
-        id: "pnlNet",
-        accessorKey: "pnlNet",
-        header: "Wynik netto",
+        id: "pnl",
+        accessorKey: "pnl",
+        header: "Wynik",
         cell: ({ row }) =>
           row.original.status === "closed" ? (
-            <span className={cx("font-medium", pnlClass(row.original.pnlNet))}>
-              {money(row.original.pnlNet, { currency: row.original.currency, sign: true })}
+            <span className={cx("font-medium", wynikClass(row.original.wynik))}>
+              {money(row.original.pnl, { currency: row.original.currency, sign: true })}
+              {row.original.wynik === "be" && (
+                <span className="ml-1 text-xs">BE</span>
+              )}
             </span>
           ) : (
             <span className="text-faint">{TRADE_STATUS_NAMES[row.original.status]}</span>
+          ),
+      },
+      {
+        id: "wynik",
+        accessorFn: (t) => t.wynik,
+        header: "Wynik W/L/BE",
+        cell: ({ row }) =>
+          row.original.status === "closed" ? (
+            <span className={cx("text-xs font-semibold uppercase", wynikClass(row.original.wynik))}>
+              {row.original.wynik === "zysk" ? "W" : row.original.wynik === "strata" ? "L" : "BE"}
+            </span>
+          ) : (
+            <span className="text-faint">—</span>
           ),
       },
       {
@@ -197,8 +213,13 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         cell: ({ row }) => (
           <span className="flex flex-wrap gap-1">
             {row.original.tags.map((tag) => (
-              <Badge key={tag.id} color={tag.color} title={tag.category}>
+              <Badge
+                key={tag.id}
+                color={tag.color}
+                title={tag.interval ? `${tag.category} · ${tag.interval}` : tag.category}
+              >
                 {tag.name}
+                {tag.interval && <span> · {tag.interval}</span>}
               </Badge>
             ))}
           </span>

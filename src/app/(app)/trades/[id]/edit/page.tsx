@@ -10,7 +10,9 @@ import {
   getBacktestSessions,
   getFields,
   getInstruments,
+  getProgi,
   getStrategies,
+  getTagCategories,
   getTags,
 } from "@/lib/queries/dictionaries";
 import { getScreenshots, getTrade } from "@/lib/queries/trades";
@@ -26,15 +28,18 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
 
-  const [accounts, instruments, strategies, sessions, tags, fields, shots] = await Promise.all([
-    getAccounts(),
-    getInstruments(),
-    getStrategies(),
-    getBacktestSessions(),
-    getTags(),
-    getFields(),
-    getScreenshots(tradeId),
-  ]);
+  const [accounts, instruments, strategies, sessions, tags, categories, fields, shots, progi] =
+    await Promise.all([
+      getAccounts(),
+      getInstruments(),
+      getStrategies(),
+      getBacktestSessions(),
+      getTags(),
+      getTagCategories(),
+      getFields(),
+      getScreenshots(tradeId),
+      getProgi(),
+    ]);
 
   return (
     <div className="space-y-4">
@@ -56,8 +61,10 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
         strategies={strategies}
         sessions={sessions}
         tags={tags}
+        tagCategories={categories}
         fields={fieldsForScope(fields, trade.backtestSessionId !== null)}
         backtestSessionId={trade.backtestSessionId}
+        progi={progi}
         values={{
           id: trade.id,
           accountId: trade.accountId,
@@ -75,11 +82,10 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           takeProfit: trade.takeProfit ? String(Number(trade.takeProfit)) : "",
           mae: trade.mae ? String(Number(trade.mae)) : "",
           mfe: trade.mfe ? String(Number(trade.mfe)) : "",
-          commission: String(trade.commission / 100),
           note: trade.note ?? "",
           executionRating: trade.executionRating,
           rulesMet: trade.rulesMetIds,
-          tags: trade.tags.map((t) => t.id),
+          tags: trade.tags.map((t) => ({ id: t.id, interval: t.interval })),
           custom: trade.custom,
           shots,
         }}

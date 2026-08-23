@@ -92,7 +92,7 @@ export function scoreDiscipline(
     }
 
     const previous = ordered[i - 1];
-    if (!previous || previous.pnlNet >= 0) return;
+    if (!previous || previous.pnl >= 0) return;
     if (t.contracts > previous.contracts) add("size_up_after_loss", t.id);
 
     const previousEnd = previous.entryTime.getTime() + (previous.durationS ?? 0) * 1000;

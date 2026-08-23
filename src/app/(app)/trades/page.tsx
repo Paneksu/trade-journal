@@ -11,6 +11,7 @@ import {
   getAccounts,
   getFields,
   getInstruments,
+  getProgi,
   getSavedViews,
   getStrategies,
   getTags,
@@ -39,7 +40,8 @@ export default async function TradesPage({
     getTrades(filters),
   ]);
 
-  const stats = computeStats(closedOnly(trades));
+  const progi = await getProgi();
+  const stats = computeStats(closedOnly(trades), progi);
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
 
   return (

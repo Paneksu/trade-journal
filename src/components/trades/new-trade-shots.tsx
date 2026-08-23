@@ -5,7 +5,13 @@ import { ClipboardPaste, Trash2 } from "lucide-react";
 
 import { ErrorMessage } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
-import { klasaKafla, ukladSiatki } from "@/lib/domain/galeria";
+import {
+  BAZA_WYSOKOSCI_WIERSZA,
+  PROPORCJA_DOMYSLNA,
+  bazaKafla,
+  proporcja,
+  wzrostKafla,
+} from "@/lib/domain/galeria";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 
 /**
@@ -14,10 +20,14 @@ import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
  * stanie i przepisujemy do ukrytego pola przez `DataTransfer`.
  *
  * Podglad idzie z `URL.createObjectURL`, bo na dysku serwera tych plikow
- * jeszcze nie ma.
+ * jeszcze nie ma. Tu, w przeciwienstwie do juz zapisanych zrzutow, wymiary
+ * obrazu nie sa jeszcze znane w momencie renderu (plik lokalny, przed
+ * uploadem) - proporcja startuje z `PROPORCJA_DOMYSLNA` i doklada sie w
+ * `onLoad` obrazu z `img.naturalWidth/naturalHeight`, jedno przerysowanie po
+ * zaladowaniu kazdego pliku.
  */
 
-type Pozycja = { file: File; podglad: string };
+type Pozycja = { file: File; podglad: string; proporcja: number };
 
 export function NewTradeShots() {
   // Adres podgladu powstaje razem z pozycja, nie w efekcie - inaczej kazde
@@ -53,7 +63,14 @@ export function NewTradeShots() {
       return;
     }
     setBlad(null);
-    setPliki((p) => [...p, ...obrazy.map((f) => ({ file: f, podglad: URL.createObjectURL(f) }))]);
+    setPliki((p) => [
+      ...p,
+      ...obrazy.map((f) => ({
+        file: f,
+        podglad: URL.createObjectURL(f),
+        proporcja: PROPORCJA_DOMYSLNA,
+      })),
+    ]);
   }
 
   function usun(i: number) {
@@ -61,6 +78,15 @@ export function NewTradeShots() {
       URL.revokeObjectURL(p[i].podglad);
       return p.filter((_, j) => j !== i);
     });
+  }
+
+  // Dopasowanie po referencji obiektu (nie po indeksie): indeks przesuwa sie
+  // przy kasowaniu, a referencja pozycji zostaje stabilna przez caly czas
+  // zycia pliku w stanie.
+  function naZaladowane(pozycja: Pozycja, szer: number, wys: number) {
+    setPliki((p) =>
+      p.map((x) => (x === pozycja ? { ...x, proporcja: proporcja(szer, wys) } : x)),
+    );
   }
 
   useEffect(() => {
@@ -130,38 +156,70 @@ export function NewTradeShots() {
       {blad && <ErrorMessage>{blad}</ErrorMessage>}
 
       {pliki.length > 0 && (
-        <div className={cx("grid gap-2", ukladSiatki(pliki.length))}>
-          {pliki.map((f, i) => (
-            <figure
-              key={`${f.file.name}-${f.file.lastModified}-${i}`}
-              className={cx(
-                "relative h-full",
-                klasaKafla(i, pliki.length, false),
-              )}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={f.podglad}
-                alt={`Zrzut ${i + 1} do wgrania`}
-                className={cx(
-                  "w-full rounded-[var(--radius-control)] border border-line",
-                  pliki.length === 1
-                    ? "max-h-[70vh] object-contain"
-                    : "h-full object-cover",
-                )}
-              />
-              <button
-                type="button"
-                onClick={() => usun(i)}
-                aria-label={`Usuń zrzut ${i + 1} z listy`}
-                className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint transition-colors duration-150 hover:text-loss"
-              >
-                <Trash2 size={13} aria-hidden />
-              </button>
-            </figure>
-          ))}
-        </div>
+        <NowaGaleria pliki={pliki} onUsun={usun} onZaladowane={naZaladowane} />
       )}
+    </div>
+  );
+}
+
+/**
+ * Jedno drzewo DOM (`flex flex-wrap`) - patrz komentarz w `ScreenshotGrid`,
+ * ten sam uklad justowany. Zawijanie do kolejnych wierszy na waskim ekranie
+ * robi CSS na podstawie szerokosci kontenera, bez osobnego wariantu ukladu w
+ * JS/DOM.
+ */
+const LICZBA_WYPELNIACZY = 6;
+
+function NowaGaleria({
+  pliki,
+  onUsun,
+  onZaladowane,
+}: {
+  pliki: Pozycja[];
+  onUsun: (i: number) => void;
+  onZaladowane: (pozycja: Pozycja, szer: number, wys: number) => void;
+}) {
+  const proporcje = pliki.map((p) => p.proporcja);
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {pliki.map((p, i) => (
+        <figure
+          key={`${p.file.name}-${p.file.lastModified}-${i}`}
+          style={{
+            flexGrow: wzrostKafla(i, proporcje),
+            flexBasis: `${bazaKafla(i, proporcje, BAZA_WYSOKOSCI_WIERSZA)}rem`,
+            aspectRatio: proporcje[i],
+          }}
+          className="relative min-w-0"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={p.podglad}
+            alt={`Zrzut ${i + 1} do wgrania`}
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              onZaladowane(p, img.naturalWidth, img.naturalHeight);
+            }}
+            className="block h-full w-full object-contain rounded-[var(--radius-control)] border border-line"
+          />
+          <button
+            type="button"
+            onClick={() => onUsun(i)}
+            aria-label={`Usuń zrzut ${i + 1} z listy`}
+            className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint transition-colors duration-150 hover:text-loss"
+          >
+            <Trash2 size={13} aria-hidden />
+          </button>
+        </figure>
+      ))}
+      {Array.from({ length: LICZBA_WYPELNIACZY }, (_, i) => (
+        <span
+          key={i}
+          aria-hidden
+          style={{ flexGrow: 999, flexBasis: `${BAZA_WYSOKOSCI_WIERSZA}rem`, height: 0 }}
+        />
+      ))}
     </div>
   );
 }

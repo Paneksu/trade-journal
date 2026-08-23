@@ -19,7 +19,7 @@ import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, reasonName } from "@/lib/domain/day-log";
 import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats, equityCurve, rHistogram } from "@/lib/domain/stats";
-import { getAccounts, getInstruments, getStrategies } from "@/lib/queries/dictionaries";
+import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import {
   getDayScreenshots,
@@ -59,15 +59,16 @@ export default async function BacktestSessionPage({
   ]);
 
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
+  const progi = await getProgi();
   const closed = closedOnly(sessionTrades);
-  const stats = computeStats(closed);
+  const stats = computeStats(closed, progi);
   const sample = assessSample(stats.count, session.targetTrades, settings.minSample);
 
   // Porownanie z realem: te same statystyki dla tej samej strategii w dzienniku.
   const liveTrades = session.strategyId
     ? closedOnly(await getTrades({ ...EMPTY_FILTERS, strategies: [session.strategyId] }))
     : [];
-  const liveStats = computeStats(liveTrades);
+  const liveStats = computeStats(liveTrades, progi);
 
   const curve = equityCurve(closed, session.startingBalance).map((p) => ({
     index: p.index,

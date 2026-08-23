@@ -12,7 +12,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/lib/domain/day-log";
 import { computeStats, dailyPnl } from "@/lib/domain/stats";
-import { getAccounts } from "@/lib/queries/dictionaries";
+import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
@@ -48,12 +48,13 @@ export default async function CalendarPage({
   const account = accounts[0];
   const notes = await getDayNotes(from, to, account?.id);
   const currency = account?.currency ?? settings.baseCurrency;
+  const progi = await getProgi();
   const closed = closedOnly(monthTrades);
-  const stats = computeStats(closed);
+  const stats = computeStats(closed, progi);
   const days = dailyPnl(closed);
 
   const dayTrades = day ? monthTrades.filter((t) => t.tradingDay === day) : [];
-  const dayStats = computeStats(closedOnly(dayTrades));
+  const dayStats = computeStats(closedOnly(dayTrades), progi);
 
   const note = day ? notes.find((n) => n.day === day) : undefined;
   const dayShots = day ? await getDayScreenshots(note?.id) : [];
@@ -114,9 +115,9 @@ export default async function CalendarPage({
       <KpiGrid className="xl:grid-cols-4">
         <Kpi
           label="Wynik miesiąca"
-          value={money(stats.pnlNet, { currency, sign: true })}
+          value={money(stats.pnl, { currency, sign: true })}
           sub={tradesCount(stats.count)}
-          tone={stats.pnlNet > 0 ? "profit" : stats.pnlNet < 0 ? "loss" : "neutral"}
+          tone={stats.pnl > 0 ? "profit" : stats.pnl < 0 ? "loss" : "neutral"}
         />
         <Kpi label="Suma R" value={rValue(stats.sumR)} sub={`śr. ${rValue(stats.expectancyR)}`} />
         <Kpi
@@ -129,7 +130,11 @@ export default async function CalendarPage({
           value={pauses.length}
           sub={powody.length > 0 ? `najczęściej: ${powody[0].label.toLowerCase()}` : "świadome pauzy"}
         />
-        <Kpi label="Skuteczność" value={percent(stats.winRate)} sub={`${stats.wins} W / ${stats.losses} L`} />
+        <Kpi
+          label="Skuteczność"
+          value={percent(stats.winRate)}
+          sub={`${stats.wins} W / ${stats.losses} L / ${stats.be} BE`}
+        />
         <Kpi
           label="Maks. obsunięcie"
           value={money(-stats.maxDrawdown, { currency })}
@@ -169,7 +174,7 @@ export default async function CalendarPage({
               title={longDate(day)}
               description={
                 dayTrades.length > 0
-                  ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnlNet, { currency, sign: true })} · ${rValue(dayStats.sumR)}`
+                  ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnl, { currency, sign: true })} · ${rValue(dayStats.sumR)}${dayStats.be > 0 ? ` · ${dayStats.be} BE` : ""}`
                   : note?.noTrade
                     ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? ` — ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
                     : "Brak trade'ów tego dnia."

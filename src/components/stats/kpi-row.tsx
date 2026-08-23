@@ -13,10 +13,10 @@ export function KpiRow({ stats, currency }: { stats: Stats; currency: string }) 
   return (
     <KpiGrid>
       <Kpi
-        label="Wynik netto"
-        value={money(stats.pnlNet, { currency, sign: true })}
-        sub={`${tradesCount(stats.count)} · prowizje ${money(stats.commissions, { currency })}`}
-        tone={stats.pnlNet > 0 ? "profit" : stats.pnlNet < 0 ? "loss" : "neutral"}
+        label="Wynik"
+        value={money(stats.pnl, { currency, sign: true })}
+        sub={tradesCount(stats.count)}
+        tone={stats.pnl > 0 ? "profit" : stats.pnl < 0 ? "loss" : "neutral"}
       />
       <Kpi
         label="Oczekiwana wartość"
@@ -44,7 +44,7 @@ export function KpiRow({ stats, currency }: { stats: Stats; currency: string }) 
         value={percent(stats.winRate)}
         sub={
           stats.breakEvenWinRate === null
-            ? `${stats.wins} W / ${stats.losses} L`
+            ? `${stats.wins} W / ${stats.losses} L / ${stats.be} BE`
             : `próg opłacalności ${percent(stats.breakEvenWinRate)}`
         }
         tone={

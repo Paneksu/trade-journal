@@ -1,38 +1,61 @@
 /**
- * Uklad siatki zrzutow. Czyste funkcje zwracajace klasy Tailwinda, zeby dalo
- * sie je pokryc testami i zeby karta trade'a, panel dnia i formularz uzywaly
- * dokladnie tego samego rozstawienia.
+ * Uklad galerii zrzutow - justowany (jak Google Photos/Flickr), nie siatka ze
+ * stala wysokoscia wiersza. Jedno drzewo DOM: kontener `flex flex-wrap`,
+ * kazdy kafel dostaje `flex-basis` proporcjonalny do wlasnej szerokosci przy
+ * wspolnej bazowej wysokosci wiersza i `flex-grow` proporcjonalny do aspect
+ * ratio - przy wspolnej wysokosci kazdy kafel wychodzi wtedy dokladnie na
+ * swoja naturalna szerokosc, zero przyciecia, zero pasow. Zawijanie do
+ * kolejnych wierszy robi sam CSS (`flex-wrap`) na podstawie szerokosci
+ * kontenera, wiec responsywnosc nie potrzebuje osobnego wariantu na telefon -
+ * to jedno i to samo drzewo na kazdej szerokosci ekranu. Powod wprost od
+ * uzytkownika: przyciety zrzut nie jest wiarygodnym dowodem transakcji (patrz
+ * docs/decyzje.md, wpis "zrzut zawsze w pelnym kadrze", nastepca ADR-009).
  *
- * Zasada: liczba zdjec decyduje o liczbie kolumn, a pierwsze zdjecie dostaje
- * role glowna tylko wtedy, gdy jest poziome i gdy siatka i tak zostawilaby
- * dziure (3 albo 5 sztuk). Wiersze maja stala wysokosc, a nie proporcje
- * liczona z szerokosci - inaczej pionowy zrzut obok poziomego rozpycha wiersz
- * i zostawia pod sasiadem pusta dziure.
+ * Modul jest czysty: same funkcje liczace liczby, bez efektow ubocznych i bez
+ * wiedzy o DOM czy Tailwindzie. Podzial na wiersze i domykanie ostatniego
+ * (niepelnego) wiersza nie jest juz zadaniem JS - to teraz czysty CSS
+ * flex-wrap w komponencie, wiec `wiersze`/`proporcjaWiersza` zostaly
+ * usuniete razem z dwoma celami proporcji na dwa warianty ukladu.
  */
 
-/** Wysokosc wiersza siatki - jedna dla wszystkich kafli, takze glownego. */
-const WIERSZ = "auto-rows-[11rem] sm:auto-rows-[13rem]";
+/** Uzywana, gdy wymiary zdjecia nie sa jeszcze znane (np. przed uploadem). */
+export const PROPORCJA_DOMYSLNA = 16 / 9;
 
-/** Klasy kolumn dla kontenera siatki. */
-export function ukladSiatki(n: number): string {
-  if (n <= 1) return "grid-cols-1";
-  if (n === 2) return `grid-cols-1 sm:grid-cols-2 ${WIERSZ}`;
-  if (n <= 4) return `grid-cols-2 ${WIERSZ}`;
-  return `grid-cols-2 lg:grid-cols-3 ${WIERSZ}`;
-}
+/**
+ * Docelowa wysokosc wiersza galerii, w rem. Jedna stala zamiast dwoch celow
+ * sumy proporcji (szeroki/waski) z poprzedniej wersji - responsywnosc teraz
+ * wychodzi z szerokosci kontenera przez CSS `flex-wrap`, wiec liczba kafli w
+ * wierszu na telefonie i na desktopie ustala sie sama, bez osobnego
+ * przelicznika w JS.
+ */
+export const BAZA_WYSOKOSCI_WIERSZA = 9;
 
-/** Klasy pojedynczego kafla: rozpietosc glownego zdjecia albo nic. */
-export function klasaKafla(i: number, n: number, pion: boolean): string {
-  if (n <= 1) return "col-span-full";
-  if (i === 0 && !pion && (n === 3 || n === 5)) return "col-span-2";
-  return "";
+/**
+ * Proporcja (szerokosc/wysokosc) pojedynczego zdjecia. Brak wymiarow albo
+ * wysokosc zero (dzielenie przez zero) daje wartosc domyslna zamiast NaN czy
+ * Infinity, ktore rozsypalyby dalsze liczenie flex-basis.
+ */
+export function proporcja(width: number | null, height: number | null): number {
+  if (width === null || height === null || height === 0) return PROPORCJA_DOMYSLNA;
+  return width / height;
 }
 
 /**
- * Zrzut jest pionowy, gdy znamy oba wymiary i wysokosc przewaza. Sluzy tylko
- * do decyzji o kaflu glownym - pion rozciagniety na dwie kolumny bylby
- * przyciety do paska.
+ * Flex-grow pojedynczego kafla. Proporcjonalny do jego aspect ratio: przy
+ * wspolnej wysokosci wiersza i wspolnym flex-basis to wlasnie daje kazdemu
+ * kaflowi jego naturalna szerokosc bez znieksztalcenia.
  */
-export function czyPion(width: number | null, height: number | null): boolean {
-  return width !== null && height !== null && height > width;
+export function wzrostKafla(i: number, proporcje: number[]): number {
+  return proporcje[i];
+}
+
+/**
+ * Flex-basis pojedynczego kafla, w rem: szerokosc, jaka zdjecie mialoby przy
+ * bazowej wysokosci wiersza. To startowa (nie koncowa - `flex-grow` dobija do
+ * pelnej szerokosci wiersza) szerokosc, od ktorej CSS liczy zawijanie -
+ * decyduje wiec, ile kafli zmiesci sie obok siebie zanim `flex-wrap` zacznie
+ * nowy wiersz.
+ */
+export function bazaKafla(i: number, proporcje: number[], baza: number): number {
+  return proporcje[i] * baza;
 }

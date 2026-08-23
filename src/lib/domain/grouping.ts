@@ -6,6 +6,8 @@
  * niz liczba tradeow - to celowe i tak sie te tabele czyta.
  */
 
+import { czyInterwal, porzadekInterwalu } from "./interwaly";
+import type { Progi } from "./outcome";
 import { computeStats, type Stats } from "./stats";
 import { SESSION_NAMES, WEEKDAY_NAMES, type TradeForAnalysis } from "./types";
 
@@ -20,6 +22,12 @@ export type Dimension = {
    * trade'y z przedzialu +2R do +3R maja sto procent skutecznosci.
    */
   outcomeDerived?: boolean;
+  /**
+   * Wlasny porzadek wierszy - np. skala czasu ma sens chronologiczny
+   * (30s przed 1m przed 1h), nie sortowanie po wyniku. Gdy brak, `groupBy`
+   * sortuje malejaco po `stats.pnl` jak dotychczas.
+   */
+  sortValues?: (a: string, b: string) => number;
 };
 
 export type Group = {
@@ -100,7 +108,23 @@ const BUILTIN: Record<string, Omit<Dimension, "key">> = {
   },
   stop: { label: "Stop loss", values: (t) => [t.hasStop ? "ze stopem" : "bez stopa"] },
   rrange: { label: "Przedział R", values: (t) => [rBucket(t.rMultiple)], outcomeDerived: true },
+  wynik: { label: "Wynik", values: (t) => [t.wynik], outcomeDerived: true },
+  /* Interwal siedzi na przypisaniu tagu, nie na trade'cie wprost (ADR-013) -
+     trade z tagami na dwoch interwalach nalezy do obu grup, tak jak przy
+     kazdym innym wymiarze tagowym w tym module. To NIE jest outcomeDerived:
+     interwal jest wybierany przez uzytkownika przy tagowaniu, nie wyliczony
+     z wyniku trade'a. */
+  interval: {
+    label: "Interwał",
+    values: (t) => [...new Set(t.tags.map((tag) => tag.interval).filter((w): w is string => w !== null))],
+    sortValues: (a, b) => indeksInterwalu(a) - indeksInterwalu(b),
+  },
 };
+
+/** Pozycja interwalu w kolejnosci wyswietlania; nieznana wartosc leci na koniec. */
+function indeksInterwalu(w: string): number {
+  return czyInterwal(w) ? porzadekInterwalu(w) : Number.POSITIVE_INFINITY;
+}
 
 /**
  * Buduje wymiar po kluczu. Obsluguje trzy rodziny:
@@ -160,7 +184,7 @@ export function dimensionsForTags(categories: { key: string; name: string }[]): 
 export function groupBy(
   trades: TradeForAnalysis[],
   dim: Dimension,
-  options: { emptyLabel?: string } = {},
+  options: { progi: Progi; emptyLabel?: string },
 ): Group[] {
   const emptyLabel = options.emptyLabel ?? defaultEmptyLabel(dim);
   const buckets = new Map<string, TradeForAnalysis[]>();
@@ -175,14 +199,18 @@ export function groupBy(
     }
   }
 
-  return [...buckets.entries()]
-    .map(([key, list]) => ({
-      key,
-      label: key === UNASSIGNED ? emptyLabel : key,
-      stats: computeStats(list),
-      trades: list,
-    }))
-    .sort((a, b) => b.stats.pnlNet - a.stats.pnlNet);
+  const groups = [...buckets.entries()].map(([key, list]) => ({
+    key,
+    label: key === UNASSIGNED ? emptyLabel : key,
+    stats: computeStats(list, options.progi),
+    trades: list,
+  }));
+
+  if (dim.sortValues) {
+    const sortValues = dim.sortValues;
+    return groups.sort((a, b) => sortValues(a.key, b.key));
+  }
+  return groups.sort((a, b) => b.stats.pnl - a.stats.pnl);
 }
 
 function defaultEmptyLabel(dim: Dimension): string {

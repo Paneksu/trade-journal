@@ -100,13 +100,11 @@ async function main() {
         : entryPrice - rWynik * riskTicks * tickSize;
 
     const contracts = Math.max(1, Math.round(losowa(1, 3)));
-    const commission = contracts * Number(instrument.commissionPerContract);
     const exitTime = new Date(dzien.getTime() + Math.floor(losowa(60, 5400)) * 1000);
 
     const spec = {
       tickSize,
       tickValue: Number(instrument.tickValue),
-      commissionPerContract: Number(instrument.commissionPerContract),
       rthFrom: instrument.rthFrom,
       rthTo: instrument.rthTo,
       exchangeTimezone: instrument.exchangeTimezone,
@@ -129,7 +127,6 @@ async function main() {
       takeProfit: null,
       mae,
       mfe,
-      commission,
       entryTime: dzien,
       exitTime,
     });
@@ -153,7 +150,6 @@ async function main() {
         stopLoss: wynik.riskTicks ? String(stopLoss) : null,
         mae: String(mae),
         mfe: String(mfe),
-        commission,
         note: Math.random() < 0.4 ? "Wejście zgodne z planem, wyjście trochę za wcześnie." : null,
         executionRating: Math.random() < 0.7 ? Math.ceil(losowa(1, 5)) : null,
         rulesMet: spelnione,
@@ -164,8 +160,7 @@ async function main() {
         },
         ticks: wynik.ticks,
         riskTicks: wynik.riskTicks,
-        pnlGross: wynik.pnlGross,
-        pnlNet: wynik.pnlNet,
+        pnl: wynik.pnl,
         riskAmount: wynik.riskAmount,
         rMultiple: wynik.rMultiple === null ? null : wynik.rMultiple.toFixed(4),
         maeR: wynik.maeR === null ? null : wynik.maeR.toFixed(4),

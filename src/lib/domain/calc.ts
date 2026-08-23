@@ -8,7 +8,7 @@
  * Konwencje:
  * - kwoty w centach jako liczby calkowite
  * - ruch ceny liczymy w tickach, bo tylko to jest odporne na blad zmiennoprzecinkowy
- * - ryzyko liczymy z odleglosci do stopa, bez prowizji; R liczymy z wyniku netto
+ * - ryzyko liczymy z odleglosci do stopa; R liczymy z wyniku (prowizja poza modelem, patrz ADR-010)
  */
 
 export type Direction = "long" | "short";
@@ -23,8 +23,6 @@ export type InstrumentSpec = {
    * NQ = 5000 (5,00 USD), ES = 12500, ZN = 15625.
    */
   tickValue: number;
-  /** Prowizja w obie strony za jeden kontrakt, w centach. */
-  commissionPerContract: number;
   rthFrom: string;
   rthTo: string;
   exchangeTimezone: string;
@@ -40,8 +38,6 @@ export type TradeInput = {
   takeProfit: number | null;
   mae: number | null;
   mfe: number | null;
-  /** Laczna prowizja trade'a w centach. */
-  commission: number;
   entryTime: Date;
   exitTime: Date | null;
 };
@@ -49,8 +45,7 @@ export type TradeInput = {
 export type TradeResult = {
   ticks: number | null;
   riskTicks: number | null;
-  pnlGross: number | null;
-  pnlNet: number | null;
+  pnl: number | null;
   riskAmount: number | null;
   rMultiple: number | null;
   maeR: number | null;
@@ -74,34 +69,27 @@ export function moveInTicks(
   return Math.round(delta / tickSize);
 }
 
-/** Prowizja w centach dla podanej liczby kontraktow. */
-export function commissionFor(contracts: number, commissionPerContract: number): number {
-  return Math.round(Math.abs(contracts) * commissionPerContract);
-}
-
 /* Zamienia ruch w tickach na kwote w centach. Dzielenie przez 10 wynika
    z jednostki `tickValue` (tysieczne dolara); zaokraglamy raz, na koncu. */
 function amountFromTicks(ticks: number, tickValue: number, contracts: number): number {
   return Math.round((ticks * tickValue * contracts) / 10);
 }
 
-export type ExitFromNetInput = {
+export type ExitForAmountInput = {
   instrument: InstrumentSpec;
   direction: Direction;
   contracts: number;
   entryPrice: number;
-  /** Docelowy wynik netto w centach (moze byc ujemny). */
-  targetNet: number;
-  /** Laczna prowizja trade'a w centach. */
-  commission: number;
+  /** Docelowy wynik w centach (moze byc ujemny). */
+  target: number;
 };
 
-export type ExitFromNet = {
+export type ExitForAmount = {
   exitPrice: number;
   ticks: number;
-  /** Faktyczny wynik netto po zaokragleniu do pelnego ticka, w centach. */
-  pnlNet: number;
-  /** pnlNet - targetNet, w centach. Zero = trafione co do centa. */
+  /** Faktyczny wynik po zaokragleniu do pelnego ticka, w centach. */
+  pnl: number;
+  /** pnl - target, w centach. Zero = trafione co do centa. */
   diff: number;
 };
 
@@ -122,32 +110,31 @@ function roundPrice(value: number, decimals: number): number {
 }
 
 /**
- * Odwrotnosc `amountFromTicks`: z docelowego wyniku netto wylicza cene wyjscia,
- * dokladajac z powrotem prowizje i zaokraglajac ruch do pelnego ticka instrumentu.
- * `pnlNet` liczy tym samym `amountFromTicks`, co `computeTrade` - nie wlasnym wzorem
- * obok niego. Zrodlem prawdy dla zapisu pozostaje `computeTrade`; ta funkcja
- * tylko podpowiada cene do pola formularza.
+ * Odwrotnosc `amountFromTicks`: z docelowego wyniku wylicza cene wyjscia,
+ * zaokraglajac ruch do pelnego ticka instrumentu. `pnl` liczy tym samym
+ * `amountFromTicks`, co `computeTrade` - nie wlasnym wzorem obok niego.
+ * Zrodlem prawdy dla zapisu pozostaje `computeTrade`; ta funkcja tylko
+ * podpowiada cene do pola formularza.
  */
-export function exitPriceForNet(t: ExitFromNetInput): ExitFromNet | null {
-  const { instrument: i, direction, contracts, entryPrice, targetNet, commission } = t;
+export function exitPriceForAmount(t: ExitForAmountInput): ExitForAmount | null {
+  const { instrument: i, direction, contracts, entryPrice, target } = t;
   if (!Number.isFinite(contracts) || contracts <= 0) return null;
   if (!Number.isFinite(i.tickSize) || i.tickSize <= 0) return null;
   if (!Number.isFinite(i.tickValue) || i.tickValue <= 0) return null;
-  if (!Number.isFinite(entryPrice) || !Number.isFinite(targetNet) || !Number.isFinite(commission)) {
+  if (!Number.isFinite(entryPrice) || !Number.isFinite(target)) {
     return null;
   }
 
-  const targetGross = targetNet + commission;
   // `|| 0` gasi minus zero: Math.round(-0.2) daje -0, ktore wyswietliloby sie
   // w interfejsie jako "-0" i rozjechalo z zerem zwracanym przez computeTrade.
-  const ticks = Math.round((targetGross * 10) / (i.tickValue * contracts)) || 0;
+  const ticks = Math.round((target * 10) / (i.tickValue * contracts)) || 0;
   const rawExit = direction === "long" ? entryPrice + ticks * i.tickSize : entryPrice - ticks * i.tickSize;
   const exitPrice = roundPrice(rawExit, priceDecimals(entryPrice, i.tickSize));
 
-  const pnlNet = amountFromTicks(ticks, i.tickValue, contracts) - commission;
-  const diff = pnlNet - targetNet;
+  const pnl = amountFromTicks(ticks, i.tickValue, contracts);
+  const diff = pnl - target;
 
-  return { exitPrice, ticks, pnlNet, diff };
+  return { exitPrice, ticks, pnl, diff };
 }
 
 type TimeParts = {
@@ -238,8 +225,7 @@ export function computeTrade(t: TradeInput): TradeResult {
   const ticks =
     t.exitPrice === null ? null : moveInTicks(direction, t.entryPrice, t.exitPrice, i.tickSize);
 
-  const pnlGross = ticks === null ? null : amountFromTicks(ticks, i.tickValue, contracts);
-  const pnlNet = pnlGross === null ? null : pnlGross - t.commission;
+  const pnl = ticks === null ? null : amountFromTicks(ticks, i.tickValue, contracts);
 
   // Ryzyko: odleglosc do stopa. Stop rowny cenie wejscia nie definiuje ryzyka -
   // wtedy R po prostu nie istnieje.
@@ -250,7 +236,7 @@ export function computeTrade(t: TradeInput): TradeResult {
     riskTicks === null ? null : amountFromTicks(riskTicks, i.tickValue, Math.abs(contracts));
 
   const rMultiple =
-    pnlNet === null || riskAmount === null || riskAmount === 0 ? null : pnlNet / riskAmount;
+    pnl === null || riskAmount === null || riskAmount === 0 ? null : pnl / riskAmount;
 
   // MAE liczymy jako ruch przeciwny do pozycji, MFE jako ruch zgodny.
   const maeR =
@@ -272,8 +258,7 @@ export function computeTrade(t: TradeInput): TradeResult {
   return {
     ticks,
     riskTicks,
-    pnlGross,
-    pnlNet,
+    pnl,
     riskAmount,
     rMultiple,
     maeR,

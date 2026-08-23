@@ -90,8 +90,6 @@ export const instruments = pgTable(
     // ZN = 15625 (15,625 USD). W centach ZN nie bylby liczba calkowita.
     tickValue: bigint({ mode: "number" }).notNull(),
     currency: text().notNull().default("USD"),
-    // Prowizja tam i z powrotem za jeden kontrakt, w centach.
-    commissionPerContract: bigint({ mode: "number" }).notNull().default(0),
     // Godziny sesji glownej w strefie gieldy, format HH:MM.
     rthFrom: text().notNull().default("09:30"),
     rthTo: text().notNull().default("16:00"),
@@ -214,7 +212,6 @@ export const trades = pgTable(
     takeProfit: numeric({ precision: 18, scale: 8 }),
     mae: numeric({ precision: 18, scale: 8 }),
     mfe: numeric({ precision: 18, scale: 8 }),
-    commission: bigint({ mode: "number" }).notNull().default(0),
 
     note: text(),
     executionRating: smallint(),
@@ -227,8 +224,7 @@ export const trades = pgTable(
        bez przeliczania calej historii. Zrodlem prawdy jest modul obliczen. */
     ticks: integer(),
     riskTicks: integer(),
-    pnlGross: bigint({ mode: "number" }),
-    pnlNet: bigint({ mode: "number" }),
+    pnl: bigint({ mode: "number" }),
     riskAmount: bigint({ mode: "number" }),
     rMultiple: numeric({ precision: 12, scale: 4 }),
     maeR: numeric({ precision: 12, scale: 4 }),
@@ -260,6 +256,11 @@ export const tradeTags = pgTable(
     tagId: integer()
       .notNull()
       .references(() => tags.id, { onDelete: "cascade" }),
+    // Interwal nalezy do przypisania, nie do tagu - jeden tag "wybicie" moze
+    // opisywac wejscie z 5m i z 1h (patrz ADR-013). `text`, nie enum: lista
+    // dozwolonych wartosci zyje w kodzie (lib/domain/interwaly.ts), a dolozenie
+    // np. "2h" nie ma wymagac migracji schematu.
+    interval: text(),
   },
   (t) => [
     uniqueIndex("trade_tags_idx").on(t.tradeId, t.tagId),
@@ -359,6 +360,13 @@ export const settings = pgTable("settings", {
   minSample: integer().notNull().default(15),
   tradingHoursFrom: text(),
   tradingHoursTo: text(),
+  /* Prog BE (wynik "na zero") - patrz ADR-011. Liczby calkowite, nie numeric:
+     TS liczylby `progRMille / 1000 * risk` w double, Postgres w numeric - na
+     samej granicy przedzialu obie strony moglyby dac inna odpowiedz. Na
+     liczbach calkowitych `round(progRMille * risk / 1000)` jest identyczne
+     po obu stronach (patrz lib/domain/outcome.ts). */
+  beProgRMille: integer().notNull().default(100), // 100 = 0,100 R
+  beProgNaKontrakt: bigint({ mode: "number" }).notNull().default(200), // centy = 2,00 USD
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 

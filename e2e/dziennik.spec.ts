@@ -7,7 +7,7 @@ import sharp from "sharp";
  * tylko czy wynik zgadza sie co do centa.
  */
 
-/** Wyciaga liczbe z tekstu w formacie polskim: "+1 011,92 USD" -> 1011.92 */
+/** Wyciaga liczbe z tekstu w formacie polskim: "+1 020,00 USD" -> 1020.00 */
 function liczbaZTekstu(tekst: string): number {
   const oczyszczony = tekst
     .replace(/−/g, "-")
@@ -19,8 +19,8 @@ function liczbaZTekstu(tekst: string): number {
   return n;
 }
 
-async function wynikNetto(page: Page): Promise<number> {
-  const kafelek = page.locator("div.panel").filter({ hasText: "Wynik netto" }).first();
+async function wynik(page: Page): Promise<number> {
+  const kafelek = page.locator("div.panel").filter({ hasText: "Wynik" }).first();
   const wartosc = await kafelek.locator("p.liczba").first().innerText();
   return liczbaZTekstu(wartosc);
 }
@@ -39,22 +39,22 @@ test("nowy trade liczy wynik zgodnie z parametrami kontraktu", async ({ page }) 
   // Podglad liczony w przegladarce tym samym modulem co zapis na serwerze.
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
   await expect(podglad.getByText("102", { exact: true })).toBeVisible();
-  await expect(podglad.getByText(/\+1\s?011,92\s?USD/)).toBeVisible();
-  await expect(podglad.getByText("+2.53R")).toBeVisible();
+  await expect(podglad.getByText(/\+1\s?020,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText("+2.55R")).toBeVisible();
 
   await page.getByRole("button", { name: "Zapisz trade" }).click();
 
   // Karta trade'a musi pokazac dokladnie to samo, co podglad.
   await expect(page).toHaveURL(/\/trades\/\d+$/);
   await expect(page.getByRole("heading").first()).toContainText("NQ");
-  await expect(page.getByText(/\+1\s?011,92\s?USD/).first()).toBeVisible();
-  await expect(page.getByText("+2.53R").first()).toBeVisible();
+  await expect(page.getByText(/\+1\s?020,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText("+2.55R").first()).toBeVisible();
   await expect(page.getByText(/^400,00\s?USD$/).first()).toBeVisible();
 });
 
 test("zapisany trade zmienia wynik netto na pulpicie o swoją kwotę", async ({ page }) => {
   await page.goto("/?zakres=wszystko");
-  const przed = await wynikNetto(page);
+  const przed = await wynik(page);
 
   await page.goto("/trades/new");
   await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
@@ -64,14 +64,13 @@ test("zapisany trade zmienia wynik netto na pulpicie o swoją kwotę", async ({ 
   await page.locator("#exitTime").fill("2026-05-13T16:30");
   await page.locator("#exitPrice").fill("5010");
   await page.locator("#stopLoss").fill("4995");
-  await page.locator("#commission").fill("0");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
   await page.goto("/?zakres=wszystko");
-  const po = await wynikNetto(page);
+  const po = await wynik(page);
 
-  // 40 tickow ES po 12,50 USD = 500 USD, prowizja zero.
+  // 40 tickow ES po 12,50 USD = 500 USD.
   expect(Number((po - przed).toFixed(2))).toBe(500);
 });
 
@@ -210,7 +209,7 @@ test("dziennik nie wpuszcza bez hasła", async ({ browser }) => {
   await czysty.close();
 });
 
-test("wpisana kwota netto wylicza cenę wyjścia i zgadza się z podglądem", async ({ page }) => {
+test("wpisana kwota z brokera wylicza cenę wyjścia i zgadza się z podglądem", async ({ page }) => {
   await page.goto("/trades/new");
 
   await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
@@ -218,42 +217,41 @@ test("wpisana kwota netto wylicza cenę wyjścia i zgadza się z podglądem", as
   await page.locator("#entryTime").fill("2026-05-12T15:35");
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#exitTime").fill("2026-05-12T16:17");
-  await page.locator("#commission").fill("5");
 
   const exit = page.locator("#exitPrice");
   const netto = page.locator("#netTarget");
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
 
-  // Trafienie co do centa: 25 tickow po 10 USD = 250 brutto, minus 5 prowizji.
-  await netto.fill("245");
+  // Trafienie co do centa: 25 tickow po 10 USD na 2 kontraktach = 250.
+  await netto.fill("250");
   await expect(exit).toHaveValue("20006.25");
-  await expect(podglad.getByText(/\+245,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
   await expect(page.locator("#netTarget-hint")).toHaveCount(0);
 
   // Kwota miedzy tickami: zaokraglenie w gore i komunikat o roznicy.
-  await netto.fill("250");
+  await netto.fill("255");
   await expect(exit).toHaveValue("20006.5");
   await expect(page.locator("#netTarget-hint")).toContainText("więcej");
-  await expect(podglad.getByText(/\+255,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText(/\+260,00\s?USD/)).toBeVisible();
 
   // Zmiana liczby kontraktow przelicza cene bez ruszania pola kwoty.
   await page.locator("#contracts").fill("1");
-  await expect(netto).toHaveValue("250");
+  await expect(netto).toHaveValue("255");
   await expect(exit).toHaveValue("20012.75");
-  await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText(/\+255,00\s?USD/)).toBeVisible();
 
   // Short liczy w druga strone.
   await page.locator("#contracts").fill("2");
   await page.getByText("Short", { exact: true }).click();
-  await netto.fill("245");
+  await netto.fill("250");
   await expect(exit).toHaveValue("19993.75");
-  await expect(podglad.getByText(/\+245,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
   await page.getByText("Long", { exact: true }).click();
 
   // Strata: cena po przeciwnej stronie wejscia.
-  await netto.fill("-245");
-  await expect(exit).toHaveValue("19994");
-  await expect(podglad.getByText(/−245,00\s?USD/)).toBeVisible();
+  await netto.fill("-250");
+  await expect(exit).toHaveValue("19993.75");
+  await expect(podglad.getByText(/−250,00\s?USD/)).toBeVisible();
 
   // Nieczytelna kwota nazywa powod po imieniu, nie odsyla do innych pol.
   await netto.fill("−");
@@ -261,7 +259,7 @@ test("wpisana kwota netto wylicza cenę wyjścia i zgadza się z podglądem", as
 
   // Brak ceny wejscia: komunikat zamiast ciszy, a pole ceny wyjscia PUSTE.
   // Cichy powrot do poprzedniej ceny zapisalby liczbe wbrew komunikatowi.
-  await netto.fill("245");
+  await netto.fill("250");
   await page.locator("#entryPrice").fill("");
   await expect(page.locator("#netTarget-hint")).toContainText("Podaj cenę wejścia");
   await expect(exit).toHaveValue("");
@@ -275,18 +273,18 @@ test("wpisana kwota netto wylicza cenę wyjścia i zgadza się z podglądem", as
 
   // Skasowanie kwoty przywraca ostatnia reczna cene - kwota jest nakladka,
   // nie kasuje tego, co uzytkownik wpisal sam.
-  await netto.fill("245");
+  await netto.fill("250");
   await expect(exit).toHaveValue("20006.25");
   await netto.fill("");
   await expect(exit).toHaveValue("20010");
 
   // Powrot do kwoty i zapis - karta trade'a musi pokazac te sama liczbe.
-  await netto.fill("245");
+  await netto.fill("250");
   await expect(exit).toHaveValue("20006.25");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
 
   await expect(page).toHaveURL(/\/trades\/\d+$/);
-  await expect(page.getByText(/\+245,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText(/\+250,00\s?USD/).first()).toBeVisible();
 });
 
 test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async ({ page }) => {
@@ -449,4 +447,52 @@ test("sesja backtestu dokumentuje dzień bez sygnału razem ze zrzutem", async (
 
   // Trade i zapisana pauza razem daja dwa z pieciu dni.
   await expect(panel).toContainText("2/5");
+});
+
+test("filtr wynik=be zgadza sie z liczba trade'ow ze statystyk na granicy progu (ADR-011)", async ({
+  page,
+}) => {
+  // ES, tick 0,25 = 12,50 USD. Stop 20 punktow (80 tickow) = ryzyko 1000,00 USD.
+  // Domyslny prog BE to 0,100R, wiec dokladnie 100,00 USD - dokladnie 8 tickow.
+  // Trzy trade'y siadaja przy tej granicy: -9 tickow (-112,50 USD, ~-0,11R,
+  // pod progiem -> strata), +8 tickow (100,00 USD, dokladnie prog -> be,
+  // granica jest domknieta) i +9 tickow (112,50 USD, ~0,11R, nad progiem -> zysk).
+  // Wariant "7 tickow" byloby BE, nie strata - prog dziala co do modulu.
+  const dzien = "2026-07-01";
+  const warianty = [
+    { minuta: "09:30", ticki: -9, exit: "4997.75" },
+    { minuta: "09:31", ticki: 8, exit: "5002.00" },
+    { minuta: "09:32", ticki: 9, exit: "5002.25" },
+  ];
+
+  for (const w of warianty) {
+    await page.goto("/trades/new");
+    await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+    await page.locator("#contracts").fill("1");
+    await page.locator("#entryTime").fill(`${dzien}T${w.minuta}`);
+    await page.locator("#entryPrice").fill("5000");
+    await page.locator("#exitTime").fill(`${dzien}T09:45`);
+    await page.locator("#exitPrice").fill(w.exit);
+    await page.locator("#stopLoss").fill("4980");
+    await page.getByRole("button", { name: "Zapisz trade" }).click();
+    await expect(page).toHaveURL(/\/trades\/\d+$/);
+  }
+
+  /* Sedno testu: prog BE liczy sie raz w SQL (filtr) i raz w TypeScripcie
+     (statystyki). Porownujemy obie liczby zamiast wpisywac na sztywno jedna -
+     kolejne uruchomienia dokladaja trade'y do tego samego dnia, a rozjazd
+     miedzy filtrem a statystykami zlapie sie przy kazdej ich liczbie. */
+  await page.goto(`/trades?od=${dzien}&do=${dzien}&wynik=be`);
+  const podpisTabeli = await page.getByText(/\d+ .* w widoku$/).innerText();
+  const zTabeli = Number(podpisTabeli.match(/\d+/)?.[0]);
+  // Wariant "+8 tickow" musi tu byc, inaczej granica przestala byc domknieta.
+  expect(zTabeli).toBeGreaterThan(0);
+
+  await page.goto(`/stats?od=${dzien}&do=${dzien}&wynik=be`);
+  /* Kafelek KPI, nie panel filtrow - slowo "Wynik" pada takze w etykiecie
+     filtra, wiec zwykly `hasText` trafialby w panel obok. */
+  const kafelekWynik = page.locator("div.panel").filter({
+    has: page.locator("p.etykieta", { hasText: /^Wynik$/ }),
+  });
+  await expect(kafelekWynik).toContainText(new RegExp(`${zTabeli}\\s*trade`));
 });

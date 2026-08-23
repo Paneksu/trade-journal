@@ -6,6 +6,7 @@ import { Filter, X } from "lucide-react";
 
 import { Button, Input, Label, Select } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
+import { INTERWALY } from "@/lib/domain/interwaly";
 import type { FieldDef } from "@/lib/fields/fields";
 import { GROUPABLE_TYPES } from "@/lib/fields/fields";
 import type { Account, Instrument, Strategy } from "@/lib/db/schema";
@@ -161,6 +162,19 @@ export function FilterBar({
               <option value="">wszystkie</option>
               <option value="zysk">zyskowne</option>
               <option value="strata">stratne</option>
+              <option value="be">na zero (BE)</option>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="interwal">Interwał</Label>
+            <Select id="interwal" name="interwal" defaultValue={value("interwal")}>
+              <option value="">wszystkie</option>
+              {INTERWALY.map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
             </Select>
           </div>
 
