@@ -67,6 +67,20 @@ export async function getSessionDayNotes(sessionId: number): Promise<DayNote[]> 
     .orderBy(desc(dayNotes.day));
 }
 
+/** Jeden dzien sesji backtestu. Brak wpisu jest normalny - strona dnia daje
+ *  wtedy pusty formularz, zamiast udawac, ze dnia nie ma. */
+export async function getSessionDayNote(
+  sessionId: number,
+  day: string,
+): Promise<DayNote | undefined> {
+  const [row] = await db
+    .select()
+    .from(dayNotes)
+    .where(and(eq(dayNotes.backtestSessionId, sessionId), eq(dayNotes.day, day)))
+    .limit(1);
+  return row;
+}
+
 /** Ile trade'ow ma sesja backtestu w danym dniu handlowym. */
 export async function countSessionTradesOnDay(sessionId: number, day: string): Promise<number> {
   const [row] = await db

@@ -759,3 +759,43 @@ wariancie pełnym, gdzie zrzut jest załącznikiem, nie treścią.
 `linkBase` na sesję — po jednej siatce na każdy miesiąc, w którym coś się
 wydarzyło. Kliknięcie dnia bez wpisu wypełnia formularz „dnia bez sygnału" tą
 datą; bez tego kliknięcie w kafel nie miałoby odpowiedzi.
+
+---
+
+## ADR-021 — dzień sesji backtestu dostaje własną stronę (2026-08-29)
+
+**Kontekst.** Dzień bez sygnału był wyłącznie wierszem listy na stronie sesji.
+Zrzut dało się wgrać dopiero po rozwinięciu wpisu w miejscu, zapisanej notatki
+nie dało się poprawić w ogóle (formularz u góry zakładał nowy wpis, nie
+otwierał istniejącego), a zdjęcia oglądało się w kaflach wielkości miniatur.
+Trade ma na to wszystko własną kartę — dzień odpuszczony świadomie jest
+wpisem dziennika dokładnie tak samo i zasługuje na to samo.
+
+**Nowa trasa `/backtest/[id]/dzien/[data]`.** Ta sama budowa co karta trade'a:
+nagłówek z datą i powodem pauzy, galeria w wariancie `kompakt` (wąski pasek
+wklejania, duże kafle), formularz wpisu, trade'y tego dnia, usunięcie wpisu.
+Adres jest stanem — dzień da się wysłać linkiem, czego `?dzien=` na stronie
+sesji nie dawało w sposób, który cokolwiek pokazywał.
+
+**Strona działa też dla dnia BEZ wpisu.** Formularz jest wtedy pusty, a
+wklejenie zrzutu samo zakłada notatkę (`ensureDayNote`) — kolejność „najpierw
+zapisz powód, potem wklej dowód" byłaby odwrotna do tego, jak się pracuje.
+Wgranie zrzutu celowo NIE ustawia flagi `no_trade`: zdjęcie jest dowodem, nie
+deklaracją, że dzień był bez sygnału.
+
+**Ten sam formularz do zakładania i do poprawiania.** `saveBacktestDayNote`
+i tak robi upsert po (dzień, sesja), więc osobny formularz edycji rozjechałby
+się z nim przy pierwszej zmianie pola. Na stronie dnia data jest tylko do
+odczytu — siedzi w adresie.
+
+**Kafle kalendarza sesji prowadzą na stronę dnia**, nie do parametru adresu.
+`MonthGrid` dostał na to prop `linkDnia`; kalendarz dziennika realnego zostaje
+przy `?dzien=`, bo tam panel dnia stoi obok siatki i przeładowanie strony
+byłoby stratą, nie zyskiem.
+
+**Przy okazji, test e2e konfluencji na dwóch interwałach.** Klikał w chipy
+interwałów bezwarunkowo, a kliknięcie PRZEŁĄCZA — drugi przebieg na tej samej
+bazie odznaczał to, co pierwszy zaznaczył, i test sprawdzał własną szkodę.
+Teraz klika tylko wtedy, gdy pole nie jest jeszcze zaznaczone. `check()`
+wprost na kontrolce nie przechodzi: checkbox jest `sr-only`, klikalny jest
+wyłącznie `<label>`.

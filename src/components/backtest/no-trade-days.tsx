@@ -19,6 +19,8 @@ export function NoTradeDayForm({
   dataFrom,
   dataTo,
   domyslnyDzien,
+  values,
+  stalaData = false,
 }: {
   sessionId: number;
   dataFrom: string | null;
@@ -27,6 +29,12 @@ export function NoTradeDayForm({
       Wymaga `key` przy uzyciu, inaczej `defaultValue` nie odswiezy sie po
       przejsciu na inny dzien (2026-08-29). */
   domyslnyDzien?: string | null;
+  /** Wartosci zapisanego wpisu - ten sam formularz sluzy do edycji, bo akcja
+      i tak robi upsert po (dzien, sesja). Osobny formularz edycji rozjechalby
+      sie z tym przy pierwszej zmianie pola (2026-08-29). */
+  values?: { noTradeReason?: string | null; postSession?: string | null };
+  /** Strona jednego dnia: data jest w adresie, wiec pole tylko ja pokazuje. */
+  stalaData?: boolean;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveBacktestDayNote, {});
 
@@ -46,13 +54,14 @@ export function NoTradeDayForm({
           defaultValue={domyslnyDzien ?? undefined}
           min={dataFrom ?? undefined}
           max={dataTo ?? undefined}
-          className="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text transition-colors duration-150 hover:border-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
+          readOnly={stalaData}
+          className="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text transition-colors duration-150 hover:border-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none read-only:text-muted"
         />
       </div>
 
       <div className="space-y-1.5">
         <Label htmlFor="ntd-reason">Powód</Label>
-        <Select id="ntd-reason" name="noTradeReason" defaultValue="no_setup">
+        <Select id="ntd-reason" name="noTradeReason" defaultValue={values?.noTradeReason ?? "no_setup"}>
           <option value="">—</option>
           {NO_TRADE_REASONS.map((r) => (
             <option key={r.code} value={r.code}>
@@ -68,26 +77,31 @@ export function NoTradeDayForm({
           id="ntd-note"
           name="postSession"
           rows={2}
+          defaultValue={values?.postSession ?? ""}
           placeholder="Którego warunku zabrakło, na co czekałeś, co byś zagrał gdyby przyszło."
         />
       </div>
 
       <div className="sm:col-span-2">
         {state.error && <ErrorMessage>{state.error}</ErrorMessage>}
-        {state.ok && <SuccessMessage>Zapisano dzień bez sygnału.</SuccessMessage>}
+        {state.ok && (
+          <SuccessMessage>
+            {values ? "Zapisano zmiany." : "Zapisano dzień bez sygnału."}
+          </SuccessMessage>
+        )}
         <div className="mt-2">
-          <ZapiszDzien />
+          <ZapiszDzien zapisany={Boolean(values)} />
         </div>
       </div>
     </form>
   );
 }
 
-function ZapiszDzien() {
+function ZapiszDzien({ zapisany }: { zapisany: boolean }) {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" variant="primary" size="s" disabled={pending}>
-      {pending ? "Zapisuję…" : "Zapisz dzień bez sygnału"}
+      {pending ? "Zapisuję…" : zapisany ? "Zapisz zmiany" : "Zapisz dzień bez sygnału"}
     </Button>
   );
 }

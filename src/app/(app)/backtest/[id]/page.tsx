@@ -4,8 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { EquityChart, RHistogram } from "@/components/charts/lazy";
-import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
-import { DeleteDayNoteButton, NoTradeDayForm } from "@/components/backtest/no-trade-days";
+import { NoTradeDayForm } from "@/components/backtest/no-trade-days";
 import { SessionForm } from "@/components/backtest/session-form";
 import { DeleteSessionButton } from "@/components/backtest/session-actions";
 import { KpiRow } from "@/components/stats/kpi-row";
@@ -22,11 +21,7 @@ import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
 import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
-import {
-  getDayScreenshots,
-  getSessionDayNotes,
-  screenshotCountsForDayNotes,
-} from "@/lib/queries/journal";
+import { getSessionDayNotes, screenshotCountsForDayNotes } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { longDate, money, monthName, num, percent, plural, pnlClass, rValue } from "@/lib/format";
 
@@ -34,14 +29,11 @@ export const metadata = { title: "Sesja backtestu — Dziennik tradingowy" };
 
 export default async function BacktestSessionPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ dzien?: string }>;
 }) {
   const settings = await requireSession();
   const { id } = await params;
-  const { dzien } = await searchParams;
   const sessionId = Number(id);
   if (!Number.isInteger(sessionId)) notFound();
 
@@ -86,8 +78,6 @@ export default async function BacktestSessionPage({
   // strategia zagrala, a nie ile dni trzeba bylo przy niej przesiedziec.
   const dayNotes = await getSessionDayNotes(session.id);
   const shotCounts = await screenshotCountsForDayNotes(dayNotes.map((n) => n.id));
-  const selectedNote = dzien ? dayNotes.find((n) => n.day === dzien) : undefined;
-  const selectedShots = await getDayScreenshots(selectedNote?.id);
 
   /* Siatki miesiecy: te, w ktorych cokolwiek sie wydarzylo - trade albo dzien
      zapisany jako bez sygnalu. Sesja bez zadnego wpisu pokazuje pierwszy
@@ -168,8 +158,9 @@ export default async function BacktestSessionPage({
           pulpicie. Sesja backtestu rozklada sie zwykle na kilka miesiecy, wiec
           siatek jest tyle, ile miesiecy ma co pokazac; przy pustej sesji jeden
           miesiac z poczatku zakresu danych, zeby panel nie byl pusta ramka.
-          `linkBase` prowadzi kafle do `?dzien=…`, czyli do wyboru dnia, ktory ta
-          strona juz obsluguje. */}
+          Kafel prowadzi na STRONE dnia (`/backtest/[id]/dzien/[data]`), tak jak
+          kafel trade'a prowadzi na jego karte - dzien odpuszczony swiadomie
+          jest wpisem dziennika, nie parametrem adresu. */}
       {miesiace.length > 0 && (
         <div className="grid gap-4 xl:grid-cols-2">
           {miesiace.map((m) => (
@@ -179,7 +170,7 @@ export default async function BacktestSessionPage({
                 days={days}
                 noTradeDays={pauzy}
                 currency={currency}
-                linkBase={`/backtest/${session.id}`}
+                linkDnia={(d) => `/backtest/${session.id}/dzien/${d}`}
               />
             </Panel>
           ))}
@@ -309,21 +300,12 @@ export default async function BacktestSessionPage({
             : "Uzupełnij zakres danych sesji, żeby policzyć pokrycie."
         }
       >
-        {/* Dzien klikniety w kalendarzu, ktory nie ma jeszcze wpisu, wchodzi do
-            formularza od razu - inaczej kliknieciu w kafel nic by nie
-            odpowiadalo. `key`, bo `defaultValue` klienta nie odswieza sie samo
-            po zmianie parametru adresu. */}
-        {dzien && !selectedNote && !zTradem.has(dzien) && (
-          <p className="border-b border-line px-4 pt-3 text-xs text-faint">
-            {longDate(dzien)} nie ma jeszcze wpisu — uzupełnij go poniżej.
-          </p>
-        )}
+        {/* Szybkie dopisanie dnia bez wychodzenia z sesji. Poprawki i zrzuty
+            robi sie juz na stronie dnia - `/backtest/[id]/dzien/[data]`. */}
         <NoTradeDayForm
-          key={dzien ?? "nowy"}
           sessionId={session.id}
           dataFrom={session.dataFrom}
           dataTo={session.dataTo}
-          domyslnyDzien={selectedNote ? null : dzien}
         />
 
         {dayNotes.length === 0 ? (
@@ -334,7 +316,6 @@ export default async function BacktestSessionPage({
         ) : (
           <ul className="divide-y divide-line">
             {dayNotes.map((n) => {
-              const wybrany = n.id === selectedNote?.id;
               const powod = reasonName(n.noTradeReason);
               const ile = shotCounts.get(n.id) ?? 0;
 
@@ -342,8 +323,12 @@ export default async function BacktestSessionPage({
                 <li key={n.id} className="px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
+                      {/* Dzien ma wlasna strone - taka sama karta jak trade
+                          (2026-08-29). Rozwijanie wpisu w miejscu nie dawalo
+                          gdzie poprawic notatki ani obejrzec zrzutow w pelnym
+                          kadrze. */}
                       <Link
-                        href={wybrany ? `/backtest/${session.id}` : `/backtest/${session.id}?dzien=${n.day}`}
+                        href={`/backtest/${session.id}/dzien/${n.day}`}
                         className="liczba text-sm font-medium text-text hover:text-accent"
                       >
                         {longDate(n.day)}
@@ -354,27 +339,16 @@ export default async function BacktestSessionPage({
                           .join(" · ") || "bez powodu"}
                       </p>
                     </div>
-                    {wybrany && <DeleteDayNoteButton id={n.id} />}
+                    <Link
+                      href={`/backtest/${session.id}/dzien/${n.day}`}
+                      className="shrink-0 text-xs text-accent hover:underline"
+                    >
+                      otwórz dzień →
+                    </Link>
                   </div>
 
                   {n.postSession && (
                     <p className="mt-2 text-sm whitespace-pre-line text-muted">{n.postSession}</p>
-                  )}
-
-                  {wybrany && (
-                    <div className="mt-2 rounded-[var(--radius-control)] border border-line">
-                      <ScreenshotUploader
-                        key={n.day}
-                        cel={{
-                          typ: "dzien",
-                          day: n.day,
-                          accountId: null,
-                          backtestSessionId: session.id,
-                        }}
-                        shots={selectedShots}
-                        opis={`dzień ${n.day}`}
-                      />
-                    </div>
                   )}
                 </li>
               );

@@ -554,15 +554,25 @@ test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }
 
   const pierwszaKonfluencja = page.locator('input[name="tag"]').first();
   const idTagu = await pierwszaKonfluencja.getAttribute("value");
-  const chip = page.locator(`label[for="tag-${idTagu}"]`);
 
-  if (!(await pierwszaKonfluencja.isChecked())) await chip.click();
+  /* Klikamy w `<label>`, ale TYLKO gdy pole nie jest jeszcze zaznaczone:
+     klikniecie PRZELACZA, wiec przy trade'cie, ktory te interwaly juz ma
+     (choćby z poprzedniego przebiegu tego testu na tej samej bazie), test
+     odznaczalby je i sprawdzal wlasna szkode. `check()` wprost na kontrolce
+     tez nie przejdzie - checkbox jest `sr-only`, klikalny jest tylko label. */
+  const wlacz = async (id: string) => {
+    const pole = page.locator(`#${id}`);
+    if (!(await pole.isChecked())) await page.locator(`label[for="${id}"]`).click();
+    await expect(pole).toBeChecked();
+  };
+
+  await wlacz(`tag-${idTagu}`);
 
   const grupa = page.locator(`[aria-label^="Interwały dla konfluencji"]`).first();
   await expect(grupa).toBeVisible();
 
-  await page.locator(`label[for="tagint-${idTagu}-4h"]`).click();
-  await page.locator(`label[for="tagint-${idTagu}-5m"]`).click();
+  await wlacz(`tagint-${idTagu}-4h`);
+  await wlacz(`tagint-${idTagu}-5m`);
   await page.getByRole("button", { name: /zapisz zmiany/i }).click();
   await page.waitForURL(/\/trades\/\d+$/);
 

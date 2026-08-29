@@ -38,6 +38,7 @@ export function MonthGrid({
   currency,
   unit = "cash",
   linkBase = "/calendar",
+  linkDnia,
 }: {
   month: string;
   days: DayResult[];
@@ -45,6 +46,9 @@ export function MonthGrid({
   currency: string;
   unit?: "cash" | "r";
   linkBase?: string;
+  /** Wlasny adres kafla. Kalendarz sesji backtestu prowadzi do STRONY dnia,
+      a nie do parametru `?dzien=` na tej samej stronie (2026-08-29). */
+  linkDnia?: (day: string) => string;
 }) {
   const byDay = new Map(days.map((d) => [d.day, d]));
   const noTradeByDay = new Map(noTradeDays.map((d) => [d.day, d]));
@@ -93,7 +97,7 @@ export function MonthGrid({
           return (
             <Link
               key={day}
-              href={`${linkBase}?dzien=${day}`}
+              href={linkDnia ? linkDnia(day) : `${linkBase}?dzien=${day}`}
               title={opis}
               className={cx(
                 "flex min-h-16 flex-col rounded-[var(--radius-control)] border p-1.5",
