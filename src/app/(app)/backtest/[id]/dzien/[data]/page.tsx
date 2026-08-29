@@ -168,7 +168,6 @@ export default async function DzienSesjiPage({
         <Panel title="Trade'y tego dnia">
           <TradeList
             trades={dayTrades}
-            timezone={settings.timezone}
             emptyText="Sesja nie ma tego dnia żadnego trade'a."
           />
         </Panel>

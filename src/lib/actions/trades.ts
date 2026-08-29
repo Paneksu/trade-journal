@@ -66,9 +66,7 @@ function optionalId(data: FormData, key: string): number | null {
 }
 
 export async function saveTrade(_previous: FormState, data: FormData): Promise<FormState> {
-  const settings = await requireSession();
-  const timezone = settings.timezone;
-
+  await requireSession();
   const id = integer(data, "id");
   const accountId = integer(data, "accountId");
   const instrumentId = integer(data, "instrumentId");
@@ -95,7 +93,13 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     .limit(1);
   if (!instrument) return { ok: false, error: "Nie znam takiego instrumentu." };
 
-  const entryTime = fromLocalInput(text(data, "entryTime") ?? "", timezone);
+  /* Godziny trade'a sa w czasie GIELDY, nie w strefie uzytkownika (ADR-022,
+     2026-08-30). Wczesniej bylo tu `settings.timezone`: wpisane 09:35 z
+     wykresu nowojorskiego zapisywalo sie jako 09:35 w Warszawie, czyli 03:35
+     w Nowym Jorku - trade z otwarcia sesji ladowal w "premarket", a przy
+     wieczornych godzinach takze w zlym dniu handlowym. */
+  const strefaGieldy = instrument.exchangeTimezone;
+  const entryTime = fromLocalInput(text(data, "entryTime") ?? "", strefaGieldy);
   if (!entryTime) return { ok: false, error: "Podaj datę i godzinę wejścia." };
 
   const entryPrice = number(data, "entryPrice");
@@ -107,7 +111,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   }
 
   const exitTimeRaw = text(data, "exitTime");
-  const exitTime = exitTimeRaw ? fromLocalInput(exitTimeRaw, timezone) : null;
+  const exitTime = exitTimeRaw ? fromLocalInput(exitTimeRaw, strefaGieldy) : null;
   const exitPrice = number(data, "exitPrice");
 
   // Brak ceny wyjscia oznacza, ze pozycja jest wciaz otwarta - nie zmuszamy

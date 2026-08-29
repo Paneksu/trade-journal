@@ -19,7 +19,7 @@ import { getScreenshots, getTrade } from "@/lib/queries/trades";
 export const metadata = { title: "Edycja trade'a — Dziennik tradingowy" };
 
 export default async function EditTradePage({ params }: { params: Promise<{ id: string }> }) {
-  const settings = await requireSession();
+  await requireSession();
   const { id } = await params;
   const tradeId = Number(id);
   if (!Number.isInteger(tradeId)) notFound();
@@ -69,9 +69,12 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           backtestSessionId: trade.backtestSessionId,
           direction: trade.direction,
           status: trade.status,
-          entryTime: toLocalInput(trade.entryTime, settings.timezone),
+          /* Strefa gieldy instrumentu (ADR-022): w niej trade zostal wpisany
+             i w niej ma wrocic do edycji - inaczej samo otwarcie formularza
+             i zapis przesunelyby godzine o roznice stref. */
+          entryTime: toLocalInput(trade.entryTime, trade.exchangeTimezone),
           entryPrice: trade.entryPrice ? String(Number(trade.entryPrice)) : "",
-          exitTime: toLocalInput(trade.exitTime, settings.timezone),
+          exitTime: toLocalInput(trade.exitTime, trade.exchangeTimezone),
           exitPrice: trade.exitPrice ? String(Number(trade.exitPrice)) : "",
           contracts: String(Number(trade.contracts)),
           stopLoss: trade.stopLoss ? String(Number(trade.stopLoss)) : "",

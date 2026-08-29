@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
 import { MonthGrid } from "@/components/calendar/month-grid";
+import { MonthNav } from "@/components/calendar/month-nav";
 import { EquityChart, RHistogram } from "@/components/charts/lazy";
 import { NoTradeDayForm } from "@/components/backtest/no-trade-days";
 import { SessionForm } from "@/components/backtest/session-form";
@@ -29,11 +30,14 @@ export const metadata = { title: "Sesja backtestu — Dziennik tradingowy" };
 
 export default async function BacktestSessionPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ miesiac?: string }>;
 }) {
   const settings = await requireSession();
   const { id } = await params;
+  const { miesiac: miesiacZAdresu } = await searchParams;
   const sessionId = Number(id);
   if (!Number.isInteger(sessionId)) notFound();
 
@@ -79,17 +83,22 @@ export default async function BacktestSessionPage({
   const dayNotes = await getSessionDayNotes(session.id);
   const shotCounts = await screenshotCountsForDayNotes(dayNotes.map((n) => n.id));
 
-  /* Siatki miesiecy: te, w ktorych cokolwiek sie wydarzylo - trade albo dzien
-     zapisany jako bez sygnalu. Sesja bez zadnego wpisu pokazuje pierwszy
-     miesiac zakresu danych, a gdy i jego brak - biezacy. */
+  /* JEDEN kalendarz z przelacznikiem miesiaca, nie siatka na kazdy miesiac
+     naraz (2026-08-30): backtest na dwoch latach dawal dwadziescia kilka siatek
+     pod soba i nie dalo sie na nie patrzec.
+
+     Miesiac domyslny to PIERWSZY, w ktorym cokolwiek sie wydarzylo - sesje
+     czyta sie od poczatku zakresu, nie od dzisiaj. Gdy sesja jest pusta,
+     zostaje poczatek zakresu danych, a gdy i jego brak - biezacy miesiac. */
   const days = dailyPnl(closed);
-  const zTradow = days.map((d) => d.day.slice(0, 7));
-  const zNotatek = dayNotes.map((n) => n.day.slice(0, 7));
-  const zdarzenia = [...new Set([...zTradow, ...zNotatek])].sort();
-  const miesiace =
-    zdarzenia.length > 0
-      ? zdarzenia
-      : [(session.dataFrom ?? localDate(new Date(), settings.timezone)).slice(0, 7)];
+  const zdarzenia = [
+    ...new Set([...days.map((d) => d.day.slice(0, 7)), ...dayNotes.map((n) => n.day.slice(0, 7))]),
+  ].sort();
+  const domyslnyMiesiac =
+    zdarzenia[0] ?? (session.dataFrom ?? localDate(new Date(), settings.timezone)).slice(0, 7);
+  const miesiac = /^\d{4}-\d{2}$/.test(miesiacZAdresu ?? "")
+    ? (miesiacZAdresu as string)
+    : domyslnyMiesiac;
 
   /* Dzien bez transakcji rysujemy tylko tam, gdzie faktycznie nie bylo trade'a -
      notatka moze wisiec takze na dniu, w ktorym cos jednak zagralo, a wtedy
@@ -154,28 +163,41 @@ export default async function BacktestSessionPage({
         </Panel>
       )}
 
-      {/* Kalendarz sesji (2026-08-29) - ten sam komponent i te same propsy co na
-          pulpicie. Sesja backtestu rozklada sie zwykle na kilka miesiecy, wiec
-          siatek jest tyle, ile miesiecy ma co pokazac; przy pustej sesji jeden
-          miesiac z poczatku zakresu danych, zeby panel nie byl pusta ramka.
-          Kafel prowadzi na STRONE dnia (`/backtest/[id]/dzien/[data]`), tak jak
-          kafel trade'a prowadzi na jego karte - dzien odpuszczony swiadomie
-          jest wpisem dziennika, nie parametrem adresu. */}
-      {miesiace.length > 0 && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {miesiace.map((m) => (
-            <Panel key={m} title={monthName(m)} description="Wynik dzień po dniu">
-              <MonthGrid
-                month={m}
-                days={days}
-                noTradeDays={pauzy}
-                currency={currency}
-                linkDnia={(d) => `/backtest/${session.id}/dzien/${d}`}
-              />
-            </Panel>
-          ))}
-        </div>
-      )}
+      {/* Kalendarz sesji - ten sam komponent co na pulpicie i w kalendarzu
+          dziennika, z ta sama nawigacja miesiaca. Kafel prowadzi na STRONE dnia
+          (`/backtest/[id]/dzien/[data]`), tak jak kafel trade'a prowadzi na
+          jego karte - dzien odpuszczony swiadomie jest wpisem dziennika, nie
+          parametrem adresu. */}
+      <Panel
+        title={monthName(miesiac)}
+        description="Wynik dzień po dniu. Kliknij dzień, żeby otworzyć jego kartę."
+        actions={<MonthNav month={miesiac} base={`/backtest/${session.id}`} srodek="początek" />}
+      >
+        <MonthGrid
+          month={miesiac}
+          days={days}
+          noTradeDays={pauzy}
+          currency={currency}
+          linkDnia={(d) => `/backtest/${session.id}/dzien/${d}`}
+        />
+        {zdarzenia.length > 1 && (
+          <p className="border-t border-line px-3 py-2 text-xs text-muted">
+            <span className="etykieta mr-2">Miesiące z wpisami</span>
+            {zdarzenia.map((m) => (
+              <Link
+                key={m}
+                href={`/backtest/${session.id}?miesiac=${m}`}
+                className={cx(
+                  "mr-2 hover:text-text",
+                  m === miesiac ? "text-accent" : "text-faint",
+                )}
+              >
+                {monthName(m)}
+              </Link>
+            ))}
+          </p>
+        )}
+      </Panel>
 
       <div className="grid gap-4 xl:grid-cols-2">
         <Panel
@@ -287,7 +309,6 @@ export default async function BacktestSessionPage({
       <Panel title="Trade'y sesji" description={`${sessionTrades.length} wpisów`}>
         <TradeList
           trades={sessionTrades}
-          timezone={settings.timezone}
           emptyText="Sesja nie ma jeszcze żadnego trade'a."
         />
       </Panel>

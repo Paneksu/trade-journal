@@ -17,6 +17,9 @@ export type TradeForAnalysis = TradeStat & {
   accountName: string;
   instrumentId: number;
   instrumentSymbol: string;
+  /* Strefa gieldy instrumentu. Godziny trade'a WPISUJE SIE i pokazuje wlasnie
+     w niej, nie w strefie uzytkownika (2026-08-30) - patrz ADR-022. */
+  exchangeTimezone: string;
   strategyId: number | null;
   strategyName: string | null;
   backtestSessionId: number | null;

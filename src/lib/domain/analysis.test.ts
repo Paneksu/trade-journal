@@ -29,6 +29,7 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     accountName: "Glowne",
     instrumentId: 1,
     instrumentSymbol: "NQ",
+    exchangeTimezone: "America/New_York",
     strategyId: 1,
     strategyName: "Wybicie",
     backtestSessionId: null,

@@ -429,4 +429,30 @@ describe("czas lokalny", () => {
   it("odrzuca smieci", () => {
     expect(fromLocalInput("cokolwiek", "Europe/Warsaw")).toBeNull();
   });
+
+  /*
+   * ADR-022. Blad zglosil uzytkownik: godziny przepisuje z wykresu, czyli w
+   * czasie Nowego Jorku, a formularz czytal je w strefie z ustawien. Trade z
+   * otwarcia sesji trafial przez to do "overnight" (09:35 w Warszawie to 03:35
+   * w Nowym Jorku, czyli przed premarketem) - i nie bylo tego widac, bo liczba
+   * w polu zgadzala sie z tym, co uzytkownik wpisal.
+   */
+  it("ta sama godzina w dwoch strefach to dwie rozne sesje rynkowe", () => {
+    const wNowymJorku = fromLocalInput("2026-07-15T09:35", "America/New_York");
+    const wWarszawie = fromLocalInput("2026-07-15T09:35", "Europe/Warsaw");
+
+    expect(marketSession(wNowymJorku as Date, NQ)).toBe("rth");
+    expect(marketSession(wWarszawie as Date, NQ)).toBe("overnight");
+  });
+
+  it("wieczorna godzina gieldy nie przesuwa dnia handlowego o dobe", () => {
+    // 19:00 w Nowym Jorku to juz nastepny dzien handlowy (sesja CME otwiera
+    // sie o 18:00), ale ta sama liczba czytana jako czas warszawski to 13:00
+    // poprzedniego dnia - dwie doby roznicy w kalendarzu.
+    const wNowymJorku = fromLocalInput("2026-07-15T19:00", "America/New_York");
+    const wWarszawie = fromLocalInput("2026-07-15T19:00", "Europe/Warsaw");
+
+    expect(tradingDay(wNowymJorku as Date, NQ.exchangeTimezone)).toBe("2026-07-16");
+    expect(tradingDay(wWarszawie as Date, NQ.exchangeTimezone)).toBe("2026-07-15");
+  });
 });

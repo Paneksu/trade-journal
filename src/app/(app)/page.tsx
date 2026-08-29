@@ -168,7 +168,7 @@ export default async function DashboardPage({
             </Link>
           }
         >
-          <TradeList trades={trades.slice(0, 8)} timezone={settings.timezone} />
+          <TradeList trades={trades.slice(0, 8)} />
         </Panel>
       </div>
     </div>

@@ -29,7 +29,7 @@ import { computeTrade, exitPriceForAmount, type Direction } from "@/lib/domain/c
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { FieldDef } from "@/lib/fields/fields";
-import { money, num, price, rValue, wynikClass, WYNIK_NAZWY } from "@/lib/format";
+import { money, nazwaStrefy, num, price, rValue, wynikClass, WYNIK_NAZWY } from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
 /* Formularz trade'a. Liczy wynik na zywo tym samym modulem, ktory liczy go
@@ -153,6 +153,9 @@ export function TradeForm({
   const account = accounts.find((k) => k.id === accountId) ?? accounts[0];
   const instrument = instruments.find((i) => i.id === instrumentId) ?? instruments[0];
   const currency = account?.currency ?? "USD";
+  const podpisStrefy = instrument
+    ? `Czas giełdy — ${nazwaStrefy(instrument.exchangeTimezone)}`
+    : undefined;
 
   /* Czyta liczbe dokladnie tak jak `number` w akcji zapisu (actions/trades.ts):
      przecinek dziesietny i spacje w tysiacach. Inaczej formularz bylby ostrzejszy
@@ -390,8 +393,13 @@ export function TradeForm({
 
           <Panel title="Wejście i wyjście">
             <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+              {/* Godziny sa w czasie GIELDY instrumentu, nie w strefie
+                  uzytkownika (ADR-022, 2026-08-30). Napis przy etykiecie nie
+                  jest ozdoba: bez niego nie da sie odroznic 09:35 z wykresu
+                  nowojorskiego od 09:35 na zegarku, a to szesc godzin roznicy
+                  i inna sesja rynkowa. */}
               <div className="space-y-1.5">
-                <Label htmlFor="entryTime" required>
+                <Label htmlFor="entryTime" required hint={podpisStrefy}>
                   Wejście — data i godzina
                 </Label>
                 <Input
@@ -416,7 +424,9 @@ export function TradeForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="exitTime">Wyjście — data i godzina</Label>
+                <Label htmlFor="exitTime" hint={podpisStrefy}>
+                  Wyjście — data i godzina
+                </Label>
                 <Input
                   id="exitTime"
                   name="exitTime"

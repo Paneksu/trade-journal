@@ -11,11 +11,9 @@ import { dateTime, money, pnlClass, price, rValue, wynikClass } from "@/lib/form
  */
 export function TradeList({
   trades,
-  timezone,
   emptyText = "Brak trade'ów w tym zakresie.",
 }: {
   trades: TradeRecord[];
-  timezone: string;
   emptyText?: string;
 }) {
   if (trades.length === 0) {
@@ -66,7 +64,10 @@ export function TradeList({
             </span>
 
             <span className="liczba hidden w-24 shrink-0 text-right text-xs text-faint sm:block">
-              {dateTime(t.entryTime, timezone)}
+              {/* Czas gieldy instrumentu, nie strefa uzytkownika (ADR-022):
+                  w tej samej strefie sie go wpisuje, wiec w tej samej ma
+                  wracac - inaczej wpis 09:35 wracalby jako 15:35. */}
+              {dateTime(t.entryTime, t.exchangeTimezone)}
             </span>
 
             <span

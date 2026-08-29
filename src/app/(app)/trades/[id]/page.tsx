@@ -28,7 +28,7 @@ import {
 export const metadata = { title: "Trade — Dziennik tradingowy" };
 
 export default async function TradePage({ params }: { params: Promise<{ id: string }> }) {
-  const settings = await requireSession();
+  await requireSession();
   const { id } = await params;
   const tradeId = Number(id);
   if (!Number.isInteger(tradeId)) notFound();
@@ -126,9 +126,11 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Przebieg" className="xl:col-span-2">
           <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
-            <DataPoint label="Wejście">{dateTime(trade.entryTime, settings.timezone)}</DataPoint>
+            {/* Czas gieldy instrumentu (ADR-022) - w tej samej strefie, w
+                ktorej sie go wpisuje. */}
+            <DataPoint label="Wejście">{dateTime(trade.entryTime, trade.exchangeTimezone)}</DataPoint>
             <DataPoint label="Cena wejścia">{price(trade.entryPrice, trade.tickSize)}</DataPoint>
-            <DataPoint label="Wyjście">{dateTime(trade.exitTime, settings.timezone)}</DataPoint>
+            <DataPoint label="Wyjście">{dateTime(trade.exitTime, trade.exchangeTimezone)}</DataPoint>
             <DataPoint label="Cena wyjścia">{price(trade.exitPrice, trade.tickSize)}</DataPoint>
 
             <DataPoint label="Stop loss">{price(trade.stopLoss, trade.tickSize)}</DataPoint>

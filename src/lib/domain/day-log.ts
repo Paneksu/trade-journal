@@ -49,6 +49,13 @@ function addDays(day: string, by: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Miesiac przesuniety o `by` miesiecy, w formacie YYYY-MM. */
+export function shiftMonth(month: string, by: number): string {
+  const [year, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(year, m - 1 + by, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 /** Pierwszy i ostatni dzien miesiaca w formacie YYYY-MM-DD. */
 export function monthBounds(month: string): { from: string; to: string } {
   const [year, m] = month.split("-").map(Number);

@@ -32,7 +32,6 @@ type Props = {
   trades: TradeRecord[];
   fields: FieldDef[];
   tags: TagWithCategory[];
-  timezone: string;
   currency: string;
 };
 
@@ -46,7 +45,7 @@ const DOMYSLNA_WIDOCZNOSC: VisibilityState = {
   potentialR: false,
 };
 
-export function TradesTable({ trades, fields, tags, timezone, currency }: Props) {
+export function TradesTable({ trades, fields, tags, currency }: Props) {
   const [sorting, setSorting] = useState<SortingState>([{ id: "entryTime", desc: true }]);
   const [visibility, setVisibility] = useState<VisibilityState>(() => {
     if (typeof window === "undefined") return DOMYSLNA_WIDOCZNOSC;
@@ -100,7 +99,8 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         header: "Wejście",
         cell: ({ row }) => (
           <span className="whitespace-nowrap text-faint">
-            {dateTime(row.original.entryTime, timezone)}
+            {/* Czas gieldy instrumentu (ADR-022) - patrz trade-list.tsx. */}
+            {dateTime(row.original.entryTime, row.original.exchangeTimezone)}
           </span>
         ),
       },
@@ -307,7 +307,7 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
     }
 
     return base;
-  }, [tableFields, timezone]);
+  }, [tableFields]);
 
   /* React Compiler nie memoizuje tego wywolania (API zwraca funkcje, ktore
      nie sa stabilne). Tabela dziala poprawnie, tylko bez memoizacji. */

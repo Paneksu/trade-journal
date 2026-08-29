@@ -799,3 +799,63 @@ bazie odznaczał to, co pierwszy zaznaczył, i test sprawdzał własną szkodę.
 Teraz klika tylko wtedy, gdy pole nie jest jeszcze zaznaczone. `check()`
 wprost na kontrolce nie przechodzi: checkbox jest `sr-only`, klikalny jest
 wyłącznie `<label>`.
+
+---
+
+## ADR-022 — godziny trade'a są w czasie giełdy, nie użytkownika (2026-08-30)
+
+**Kontekst.** Błąd zgłoszony wprost: „podaję godziny wedle nowojorskiej i
+zapisuje złą sesję". Formularz czytał `entryTime`/`exitTime` przez
+`fromLocalInput(..., settings.timezone)`, czyli domyślnie w strefie
+`Europe/Warsaw`. Kto przepisuje godziny z wykresu — a tak się pracuje —
+wpisywał czas nowojorski, a system rozumiał go jako warszawski. Wejście 09:35
+z otwarcia sesji lądowało jako 03:35 w Nowym Jorku, więc `market_session`
+wychodziło „overnight" zamiast „rth", a przy godzinach po 18:00 przesuwał się
+też `trading_day`, bo sesja CME otwiera się właśnie o 18:00 czasu giełdy.
+
+Błąd był niewidoczny: liczba w polu zgadzała się z tym, co użytkownik wpisał,
+a kłamały dopiero statystyki po sesjach i kalendarz.
+
+**Godziny wpisuje się w strefie giełdy instrumentu** (`exchangeTimezone`),
+nie w strefie z ustawień. To ta sama strefa, w której już liczyły się
+`marketSession` i `tradingDay`, więc znika cała klasa rozjazdów, a przy
+instrumencie z innej giełdy działa bez dodatkowej konfiguracji. Alternatywa —
+przestawienie `settings.timezone` na `America/New_York` — naprawiałaby jeden
+przypadek i psuła resztę: to samo ustawienie steruje datami w dzienniku.
+
+**W tej samej strefie się pokazuje.** Karta trade'a, lista i tabela czytają
+`trade.exchangeTimezone`. Wpis 09:35 wracający jako 15:35 byłby drugą wersją
+tego samego błędu, tylko po stronie odczytu. Prop `timezone` w `TradeList`
+i `TradesTable` zniknął — nie miał już czego opisywać.
+
+**Pole mówi, w jakiej strefie jest.** Etykiety wejścia i wyjścia noszą podpis
+„Czas giełdy — Nowy Jork". Bez niego 09:35 z wykresu i 09:35 z zegarka
+wyglądają identycznie, a dzieli je sześć godzin i inna sesja rynkowa.
+Podpowiedź „teraz" przy nowym trade'zie też jest z zegara giełdy.
+
+**Historia nie jest ruszana automatycznie.** Trade'y sprzed tej zmiany mają
+momenty przesunięte o różnicę stref, ale tylko użytkownik wie, od kiedy
+wpisywał czas nowojorski. Naprawę robi `scripts/przesun-godziny.ts`:
+domyślnie suchy bieg, przesuwa ściankę zegara ze strefy źródłowej do strefy
+giełdy i przelicza kolumny pochodne tym samym kodem, co zapis z formularza.
+Zapis dopiero po `--zapisz` i po kopii bazy.
+
+---
+
+## ADR-023 — jeden kalendarz sesji z przełącznikiem miesiąca (2026-08-30)
+
+Kalendarz sesji backtestu rysował siatkę na KAŻDY miesiąc z wpisami naraz.
+Przy sesji rozciągniętej na kilka lat dawało to kilkanaście siatek pod sobą,
+w większości pustych — nie dało się tego czytać, a szukanie miesiąca z danymi
+polegało na przewijaniu.
+
+Teraz jest jedna siatka i nawigacja `‹ początek ›`, ta sama, co w kalendarzu
+dziennika (`MonthNav`, wydzielony z `/calendar` — jeden komponent zamiast
+dwóch kopii tego samego bloku). Pod siatką stoi lista miesięcy, które
+faktycznie mają wpisy, więc skok do stycznia 2023 to jedno kliknięcie,
+a nie dwadzieścia przewinięć.
+
+Miesiąc jest parametrem adresu (`?miesiac=`), nie stanem klienta: widok da się
+wysłać linkiem, a powrót z karty dnia wraca na ten sam miesiąc. Domyślny
+miesiąc to PIERWSZY z wpisami — sesję backtestu czyta się od początku
+zakresu, nie od dzisiaj.

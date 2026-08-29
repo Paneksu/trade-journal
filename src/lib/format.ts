@@ -74,6 +74,30 @@ export function duration(seconds: number | null | undefined): string {
   return `${days}${NBSP}d ${hours % 24}${NBSP}h`;
 }
 
+/**
+ * Ludzka nazwa strefy gieldy: "America/New_York" -> "Nowy Jork". Napis jest
+ * wazny, bo godziny trade'a sa w czasie GIELDY, nie uzytkownika (ADR-022) -
+ * pole bez tej informacji jest zaproszeniem do wpisania wlasnej godziny.
+ * Strefa spoza listy wraca jako sam segment miasta, bez podkreslen.
+ */
+const NAZWY_STREF: Record<string, string> = {
+  "America/New_York": "Nowy Jork",
+  "America/Chicago": "Chicago",
+  "America/Los_Angeles": "Los Angeles",
+  "Europe/London": "Londyn",
+  "Europe/Warsaw": "Warszawa",
+  "Europe/Frankfurt": "Frankfurt",
+  "Asia/Tokyo": "Tokio",
+  "Asia/Hong_Kong": "Hongkong",
+  "Asia/Singapore": "Singapur",
+  "Australia/Sydney": "Sydney",
+  UTC: "UTC",
+};
+
+export function nazwaStrefy(timezone: string): string {
+  return NAZWY_STREF[timezone] ?? (timezone.split("/").pop() ?? timezone).replace(/_/g, " ");
+}
+
 export function dateTime(
   moment: Date | string | null | undefined,
   timezone = "Europe/Warsaw",

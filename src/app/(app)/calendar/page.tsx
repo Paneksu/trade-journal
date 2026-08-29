@@ -1,7 +1,5 @@
-import Link from "next/link";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-
 import { DayNoteForm } from "@/components/calendar/day-note-form";
+import { MonthNav } from "@/components/calendar/month-nav";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { UnitSwitch } from "@/components/layout/toolbar";
@@ -19,12 +17,6 @@ import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { longDate, money, monthName, percent, plural, rValue, tradesCount } from "@/lib/format";
 
 export const metadata = { title: "Kalendarz — Dziennik tradingowy" };
-
-function shiftMonth(month: string, by: number): string {
-  const [year, m] = month.split("-").map(Number);
-  const d = new Date(Date.UTC(year, m - 1 + by, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 export default async function CalendarPage({
   searchParams,
@@ -86,28 +78,7 @@ export default async function CalendarPage({
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded-[var(--radius-control)] border border-line-strong">
-            <Link
-              href={`/calendar?miesiac=${shiftMonth(month, -1)}`}
-              aria-label="Poprzedni miesiąc"
-              className="flex h-8 w-8 items-center justify-center bg-surface text-muted hover:bg-surface-2 hover:text-text"
-            >
-              <ChevronLeft size={16} aria-hidden />
-            </Link>
-            <Link
-              href="/calendar"
-              className="flex h-8 items-center border-x border-line-strong bg-surface px-3 text-xs text-muted hover:bg-surface-2 hover:text-text"
-            >
-              dziś
-            </Link>
-            <Link
-              href={`/calendar?miesiac=${shiftMonth(month, 1)}`}
-              aria-label="Następny miesiąc"
-              className="flex h-8 w-8 items-center justify-center bg-surface text-muted hover:bg-surface-2 hover:text-text"
-            >
-              <ChevronRight size={16} aria-hidden />
-            </Link>
-          </div>
+          <MonthNav month={month} base="/calendar" />
           <UnitSwitch active={unit} />
         </div>
       </header>
@@ -182,8 +153,7 @@ export default async function CalendarPage({
             >
               <TradeList
                 trades={dayTrades}
-                timezone={settings.timezone}
-                emptyText="Tego dnia nie było żadnego trade'a."
+                    emptyText="Tego dnia nie było żadnego trade'a."
               />
             </Panel>
 

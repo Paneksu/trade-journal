@@ -81,7 +81,6 @@ export default async function TradesPage({
           trades={trades}
           fields={fields}
           tags={tags}
-          timezone={settings.timezone}
           currency={currency}
         />
       </div>

@@ -39,6 +39,15 @@ export default async function NewTradePage({
   const active = accounts.filter((k) => !k.archived);
   const activeInstruments = instruments.filter((i) => i.active);
 
+  /* "Teraz" liczone w strefie GIELDY instrumentu, ktory formularz pokaze jako
+     pierwszy (ADR-022, 2026-08-30) - w tej samej strefie wpisuje sie godziny,
+     wiec podpowiedz musi byc z tego samego zegara. Wczesniej byla ze strefy
+     uzytkownika i przy kazdym nowym trade'zie trzeba bylo ja poprawiac. */
+  const pierwszy =
+    (activeInstruments.length > 0 ? activeInstruments : instruments).find(
+      (i) => i.id === last.instrumentId,
+    ) ?? (activeInstruments.length > 0 ? activeInstruments : instruments)[0];
+
   return (
     <div className="space-y-4">
       <header>
@@ -61,7 +70,7 @@ export default async function NewTradePage({
           accountId: last.accountId,
           instrumentId: last.instrumentId,
           contracts: last.contracts ? String(Number(last.contracts)) : "1",
-          entryTime: toLocalInput(new Date(), settings.timezone),
+          entryTime: toLocalInput(new Date(), pierwszy?.exchangeTimezone ?? settings.timezone),
         }}
       />
     </div>
