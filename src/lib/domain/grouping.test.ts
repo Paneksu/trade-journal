@@ -30,6 +30,8 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     marketSession: "rth",
     weekday: 1,
     entryHour: 10,
+    moodNote: null,
+    readiness: 7,
     executionRating: 4,
     ruleCount: 3,
     rulesMet: 3,
@@ -97,9 +99,25 @@ describe("groupBy", () => {
   });
 
   it("trade bez wartosci trafia do grupy nieprzypisanych", () => {
-    const groups = groupBy([trade({ strategyName: null })], dimension("strategy"), { progi });
-    expect(groups[0].label).toBe("bez strategii");
+    const groups = groupBy([trade({ readiness: null })], dimension("readiness"), { progi });
+    expect(groups[0].label).toBe("brak danych");
     expect(groups[0].key).toBe("");
+  });
+
+  it("gotowosc grupuje sie w kubelki i sortuje rosnaco po skali", () => {
+    const trades = [
+      trade({ id: 1, readiness: 10, pnl: 10_000 }),
+      trade({ id: 2, readiness: 2, pnl: -30_000 }),
+      trade({ id: 3, readiness: 5, pnl: 1_000 }),
+    ];
+    const groups = groupBy(trades, dimension("readiness"), { progi });
+    // Porzadek jest skala, nie wynikiem - inaczej najgorszy dzien wypadalby
+    // na koncu tabeli i nie dalo by sie odczytac trendu.
+    expect(groups.map((g) => g.label)).toEqual([
+      "1-3 słaba",
+      "4-6 przeciętna",
+      "9-10 szczyt",
+    ]);
   });
 
   it("grupuje po polu wlasnym typu select", () => {

@@ -212,12 +212,6 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
         },
       },
       {
-        id: "strategyName",
-        accessorKey: "strategyName",
-        header: "Strategia",
-        cell: ({ getValue }) => <span className="text-muted">{(getValue() as string) ?? "—"}</span>,
-      },
-      {
         id: "tags",
         accessorFn: (t) => t.tags.map((x) => x.name).join(", "),
         header: "Tagi",
@@ -239,13 +233,16 @@ export function TradesTable({ trades, fields, tags, timezone, currency }: Props)
           </span>
         ),
       },
+      /* Kolumny "Strategia" i "Ocena" zniknely 2026-08-29 razem z polami w
+         formularzu. W ich miejsce gotowosc - jedyna z tych liczb, ktora
+         powstaje przed wejsciem, a nie po wyniku. */
       {
-        id: "executionRating",
-        accessorKey: "executionRating",
-        header: "Ocena",
+        id: "readiness",
+        accessorKey: "readiness",
+        header: "Gotow.",
         cell: ({ getValue }) => {
           const w = getValue() as number | null;
-          return <span className="text-muted">{w === null ? "—" : `${w}/5`}</span>;
+          return <span className="text-muted">{w === null ? "—" : `${w}/10`}</span>;
         },
       },
       {

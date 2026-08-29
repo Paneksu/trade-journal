@@ -151,13 +151,18 @@ async function main() {
         mae: String(mae),
         mfe: String(mfe),
         note: Math.random() < 0.4 ? "Wejście zgodne z planem, wyjście trochę za wcześnie." : null,
+        /* Gotowosc zamiast dawnych pol wlasnych (2026-08-29). Strategie i
+           checkliste dane demo nadal wypelniaja - stare trade'y w bazie tez je
+           maja, wiec widok trade'a musi miec na czym pokazac, ze sobie z nimi
+           radzi. */
+        moodNote:
+          Math.random() < 0.5
+            ? element(["Wyspany, spokojna głowa.", "Krótka noc.", "Rozproszony, dużo spraw obok."])
+            : null,
+        readiness: Math.random() < 0.85 ? Math.ceil(losowa(1, 10)) : null,
         executionRating: Math.random() < 0.7 ? Math.ceil(losowa(1, 5)) : null,
         rulesMet: spelnione,
-        custom: {
-          nastroj: element(["spokój", "niecierpliwość", "presja", "znudzenie"]),
-          plan_zrealizowany: Math.random() < 0.7,
-          jakosc_wejscia: Math.ceil(losowa(1, 5)),
-        },
+        custom: {},
         ticks: wynik.ticks,
         riskTicks: wynik.riskTicks,
         pnl: wynik.pnl,

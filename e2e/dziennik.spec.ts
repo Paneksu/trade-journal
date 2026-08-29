@@ -566,9 +566,15 @@ test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }
   await page.getByRole("button", { name: /zapisz zmiany/i }).click();
   await page.waitForURL(/\/trades\/\d+$/);
 
-  // Na karcie trade'a ta sama nazwa tagu ma pojawic sie DWA razy - raz na
-  // kazdym interwale. Jeden chip znaczylby, ze drugi interwal przepadl.
-  await expect(page.getByText("4h", { exact: false }).first()).toBeVisible();
+  /* Na karcie trade'a ta sama nazwa tagu ma pojawic sie DWA razy - raz na
+     kazdym interwale. Jeden chip znaczylby, ze drugi interwal przepadl.
+
+     Szukamy po `title` chipa, nie po tekscie "4h": na tej samej stronie stoi
+     lista wyboru interwalu dla nowych zrzutow, a jej `<option>4h</option>` jest
+     ukryta - `getByText("4h").first()` trafial wlasnie w nia i test przewracal
+     sie mimo poprawnego zapisu. */
+  await expect(page.locator('[title$="· 4h"]').first()).toBeVisible();
+  await expect(page.locator('[title$="· 5m"]').first()).toBeVisible();
 
   const adresKarty = page.url();
   await page.goto(`${adresKarty}/edit`);

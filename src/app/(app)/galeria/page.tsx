@@ -8,7 +8,6 @@ import {
   getAccounts,
   getFields,
   getInstruments,
-  getStrategies,
   getTags,
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters, toSearchParams } from "@/lib/queries/filters";
@@ -43,10 +42,9 @@ export default async function GaleriaPage({
   const strona = Math.max(1, Number(oneParam(params.strona) ?? 1) || 1);
   const offset = (strona - 1) * ROZMIAR_STRONY;
 
-  const [accounts, instruments, strategies, tags, fields, trades, ile] = await Promise.all([
+  const [accounts, instruments, tags, fields, trades, ile] = await Promise.all([
     getAccounts(),
     getInstruments(),
-    getStrategies(),
     getTags(),
     getFields(),
     getTrades(filtry, { limit: ROZMIAR_STRONY, offset }),
@@ -71,7 +69,6 @@ export default async function GaleriaPage({
         <FilterBar
           accounts={accounts}
           instruments={instruments}
-          strategies={strategies}
           tags={tags}
           fields={fields}
           activeCount={activeFilterCount(filtry)}

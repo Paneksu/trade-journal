@@ -8,7 +8,6 @@ import {
   getFields,
   getInstruments,
   getProgi,
-  getStrategies,
   getTagCategories,
   getTags,
 } from "@/lib/queries/dictionaries";
@@ -25,11 +24,10 @@ export default async function NewTradePage({
   const { sesja } = await searchParams;
   const sessionId = sesja ? Number(sesja) : null;
 
-  const [accounts, instruments, strategies, sessions, tags, categories, fields, last, progi] =
+  const [accounts, instruments, sessions, tags, categories, fields, last, progi] =
     await Promise.all([
       getAccounts(),
       getInstruments(),
-      getStrategies(),
       getBacktestSessions(),
       getTags(),
       getTagCategories(),
@@ -53,7 +51,6 @@ export default async function NewTradePage({
       <TradeForm
         accounts={active.length > 0 ? active : accounts}
         instruments={activeInstruments.length > 0 ? activeInstruments : instruments}
-        strategies={strategies.filter((s) => s.active)}
         sessions={sessions.filter((s) => s.status === "running")}
         tags={tags}
         tagCategories={categories}
@@ -63,7 +60,6 @@ export default async function NewTradePage({
         values={{
           accountId: last.accountId,
           instrumentId: last.instrumentId,
-          strategyId: last.strategyId,
           contracts: last.contracts ? String(Number(last.contracts)) : "1",
           entryTime: toLocalInput(new Date(), settings.timezone),
         }}

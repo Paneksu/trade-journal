@@ -13,7 +13,6 @@ import {
   getInstruments,
   getProgi,
   getSavedViews,
-  getStrategies,
   getTags,
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
@@ -30,10 +29,9 @@ export default async function TradesPage({
   const params = await searchParams;
   const filters = parseFilters(params);
 
-  const [accounts, instruments, strategies, tags, fields, views, trades] = await Promise.all([
+  const [accounts, instruments, tags, fields, views, trades] = await Promise.all([
     getAccounts(),
     getInstruments(),
-    getStrategies(),
     getTags(),
     getFields(),
     getSavedViews(),
@@ -66,7 +64,6 @@ export default async function TradesPage({
         <FilterBar
           accounts={accounts}
           instruments={instruments}
-          strategies={strategies}
           tags={tags}
           fields={fields}
           activeCount={activeFilterCount(filters)}

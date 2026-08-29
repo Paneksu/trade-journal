@@ -10,6 +10,7 @@ import {
   setDayScreenshotInterval,
 } from "@/lib/actions/journal";
 import { addTradeScreenshots, removeScreenshot, setScreenshotInterval } from "@/lib/actions/trades";
+import { BAZA_WYSOKOSCI_WIERSZA_DUZA } from "@/lib/domain/galeria";
 import { INTERWALY } from "@/lib/domain/interwaly";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { ScreenshotGrid } from "./screenshot-grid";
@@ -33,10 +34,18 @@ export function ScreenshotUploader({
   cel,
   shots,
   opis,
+  kompakt = false,
 }: {
   cel: CelZrzutow;
   shots: Shot[];
   opis: string;
+  /**
+   * Wariant dla karty pojedynczego trade'a (2026-08-29): zamiast duzej ramki
+   * jeden waski pasek, a zdjecia dostaja wieksza baze wiersza. Ctrl+V slucha
+   * calego dokumentu, wiec strefa nigdy nie byla droga, ktora sie tu chodzi -
+   * zabierala tylko miejsce temu, co na tej stronie jest trescia.
+   */
+  kompakt?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [blad, setBlad] = useState<string | null>(null);
@@ -113,6 +122,87 @@ export function ScreenshotUploader({
     else await setDayScreenshotInterval(id, w);
   }
 
+  const komunikat = pending
+    ? "Wgrywam…"
+    : wgrane
+      ? "Wgrane."
+      : komplet
+        ? `Limit ${MAX_ZRZUTOW} zrzutów — usuń któryś, żeby dodać nowy.`
+        : "Wklej zrzut (Ctrl+V) albo przeciągnij plik";
+
+  const wybierzPlik = (
+    <label>
+      <span className="sr-only">Wybierz plik ze zrzutem</span>
+      <input
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/avif"
+        multiple
+        disabled={pending}
+        onChange={(e) => {
+          wyslij(Array.from(e.target.files ?? []));
+          e.target.value = "";
+        }}
+        className="block w-full text-sm text-muted file:mr-3 file:rounded-[var(--radius-control)] file:border file:border-line-strong file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-text hover:file:border-faint"
+      />
+    </label>
+  );
+
+  const wyborInterwalu = (
+    <Select
+      id="zrzut-interwal"
+      value={interwal}
+      onChange={(e) => setInterwal(e.target.value)}
+      className="max-w-40"
+    >
+      <option value="">— nie podano —</option>
+      {INTERWALY.map((i) => (
+        <option key={i} value={i}>
+          {i}
+        </option>
+      ))}
+    </Select>
+  );
+
+  if (kompakt) {
+    return (
+      <div className="space-y-3 p-4">
+        <ScreenshotGrid
+          shots={shots}
+          opis={opis}
+          onUsun={usun}
+          onZmienInterval={zmienInterval}
+          baza={BAZA_WYSOKOSCI_WIERSZA_DUZA}
+        />
+
+        {blad && <ErrorMessage>{blad}</ErrorMessage>}
+
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            wyslij(Array.from(e.dataTransfer.files));
+          }}
+          ref={strefa}
+          data-wklejanie="czekam"
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[var(--radius-control)] border border-line bg-surface-2 px-3 py-2"
+        >
+          <ClipboardPaste size={15} className="shrink-0 text-faint" aria-hidden />
+          <p className="text-xs text-muted" aria-live="polite">
+            {komunikat}
+          </p>
+          <span className="liczba text-xs text-faint">
+            {shots.length}/{MAX_ZRZUTOW}
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <Label htmlFor="zrzut-interwal">Interwał</Label>
+            {wyborInterwalu}
+            {!komplet && <div className="w-52">{wybierzPlik}</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3 p-4">
       {/* Zdjecia ida pierwsze - to one sa trescia wpisu. Strefa wgrywania
@@ -123,19 +213,7 @@ export function ScreenshotUploader({
 
       <div className="space-y-1.5">
         <Label htmlFor="zrzut-interwal">Interwał nowych zrzutów</Label>
-        <Select
-          id="zrzut-interwal"
-          value={interwal}
-          onChange={(e) => setInterwal(e.target.value)}
-          className="max-w-40"
-        >
-          <option value="">— nie podano —</option>
-          {INTERWALY.map((i) => (
-            <option key={i} value={i}>
-              {i}
-            </option>
-          ))}
-        </Select>
+        {wyborInterwalu}
       </div>
 
       <div
@@ -154,34 +232,13 @@ export function ScreenshotUploader({
           aria-hidden
         />
         <p className="text-sm text-muted" aria-live="polite">
-          {pending
-            ? "Wgrywam…"
-            : wgrane
-              ? "Wgrane."
-              : komplet
-                ? `Limit ${MAX_ZRZUTOW} zrzutów — usuń któryś, żeby dodać nowy.`
-                : "Wklej zrzut (Ctrl+V) albo przeciągnij plik"}
+          {komunikat}
         </p>
         <p className="mt-0.5 text-xs text-faint">
           PNG, JPEG, WEBP lub AVIF, do 10 MB. {shots.length}/{MAX_ZRZUTOW}
         </p>
 
-        {!komplet && (
-          <label className="mt-3 inline-block">
-            <span className="sr-only">Wybierz plik ze zrzutem</span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/avif"
-              multiple
-              disabled={pending}
-              onChange={(e) => {
-                wyslij(Array.from(e.target.files ?? []));
-                e.target.value = "";
-              }}
-              className="block w-full text-sm text-muted file:mr-3 file:rounded-[var(--radius-control)] file:border file:border-line-strong file:bg-surface file:px-3 file:py-1.5 file:text-sm file:text-text hover:file:border-faint"
-            />
-          </label>
-        )}
+        {!komplet && <div className="mt-3">{wybierzPlik}</div>}
       </div>
     </div>
   );

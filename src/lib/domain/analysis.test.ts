@@ -35,6 +35,8 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     marketSession: "rth",
     weekday: 1,
     entryHour: 10,
+    moodNote: null,
+    readiness: 7,
     executionRating: 4,
     ruleCount: 3,
     rulesMet: 3,

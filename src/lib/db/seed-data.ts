@@ -70,6 +70,15 @@ export const TAG_CATEGORIES = [
       "Przesłanki, które złożyły się na wejście. Interwał wybierasz osobno dla każdej — z niego wynika podział na HTF i LTF.",
     sortOrder: 10,
   },
+  // Styl wejscia (2026-08-29): jak uzytkownik nazywa TYP tego trade'a. Bez
+  // interwalu - opisuje cale zagranie, nie warstwe, wiec chipow interwalu nie
+  // dostaje (te ma wylacznie "confluence", patrz tag-picker.tsx).
+  {
+    key: "entry_style",
+    name: "Styl wejścia",
+    description: "Jak nazywasz ten typ trade'a. Bez interwału.",
+    sortOrder: 15,
+  },
   {
     key: "setup",
     name: "Setup",
@@ -97,40 +106,20 @@ export const TAGS: { category: string; name: string; color: string }[] = [
   { category: "mistake", name: "za duża pozycja", color: "#e5654f" },
 ];
 
-export const CUSTOM_FIELDS = [
-  {
-    key: "nastroj",
-    label: "Nastrój przed wejściem",
-    type: "select" as const,
-    options: [
-      { value: "spokój", color: "#46c08b" },
-      { value: "niecierpliwość", color: "#e8a44c" },
-      { value: "presja", color: "#e5654f" },
-      { value: "znudzenie", color: "#8fa3b8" },
-    ],
-    required: false,
-    inTable: true,
-    inStats: true,
-    sortOrder: 10,
-  },
-  {
-    key: "jakosc_wejscia",
-    label: "Jakość wejścia",
-    type: "rating" as const,
-    options: [],
-    required: false,
-    inTable: false,
-    inStats: true,
-    sortOrder: 20,
-  },
-  {
-    key: "plan_zrealizowany",
-    label: "Trade zgodny z planem",
-    type: "bool" as const,
-    options: [],
-    required: false,
-    inTable: true,
-    inStats: true,
-    sortOrder: 30,
-  },
-];
+// Zasiew pol wlasnych jest celowo pusty (2026-08-29). Dawne "Nastrój przed
+// wejściem" zastapil opis samopoczucia z suwakiem gotowosci - to teraz kolumny
+// `mood_note` i `readiness` na trade'cie, nie pole wlasne. "Jakość wejścia" i
+// "Trade zgodny z planem" uzytkownik odrzucil: dublowaly ocene wykonania i
+// checkliste, a wypelniane po fakcie mowily wiecej o wyniku niz o decyzji.
+// Wartosci historyczne zostaja w `trades.custom` - kasujemy definicje, nie dane
+// (drizzle/0012_gotowosc.sql).
+export const CUSTOM_FIELDS: {
+  key: string;
+  label: string;
+  type: "text" | "number" | "select" | "multiselect" | "bool" | "date" | "rating";
+  options: { value: string; color?: string }[];
+  required: boolean;
+  inTable: boolean;
+  inStats: boolean;
+  sortOrder: number;
+}[] = [];

@@ -690,3 +690,72 @@ JavaScriptu, da się wysłać linkiem i nie psuje powrotu z karty trade'a.
 jak wyrazić opcji „tylko bez zrzutu", a w galerii brak parametru znaczy
 „tylko ze zrzutem" — dlatego zdjęcie tego filtru wymaga jawnego
 `?zezrzutem=wszystko`, sama nieobecność parametru niczego by nie wyłączyła.
+
+---
+
+## ADR-020 — formularz trade'a schudł: cztery pola wychodzą, gotowość wchodzi (2026-08-29)
+
+**Kontekst.** Formularz urósł o pola, które nie wracały w żadnej decyzji:
+„Jakość wejścia", „Ocena wykonania", „Trade zgodny z planem" i „Strategia".
+Trzy pierwsze wypełniało się PO wyniku, więc mierzyły głównie nastrój po
+zamknięciu pozycji. Strategia dublowała to, co lepiej niesie tag.
+
+**Cztery pola znikają z interfejsu, dane zostają.** Kolumny
+`trades.execution_rating`, `trades.strategy_id` i `trades.rules_met` są
+nietknięte, a wartości pól własnych (`nastroj`, `jakosc_wejscia`,
+`plan_zrealizowany`) zostają w `trades.custom`. Migracja `0012_gotowosc.sql`
+kasuje wyłącznie DEFINICJE trzech pól z `custom_fields` — to wystarcza, żeby
+przestały się renderować i przestały być wymiarem statystyk, a jednocześnie
+nic z historii nie ginie. Karta starego trade'a nadal pokazuje jego strategię
+i ocenę, podpisaną jako archiwalną.
+
+**Zapis trade'a nie dotyka `strategy_id` ani `rules_met`.** Gdyby akcja
+wpisywała tam `null`, edycja notatki kasowałaby strategię starego wpisu —
+klucza po prostu nie ma w zapisywanym wierszu.
+
+**Strategia zostaje przy sesji backtestu**, gdzie ma pracę: porównanie
+„Backtest kontra dziennik" jest po niej. Trade'y strategii już nie dostają,
+więc panele, które ją grupowały (wymiar `strategy`, „Porównanie strategii",
+„Ten trade na tle strategii"), znikają — bez przypisań pokazywałyby jedną
+grupę „brak danych" i udawały, że coś mierzą. Sygnał dyscypliny
+`broken_rules` zasypia z tego samego powodu; definicja zostaje, bo stare
+trade'y wciąż go wyzwalają.
+
+**„Nastrój przed wejściem" → opis plus suwak gotowości.** Zamiast listy
+czterech nastrojów: pole tekstowe (samopoczucie własnymi słowami) i suwak
+1–10 obok niego. Dwie kontrolki, bo niosą dwie różne rzeczy — sam opis nie
+zrobiłby wymiaru w statystykach, a sama liczba nie powiedziałaby dlaczego.
+To prawdziwe kolumny (`mood_note`, `readiness`), nie pole własne: pola własne
+nie mają typu „tekst + suwak", a dorabianie go do `field_type` byłoby
+przerostem nad jedną potrzebą. Gotowość wchodzi do statystyk jako wymiar
+z czterema kubełkami (`readinessBucket`) i NIE jest `outcomeDerived` — to
+jedyna z usuwanych liczb, która powstaje przed wejściem, więc jedyna, którą
+wolno zestawiać z wynikiem.
+
+Zero na suwaku znaczy „nie oceniam": `<input type="range">` nie ma stanu
+pustego, a osobny checkbox obok byłby drugą kontrolką na jedną decyzję.
+Zamianę zera na `NULL` robi akcja zapisu, nie przeglądarka — CHECK
+`trades_readiness` jest siatką bezpieczeństwa, której użytkownik nie ma prawa
+zobaczyć jako surowego błędu Postgresa.
+
+**Nowa kategoria tagów „Styl wejścia"** (`entry_style`) przejmuje to, co
+robiła strategia: nazwanie typu zagrania. Bez interwału — chipy warstw ma
+wyłącznie `confluence`, bo tylko konfluencja opisuje warstwę, a nie cały trade.
+
+**Tagi w kolumnie, warstwy od LTF.** Chipy tagów idą jeden pod drugim: przy
+zawijanym rzędzie rozwinięty wiersz interwałów przestawiał sąsiadów. Kolejność
+`WARSTWY` to teraz `["LTF", "HTF"]` — praca zaczyna się od momentu wejścia,
+nie od obrazu z góry. Jedna stała, więc zmiana idzie naraz przez chipy, filtr
+„Warstwa TF" i sortowanie wymiaru.
+
+**Zrzuty na karcie trade'a: pasek zamiast ramki.** Ctrl+V słucha całego
+dokumentu, więc duża strefa wklejania nigdy nie była drogą, którą się tam
+chodzi — zabierała tylko miejsce zdjęciom, czyli treści tej strony. Wariant
+`kompakt` daje wąski pasek i większą bazę wiersza galerii
+(`BAZA_WYSOKOSCI_WIERSZA_DUZA`). Formularz trade'a i panel dnia zostają na
+wariancie pełnym, gdzie zrzut jest załącznikiem, nie treścią.
+
+**Kalendarz w sesji backtestu** to ten sam `MonthGrid` co na pulpicie, z
+`linkBase` na sesję — po jednej siatce na każdy miesiąc, w którym coś się
+wydarzyło. Kliknięcie dnia bez wpisu wypełnia formularz „dnia bez sygnału" tą
+datą; bez tego kliknięcie w kafel nie miałoby odpowiedzi.

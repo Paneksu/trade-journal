@@ -27,7 +27,6 @@ import {
   getFields,
   getInstruments,
   getProgi,
-  getStrategies,
   getTagCategories,
   getTags,
 } from "@/lib/queries/dictionaries";
@@ -48,12 +47,11 @@ export default async function StatsPage({
   const unit = params.jednostka === "r" ? "r" : "cash";
   const dimensionKey = typeof params.wymiar === "string" ? params.wymiar : "instrument";
 
-  const [accounts, instruments, strategies, tags, tagCategories, fields, trades] =
+  const [accounts, instruments, tags, tagCategories, fields, trades] =
     await Promise.all([
       getAccounts(),
       getInstruments(),
-      getStrategies(),
-      getTags(),
+        getTags(),
       getTagCategories(),
       getFields(),
       getTrades(filters),
@@ -120,7 +118,6 @@ export default async function StatsPage({
       <FilterBar
         accounts={accounts}
         instruments={instruments}
-        strategies={strategies}
         tags={tags}
         fields={fields}
         activeCount={activeFilterCount(filters)}

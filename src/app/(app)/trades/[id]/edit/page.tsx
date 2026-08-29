@@ -11,7 +11,6 @@ import {
   getFields,
   getInstruments,
   getProgi,
-  getStrategies,
   getTagCategories,
   getTags,
 } from "@/lib/queries/dictionaries";
@@ -28,11 +27,10 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
 
-  const [accounts, instruments, strategies, sessions, tags, categories, fields, shots, progi] =
+  const [accounts, instruments, sessions, tags, categories, fields, shots, progi] =
     await Promise.all([
       getAccounts(),
       getInstruments(),
-      getStrategies(),
       getBacktestSessions(),
       getTags(),
       getTagCategories(),
@@ -58,7 +56,6 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
       <TradeForm
         accounts={accounts}
         instruments={instruments}
-        strategies={strategies}
         sessions={sessions}
         tags={tags}
         tagCategories={categories}
@@ -69,7 +66,6 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           id: trade.id,
           accountId: trade.accountId,
           instrumentId: trade.instrumentId,
-          strategyId: trade.strategyId,
           backtestSessionId: trade.backtestSessionId,
           direction: trade.direction,
           status: trade.status,
@@ -85,11 +81,11 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           mae: trade.mae ? String(Number(trade.mae)) : "",
           mfe: trade.mfe ? String(Number(trade.mfe)) : "",
           note: trade.note ?? "",
-          executionRating: trade.executionRating,
+          moodNote: trade.moodNote,
+          readiness: trade.readiness,
           directionCorrect: trade.directionCorrect,
           badExecutionReason: trade.badExecutionReason,
           potentialR: trade.potentialR === null ? "" : String(trade.potentialR),
-          rulesMet: trade.rulesMetIds,
           tags: trade.tags.map((t) => ({ id: t.id, interval: t.interval })),
           custom: trade.custom,
           shots,

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
+import { MonthGrid } from "@/components/calendar/month-grid";
 import { EquityChart, RHistogram } from "@/components/charts/lazy";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { DeleteDayNoteButton, NoTradeDayForm } from "@/components/backtest/no-trade-days";
@@ -18,7 +19,7 @@ import { backtestSessions } from "@/lib/db/schema";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, reasonName } from "@/lib/domain/day-log";
 import { assessSample } from "@/lib/domain/sample-size";
-import { computeStats, equityCurve, rHistogram } from "@/lib/domain/stats";
+import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
 import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import {
@@ -27,7 +28,7 @@ import {
   screenshotCountsForDayNotes,
 } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
-import { longDate, money, num, percent, plural, pnlClass, rValue } from "@/lib/format";
+import { longDate, money, monthName, num, percent, plural, pnlClass, rValue } from "@/lib/format";
 
 export const metadata = { title: "Sesja backtestu — Dziennik tradingowy" };
 
@@ -88,6 +89,26 @@ export default async function BacktestSessionPage({
   const selectedNote = dzien ? dayNotes.find((n) => n.day === dzien) : undefined;
   const selectedShots = await getDayScreenshots(selectedNote?.id);
 
+  /* Siatki miesiecy: te, w ktorych cokolwiek sie wydarzylo - trade albo dzien
+     zapisany jako bez sygnalu. Sesja bez zadnego wpisu pokazuje pierwszy
+     miesiac zakresu danych, a gdy i jego brak - biezacy. */
+  const days = dailyPnl(closed);
+  const zTradow = days.map((d) => d.day.slice(0, 7));
+  const zNotatek = dayNotes.map((n) => n.day.slice(0, 7));
+  const zdarzenia = [...new Set([...zTradow, ...zNotatek])].sort();
+  const miesiace =
+    zdarzenia.length > 0
+      ? zdarzenia
+      : [(session.dataFrom ?? localDate(new Date(), settings.timezone)).slice(0, 7)];
+
+  /* Dzien bez transakcji rysujemy tylko tam, gdzie faktycznie nie bylo trade'a -
+     notatka moze wisiec takze na dniu, w ktorym cos jednak zagralo, a wtedy
+     wynik jest wazniejszy od adnotacji (tak samo jak na pulpicie). */
+  const zTradem = new Set(days.map((d) => d.day));
+  const pauzy = dayNotes
+    .filter((n) => n.noTrade && !zTradem.has(n.day))
+    .map((n) => ({ day: n.day, reason: reasonName(n.noTradeReason) }));
+
   const tradedDays = new Set(closed.map((t) => t.tradingDay).filter((d): d is string => Boolean(d)));
   const coverage =
     session.dataFrom && session.dataTo
@@ -141,6 +162,28 @@ export default async function BacktestSessionPage({
             <EquityChart points={curve} unit="cash" currency={currency} />
           </div>
         </Panel>
+      )}
+
+      {/* Kalendarz sesji (2026-08-29) - ten sam komponent i te same propsy co na
+          pulpicie. Sesja backtestu rozklada sie zwykle na kilka miesiecy, wiec
+          siatek jest tyle, ile miesiecy ma co pokazac; przy pustej sesji jeden
+          miesiac z poczatku zakresu danych, zeby panel nie byl pusta ramka.
+          `linkBase` prowadzi kafle do `?dzien=…`, czyli do wyboru dnia, ktory ta
+          strona juz obsluguje. */}
+      {miesiace.length > 0 && (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {miesiace.map((m) => (
+            <Panel key={m} title={monthName(m)} description="Wynik dzień po dniu">
+              <MonthGrid
+                month={m}
+                days={days}
+                noTradeDays={pauzy}
+                currency={currency}
+                linkBase={`/backtest/${session.id}`}
+              />
+            </Panel>
+          ))}
+        </div>
       )}
 
       <div className="grid gap-4 xl:grid-cols-2">
@@ -266,10 +309,21 @@ export default async function BacktestSessionPage({
             : "Uzupełnij zakres danych sesji, żeby policzyć pokrycie."
         }
       >
+        {/* Dzien klikniety w kalendarzu, ktory nie ma jeszcze wpisu, wchodzi do
+            formularza od razu - inaczej kliknieciu w kafel nic by nie
+            odpowiadalo. `key`, bo `defaultValue` klienta nie odswieza sie samo
+            po zmianie parametru adresu. */}
+        {dzien && !selectedNote && !zTradem.has(dzien) && (
+          <p className="border-b border-line px-4 pt-3 text-xs text-faint">
+            {longDate(dzien)} nie ma jeszcze wpisu — uzupełnij go poniżej.
+          </p>
+        )}
         <NoTradeDayForm
+          key={dzien ?? "nowy"}
           sessionId={session.id}
           dataFrom={session.dataFrom}
           dataTo={session.dataTo}
+          domyslnyDzien={selectedNote ? null : dzien}
         />
 
         {dayNotes.length === 0 ? (

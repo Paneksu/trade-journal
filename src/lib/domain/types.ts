@@ -23,6 +23,12 @@ export type TradeForAnalysis = TradeStat & {
   marketSession: MarketSession | null;
   weekday: number | null;
   entryHour: number | null;
+  /** Samopoczucie opisane slowami - zastapilo pole wlasne "nastroj" (2026-08-29). */
+  moodNote: string | null;
+  /** Gotowosc psychiczna na dany dzien, 1-10. NULL = nie oceniono. */
+  readiness: number | null;
+  /* Ponizsze cztery nie sa juz wypelniane przez formularz (2026-08-29), ale
+     historia je ma - dlatego zostaja w typie i w widoku trade'a. */
   executionRating: number | null;
   ruleCount: number;
   rulesMet: number;

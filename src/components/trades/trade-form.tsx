@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import type { Shot } from "@/components/screenshots/typy";
 import { FieldInputs } from "./field-inputs";
+import { Gotowosc } from "./gotowosc";
 import { NewTradeShots } from "./new-trade-shots";
 import { TagManager } from "./tag-manager";
 import { TagPicker } from "./tag-picker";
@@ -45,14 +46,12 @@ export type FormInstrument = {
   rthTo: string;
   exchangeTimezone: string;
 };
-export type FormStrategy = { id: number; name: string; rules: { id: string; text: string }[] };
 export type FormSession = { id: number; name: string };
 
 export type TradeFormValues = {
   id?: number;
   accountId?: number | null;
   instrumentId?: number | null;
-  strategyId?: number | null;
   backtestSessionId?: number | null;
   direction?: Direction;
   status?: string;
@@ -68,12 +67,14 @@ export type TradeFormValues = {
   mae?: string;
   mfe?: string;
   note?: string;
-  executionRating?: number | null;
+  /** Samopoczucie opisane slowami - zastapilo pole wlasne "nastroj" (2026-08-29). */
+  moodNote?: string | null;
+  /** Gotowosc psychiczna na dany dzien, 1-10. NULL = nie oceniono. */
+  readiness?: number | null;
   directionCorrect?: boolean | null;
   badExecutionReason?: string | null;
   /** Zasieg calego zagrania w R - nie mylic z `mfe` (ADR-018). */
   potentialR?: string | null;
-  rulesMet?: string[];
   tags?: { id: number; interval: string | null }[];
   custom?: Record<string, unknown>;
   shots?: Shot[];
@@ -110,7 +111,6 @@ function SubmitRow({ isEdit, onStay }: { isEdit: boolean; onStay: (v: boolean) =
 export function TradeForm({
   accounts,
   instruments,
-  strategies,
   sessions,
   tags,
   tagCategories,
@@ -121,7 +121,6 @@ export function TradeForm({
 }: {
   accounts: FormAccount[];
   instruments: FormInstrument[];
-  strategies: FormStrategy[];
   sessions: FormSession[];
   tags: TagWithCategory[];
   tagCategories: { id: number; name: string }[];
@@ -138,7 +137,6 @@ export function TradeForm({
   const [instrumentId, setInstrumentId] = useState(
     values.instrumentId ?? instruments[0]?.id ?? 0,
   );
-  const [strategyId, setStrategyId] = useState(values.strategyId ?? 0);
   const [direction, setDirection] = useState<Direction>(values.direction ?? "long");
 
   const [entryPrice, setEntryPrice] = useState(values.entryPrice ?? "");
@@ -154,7 +152,6 @@ export function TradeForm({
 
   const account = accounts.find((k) => k.id === accountId) ?? accounts[0];
   const instrument = instruments.find((i) => i.id === instrumentId) ?? instruments[0];
-  const strategy = strategies.find((s) => s.id === strategyId);
   const currency = account?.currency ?? "USD";
 
   /* Czyta liczbe dokladnie tak jak `number` w akcji zapisu (actions/trades.ts):
@@ -533,64 +530,28 @@ export function TradeForm({
 
           <Panel title="Kontekst">
             <div className="space-y-4 p-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="strategyId">Strategia</Label>
+              {/* Strategia i checklista strategii zniknely stad 2026-08-29 na
+                  prosbe uzytkownika - typ zagrania opisuje teraz kategoria
+                  tagow "Styl wejścia". Kolumny `strategy_id` i `rules_met`
+                  zostaly w bazie, zeby historia sie nie zgubila; strategie
+                  nadal opisuja sesje backtestu. */}
+              {!backtestSessionId && sessions.length > 0 && (
+                <div className="space-y-1.5 sm:max-w-sm">
+                  <Label htmlFor="backtestSessionId" hint="Zostaw puste dla realnego trade'a">
+                    Sesja backtestu
+                  </Label>
                   <Select
-                    id="strategyId"
-                    name="strategyId"
-                    value={strategyId}
-                    onChange={(e) => setStrategyId(Number(e.target.value))}
+                    id="backtestSessionId"
+                    name="backtestSessionId"
+                    defaultValue={values.backtestSessionId ?? 0}
                   >
-                    <option value={0}>— bez strategii —</option>
-                    {strategies.map((s) => (
+                    <option value={0}>— dziennik realny —</option>
+                    {sessions.map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                       </option>
                     ))}
                   </Select>
-                </div>
-
-                {!backtestSessionId && sessions.length > 0 && (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="backtestSessionId" hint="Zostaw puste dla realnego trade'a">
-                      Sesja backtestu
-                    </Label>
-                    <Select
-                      id="backtestSessionId"
-                      name="backtestSessionId"
-                      defaultValue={values.backtestSessionId ?? 0}
-                    >
-                      <option value={0}>— dziennik realny —</option>
-                      {sessions.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              {strategy && strategy.rules.length > 0 && (
-                <div>
-                  <Label>Checklista strategii</Label>
-                  <ul className="mt-1.5 space-y-1.5">
-                    {strategy.rules.map((r) => (
-                      <li key={r.id}>
-                        <label className="flex cursor-pointer items-start gap-2 text-sm text-muted hover:text-text">
-                          <input
-                            type="checkbox"
-                            name="rule"
-                            value={r.id}
-                            defaultChecked={values.rulesMet?.includes(r.id)}
-                            className="mt-0.5 h-4 w-4 accent-[var(--color-accent)]"
-                          />
-                          {r.text}
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
                 </div>
               )}
 
@@ -608,6 +569,8 @@ export function TradeForm({
                   <TagManager tags={tags} categories={tagCategories} />
                 </div>
               </div>
+
+              <Gotowosc moodNote={values.moodNote} readiness={values.readiness} />
 
               <FieldInputs
                 fields={fields}
@@ -631,22 +594,6 @@ export function TradeForm({
                   defaultValue={values.note ?? ""}
                   placeholder="Co widziałeś, dlaczego wszedłeś, co poszło inaczej niż w planie."
                 />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="executionRating">Ocena wykonania</Label>
-                <Select
-                  id="executionRating"
-                  name="executionRating"
-                  defaultValue={values.executionRating ?? ""}
-                >
-                  <option value="">— nie oceniam —</option>
-                  {[5, 4, 3, 2, 1].map((n) => (
-                    <option key={n} value={n}>
-                      {n}/5
-                    </option>
-                  ))}
-                </Select>
               </div>
             </div>
           </Panel>

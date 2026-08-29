@@ -8,11 +8,9 @@ import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
-import { computeStats } from "@/lib/domain/stats";
 import { formatValue } from "@/lib/fields/fields";
-import { getFields, getProgi, getStrategies } from "@/lib/queries/dictionaries";
-import { EMPTY_FILTERS } from "@/lib/queries/filters";
-import { closedOnly, getScreenshots, getTrade, getTrades } from "@/lib/queries/trades";
+import { getFields } from "@/lib/queries/dictionaries";
+import { getScreenshots, getTrade } from "@/lib/queries/trades";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import {
   dateTime,
@@ -21,7 +19,6 @@ import {
   longDate,
   money,
   num,
-  percent,
   pnlClass,
   price,
   rValue,
@@ -39,23 +36,13 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
 
-  const [shots, fields, strategies] = await Promise.all([
-    getScreenshots(tradeId),
-    getFields(),
-    getStrategies(),
-  ]);
+  const [shots, fields] = await Promise.all([getScreenshots(tradeId), getFields()]);
 
-  const strategy = strategies.find((s) => s.id === trade.strategyId);
+  /* Pola wlasne pokazujemy tylko te, ktore ten trade ma wypelnione. Definicje
+     "nastroj", "jakosc_wejscia" i "plan_zrealizowany" zniknely 2026-08-29,
+     wiec stare wartosci zostaly w JSONB, ale nie maja juz czego opisac -
+     `getFields()` ich nie zwraca i tu sie nie pojawia. */
   const filled = fields.filter((f) => trade.custom?.[f.key] !== undefined);
-
-  // Porownanie z reszta trade'ow tego samego setupu - liczba w kontekscie.
-  const sameStrategy = trade.strategyId
-    ? closedOnly(
-        await getTrades({ ...EMPTY_FILTERS, strategies: [trade.strategyId] }),
-      )
-    : [];
-  const progi = await getProgi();
-  const strategyStats = computeStats(sameStrategy, progi);
 
   return (
     <div className="space-y-4">
@@ -125,7 +112,11 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
         title="Zrzuty wykresu"
         description={`${shots.length} z ${MAX_ZRZUTOW}. Kliknij, żeby powiększyć.`}
       >
+        {/* Kompaktowo (2026-08-29): na karcie trade'a tresc niosa zdjecia, nie
+            ramka do wklejania. Ctrl+V dziala na calym dokumencie, wiec duza
+            strefa i tak nie byla droga, ktora ktokolwiek chodzil. */}
         <ScreenshotUploader
+          kompakt
           cel={{ typ: "trade", tradeId: trade.id }}
           shots={shots}
           opis={`${trade.instrumentSymbol}, ${trade.tradingDay}`}
@@ -197,10 +188,15 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               <p className="etykieta">Konto</p>
               <p className="mt-0.5 text-sm text-text">{trade.accountName}</p>
             </div>
-            <div>
-              <p className="etykieta">Strategia</p>
-              <p className="mt-0.5 text-sm text-text">{trade.strategyName ?? "—"}</p>
-            </div>
+            {/* Strategia zniknela z formularza 2026-08-29 (typ zagrania opisuje
+                teraz tag "Styl wejścia"), ale stare trade'y ja maja - wiec
+                pokazujemy ja wtedy i tylko wtedy. */}
+            {trade.strategyName && (
+              <div>
+                <p className="etykieta">Strategia</p>
+                <p className="mt-0.5 text-sm text-text">{trade.strategyName}</p>
+              </div>
+            )}
             {trade.tags.length > 0 && (
               <div>
                 <p className="etykieta mb-1.5">Tagi</p>
@@ -233,71 +229,37 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               </div>
             )}
             <div>
-              <p className="etykieta">Ocena wykonania</p>
+              <p className="etykieta">Gotowość</p>
               <p className="mt-0.5 text-sm text-text">
-                {trade.executionRating === null ? "—" : `${trade.executionRating}/5`}
+                {trade.readiness === null ? "nie oceniono" : `${trade.readiness}/10`}
               </p>
+              {trade.moodNote && (
+                <p className="mt-1 text-sm whitespace-pre-wrap text-muted">{trade.moodNote}</p>
+              )}
             </div>
+            {trade.executionRating !== null && (
+              <div>
+                <p className="etykieta">Ocena wykonania (archiwalna)</p>
+                <p className="mt-0.5 text-sm text-text">{trade.executionRating}/5</p>
+              </div>
+            )}
           </div>
         </Panel>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Panel title="Notatka">
-          {trade.note ? (
-            <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed text-text">
-              {trade.note}
-            </p>
-          ) : (
-            <p className="px-4 py-6 text-sm text-faint">Bez notatki.</p>
-          )}
-        </Panel>
+      <Panel title="Notatka">
+        {trade.note ? (
+          <p className="whitespace-pre-wrap px-4 py-3 text-sm leading-relaxed text-text">
+            {trade.note}
+          </p>
+        ) : (
+          <p className="px-4 py-6 text-sm text-faint">Bez notatki.</p>
+        )}
+      </Panel>
 
-        <div className="space-y-4">
-          {strategy && strategy.rules.length > 0 && (
-            <Panel
-              title="Checklista strategii"
-              description={`${trade.rulesMet} z ${trade.ruleCount} punktów odhaczonych`}
-            >
-              <ul className="divide-y divide-line">
-                {strategy.rules.map((r) => {
-                  const done = trade.rulesMetIds.includes(r.id);
-                  return (
-                    <li
-                      key={r.id}
-                      className={cx(
-                        "flex items-start gap-2 px-4 py-2 text-sm",
-                        done ? "text-text" : "text-loss",
-                      )}
-                    >
-                      <span aria-hidden>{done ? "✓" : "✕"}</span>
-                      {r.text}
-                    </li>
-                  );
-                })}
-              </ul>
-            </Panel>
-          )}
-
-          {trade.strategyId && strategyStats.count > 1 && (
-            <Panel
-              title="Ten trade na tle strategii"
-              description={`${strategyStats.count} zamkniętych trade'ów strategii ${trade.strategyName}`}
-            >
-              <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
-                <DataPoint label="Średnie R strategii">{rValue(strategyStats.expectancyR)}</DataPoint>
-                <DataPoint label="Ten trade" valueClassName={pnlClass(trade.rMultiple)}>
-                  {rValue(trade.rMultiple)}
-                </DataPoint>
-                <DataPoint label="Skuteczność">{percent(strategyStats.winRate)}</DataPoint>
-                <DataPoint label="Profit factor">
-                  {strategyStats.profitFactor === null ? "—" : num(strategyStats.profitFactor, 2)}
-                </DataPoint>
-              </div>
-            </Panel>
-          )}
-        </div>
-      </div>
+      {/* Panele "Checklista strategii" i "Ten trade na tle strategii" zniknely
+          stad 2026-08-29 razem ze strategia w formularzu - bez przypisania
+          strategii nie ma z czym porownywac ani czego odhaczac. */}
     </div>
   );
 }

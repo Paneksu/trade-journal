@@ -44,6 +44,18 @@ function integer(data: FormData, key: string): number | null {
 }
 
 /**
+ * Gotowosc psychiczna, 1-10. Zero na suwaku znaczy "nie oceniam" (patrz
+ * components/trades/gotowosc.tsx), a wszystko poza skala jest niczym: to, co
+ * przyszlo z formularza, nie moze dotrzec do CHECK-a `trades_readiness` -
+ * uzytkownik zobaczylby wtedy surowy blad Postgresa zamiast zapisu.
+ */
+function gotowosc(data: FormData): number | null {
+  const n = integer(data, "readiness");
+  if (n === null || n < 1 || n > 10) return null;
+  return n;
+}
+
+/**
  * Identyfikator powiazania albo nic. Puste opcje list wyboru ("bez strategii",
  * "dziennik realny") maja wartosc 0 - bez tej zamiany baza dostaje zero
  * i odrzuca zapis na kluczu obcym.
@@ -61,7 +73,6 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const accountId = integer(data, "accountId");
   const instrumentId = integer(data, "instrumentId");
   const backtestSessionId = optionalId(data, "backtestSessionId");
-  const strategyId = optionalId(data, "strategyId");
   const directionRaw = text(data, "direction");
   const statusRaw = text(data, "status") ?? "closed";
 
@@ -187,7 +198,10 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const row = {
     accountId,
     instrumentId,
-    strategyId: strategyId ?? null,
+    /* Strategia i checklista zniknely z formularza 2026-08-29. Kolumny zostaja
+       w bazie razem z historia, ale nowe zapisy ich nie dotykaja - w edycji
+       starego trade'a przypisanie ZOSTAJE takie, jakie bylo, bo klucza tu nie
+       ma. Gdyby wpisac tu `null`, edycja notatki kasowalaby strategie. */
     backtestSessionId: backtestSessionId ?? null,
     direction,
     status,
@@ -201,11 +215,11 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     mae: mae === null ? null : String(mae),
     mfe: mfe === null ? null : String(mfe),
     note: text(data, "note"),
-    executionRating: integer(data, "executionRating"),
+    moodNote: text(data, "moodNote"),
+    readiness: gotowosc(data),
     directionCorrect: kierunek.directionCorrect,
     badExecutionReason: kierunek.badExecutionReason,
     potentialR: kierunek.potentialR === null ? null : kierunek.potentialR.toFixed(4),
-    rulesMet: data.getAll("rule").map(String),
     custom: values,
     ticks: result.ticks,
     riskTicks: result.riskTicks,

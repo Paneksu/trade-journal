@@ -31,6 +31,14 @@ export const PROPORCJA_DOMYSLNA = 16 / 9;
 export const BAZA_WYSOKOSCI_WIERSZA = 9;
 
 /**
+ * Wysokosc wiersza tam, gdzie zdjecia SA trescia strony, a nie zalacznikiem:
+ * karta pojedynczego trade'a (2026-08-29). Wieksza baza to mniej kafli w
+ * wierszu, wiec kazdy dostaje wiecej pikseli - na zrzucie wykresu decyduje to
+ * o tym, czy widac ceny na osi, czy tylko ksztalt swiec.
+ */
+export const BAZA_WYSOKOSCI_WIERSZA_DUZA = 16;
+
+/**
  * Proporcja (szerokosc/wysokosc) pojedynczego zdjecia. Brak wymiarow albo
  * wysokosc zero (dzielenie przez zero) daje wartosc domyslna zamiast NaN czy
  * Infinity, ktore rozsypalyby dalsze liczenie flex-basis.

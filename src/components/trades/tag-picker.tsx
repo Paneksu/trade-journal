@@ -80,7 +80,13 @@ export function TagPicker({
       {categories.map((category) => (
         <div key={category}>
           <p className="etykieta mb-1.5">{category}</p>
-          <div className="flex flex-wrap gap-1.5">
+          {/* Kazdy tag w osobnej linii (decyzja uzytkownika, 2026-08-29). Przy
+              zawijanym rzedzie chipy konfluencji rozjezdzaly sie z wierszem
+              interwalow, ktory rozwija sie obok zaznaczonego tagu - w kolumnie
+              kazde zaznaczenie rosnie w dol, a nie przestawia sasiadow.
+              `items-start`, bo chip ma miec szerokosc swojej nazwy, nie calego
+              kontenera. */}
+          <div className="flex flex-col items-start gap-1.5">
             {active
               .filter((t) => t.category === category)
               .map((t) => (

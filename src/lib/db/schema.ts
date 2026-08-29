@@ -229,6 +229,20 @@ export const trades = pgTable(
     mfe: numeric({ precision: 18, scale: 8 }),
 
     note: text(),
+
+    /* --- Samopoczucie i gotowosc (2026-08-29) ------------------------------
+       Zastapily pole wlasne "nastroj" (lista czterech nastrojow do wyboru).
+       Powod od uzytkownika: nastroj nie miesci sie w liscie, a to, co warto
+       porownywac z wynikiem, to POZIOM gotowosci na dany dzien. Stad opis
+       wlasnymi slowami plus jedna liczba, ktora da sie grupowac. */
+    moodNote: text(),
+    /** Gotowosc psychiczna na dany dzien, 1-10. NULL = nie oceniono. */
+    readiness: smallint(),
+
+    /* Ponizsze trzy nie sa juz wypelniane przez formularz (2026-08-29):
+       "Ocena wykonania", "Strategia" i checklista zniknely z trade'a. Kolumny
+       ZOSTAJA, bo historia ma sie nie zgubic - kasowanie danych za zmiane w
+       interfejsie bylo by nieodwracalne. Nowe trade'y maja tu NULL i pustki. */
     executionRating: smallint(),
     // Odhaczone punkty checklisty strategii: ["id-zasady", ...]
     rulesMet: jsonb().$type<string[]>().notNull().default([]),
@@ -279,6 +293,12 @@ export const trades = pgTable(
     check(
       "trades_kierunek",
       sql`(${t.badExecutionReason} is null and ${t.potentialR} is null) or ${t.directionCorrect} is true`,
+    ),
+    /* Suwak w formularzu ma min/max, ale walidacja w przegladarce nie jest
+       zabezpieczeniem - prog musi byc powtorzony tutaj (2026-08-29). */
+    check(
+      "trades_readiness",
+      sql`${t.readiness} is null or (${t.readiness} between 1 and 10)`,
     ),
     index("trades_direction_correct_idx")
       .on(t.directionCorrect)

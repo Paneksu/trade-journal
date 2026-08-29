@@ -58,6 +58,25 @@ export function sizeBucket(contracts: number): string {
   return "10+ kontraktów";
 }
 
+/**
+ * Kubelki gotowosci. Skala 1-10 rozbita na dziesiec grup dalaby probki po
+ * jednym trade'cie i nic by nie przeszlo progu `minSample` - cztery przedzialy
+ * to kompromis miedzy rozdzielczoscia a tym, zeby liczby cokolwiek znaczyly.
+ */
+export const GOTOWOSC_KUBELKI = [
+  "1-3 słaba",
+  "4-6 przeciętna",
+  "7-8 dobra",
+  "9-10 szczyt",
+] as const;
+
+export function readinessBucket(poziom: number): string {
+  if (poziom <= 3) return GOTOWOSC_KUBELKI[0];
+  if (poziom <= 6) return GOTOWOSC_KUBELKI[1];
+  if (poziom <= 8) return GOTOWOSC_KUBELKI[2];
+  return GOTOWOSC_KUBELKI[3];
+}
+
 export function rBucket(r: number | null): string {
   if (r === null) return "bez R";
   if (r <= -2) return "poniżej -2R";
@@ -79,7 +98,6 @@ function asText(w: unknown): string[] {
 const BUILTIN: Record<string, Omit<Dimension, "key">> = {
   instrument: { label: "Instrument", values: (t) => [t.instrumentSymbol] },
   account: { label: "Konto", values: (t) => [t.accountName] },
-  strategy: { label: "Strategia", values: (t) => asText(t.strategyName) },
   direction: { label: "Kierunek", values: (t) => [t.direction] },
   session: {
     label: "Sesja rynkowa",
@@ -96,16 +114,16 @@ const BUILTIN: Record<string, Omit<Dimension, "key">> = {
   duration: { label: "Czas trzymania", values: (t) => [durationBucket(t.durationS)] },
   size: { label: "Wielkość pozycji", values: (t) => [sizeBucket(t.contracts)] },
   month: { label: "Miesiąc", values: (t) => [t.tradingDay.slice(0, 7)] },
-  rating: {
-    label: "Ocena wykonania",
-    values: (t) => (t.executionRating === null ? [] : [`${t.executionRating}/5`]),
-  },
-  rules: {
-    label: "Zgodność z zasadami",
-    values: (t) => {
-      if (!t.hasRules) return [];
-      return [t.rulesMet >= t.ruleCount ? "wszystkie zasady" : "zasady złamane"];
-    },
+  /* Wymiary "Strategia", "Ocena wykonania" i "Zgodność z zasadami" zniknely
+     2026-08-29 razem z polami w formularzu. Kolumny w bazie zostaly, ale nowe
+     trade'y ich nie wypelniaja, wiec kazdy z tych wymiarow zsuwalby cala
+     historie do jednej grupy "brak danych" i udawal, ze cos mierzy.
+     W ich miejsce wchodzi gotowosc - jedyna z tych rzeczy, ktora uzytkownik
+     wpisuje PRZED wejsciem, wiec jedyna, ktora wolno zestawiac z wynikiem. */
+  readiness: {
+    label: "Gotowość",
+    values: (t) => (t.readiness === null ? [] : [readinessBucket(t.readiness)]),
+    sortValues: (a, b) => indeksGotowosci(a) - indeksGotowosci(b),
   },
   stop: { label: "Stop loss", values: (t) => [t.hasStop ? "ze stopem" : "bez stopa"] },
   rrange: { label: "Przedział R", values: (t) => [rBucket(t.rMultiple)], outcomeDerived: true },
@@ -171,6 +189,12 @@ function konfluencjeWarstwy(t: TradeForAnalysis, warstwa: Warstwa): string[] {
         .map((tag) => tag.name),
     ),
   ];
+}
+
+/** Pozycja kubelka gotowosci; nieznana wartosc leci na koniec. */
+function indeksGotowosci(w: string): number {
+  const i = (GOTOWOSC_KUBELKI as readonly string[]).indexOf(w);
+  return i === -1 ? Number.POSITIVE_INFINITY : i;
 }
 
 function indeksWarstwy(w: string): number {
@@ -282,7 +306,6 @@ export function groupBy(
 }
 
 function defaultEmptyLabel(dim: Dimension): string {
-  if (dim.key === "strategy") return "bez strategii";
   if (dim.key.startsWith("tag:")) return "bez tagu";
   if (dim.key.startsWith("field:")) return "nie wypełnione";
   return "brak danych";

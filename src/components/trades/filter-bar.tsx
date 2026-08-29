@@ -10,7 +10,7 @@ import { INTERWALY, WARSTWA_NAZWY, WARSTWY } from "@/lib/domain/interwaly";
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import type { FieldDef } from "@/lib/fields/fields";
 import { GROUPABLE_TYPES } from "@/lib/fields/fields";
-import type { Account, Instrument, Strategy } from "@/lib/db/schema";
+import type { Account, Instrument } from "@/lib/db/schema";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
 /**
@@ -20,7 +20,6 @@ import type { TagWithCategory } from "@/lib/queries/dictionaries";
 export function FilterBar({
   accounts,
   instruments,
-  strategies,
   tags,
   fields,
   activeCount,
@@ -28,7 +27,6 @@ export function FilterBar({
 }: {
   accounts: Account[];
   instruments: Instrument[];
-  strategies: Strategy[];
   tags: TagWithCategory[];
   fields: FieldDef[];
   activeCount: number;
@@ -136,17 +134,9 @@ export function FilterBar({
             </Select>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="strategia">Strategia</Label>
-            <Select id="strategia" name="strategia" defaultValue={value("strategia")}>
-              <option value="">wszystkie</option>
-              {strategies.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </div>
+          {/* Filtr strategii zniknal 2026-08-29 razem z polem w formularzu.
+              Parametr "strategia" zostaje obslugiwany w queries/filters.ts,
+              zeby stare zapisane widoki i linki nie przestaly dzialac. */}
 
           <div className="space-y-1.5">
             <Label htmlFor="kierunek">Kierunek</Label>

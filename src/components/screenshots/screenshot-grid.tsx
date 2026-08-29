@@ -43,6 +43,7 @@ export function ScreenshotGrid({
   onUsun,
   onZmienInterval,
   className,
+  baza = BAZA_WYSOKOSCI_WIERSZA,
 }: {
   shots: Shot[];
   opis: string;
@@ -51,6 +52,8 @@ export function ScreenshotGrid({
   /** Podane tam, gdzie wolno tez poprawic interwal - te same miejsca co `onUsun`. */
   onZmienInterval?: (id: number, interval: string) => Promise<void> | void;
   className?: string;
+  /** Bazowa wysokosc wiersza w rem - patrz `lib/domain/galeria.ts`. */
+  baza?: number;
 }) {
   const [podglad, setPodglad] = useState<number | null>(null);
   if (shots.length === 0) return null;
@@ -66,7 +69,7 @@ export function ScreenshotGrid({
               key={s.id}
               style={{
                 flexGrow: wzrostKafla(i, proporcje),
-                flexBasis: `${bazaKafla(i, proporcje, BAZA_WYSOKOSCI_WIERSZA)}rem`,
+                flexBasis: `${bazaKafla(i, proporcje, baza)}rem`,
                 aspectRatio: proporcje[i],
               }}
               className="relative min-w-0"
@@ -102,7 +105,7 @@ export function ScreenshotGrid({
               {onUsun && <UsunZrzut id={s.id} onUsun={onUsun} />}
             </figure>
           ))}
-          <Wypelniacze />
+          <Wypelniacze baza={baza} />
         </div>
       </div>
 
@@ -122,12 +125,12 @@ export function ScreenshotGrid({
  * `LICZBA_WYPELNIACZY` wyzej. Wysokosc zero i `aria-hidden`, wiec nie zajmuja
  * miejsca w pionie ani nie wchodza w droge czytnikowi ekranu.
  */
-function Wypelniacze() {
+function Wypelniacze({ baza }: { baza: number }) {
   return Array.from({ length: LICZBA_WYPELNIACZY }, (_, i) => (
     <span
       key={i}
       aria-hidden
-      style={{ flexGrow: 999, flexBasis: `${BAZA_WYSOKOSCI_WIERSZA}rem`, height: 0 }}
+      style={{ flexGrow: 999, flexBasis: `${baza}rem`, height: 0 }}
     />
   ));
 }

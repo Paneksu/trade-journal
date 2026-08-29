@@ -49,7 +49,13 @@ export const PROG_HTF: Interwal = "1h";
 
 export type Warstwa = "HTF" | "LTF";
 
-export const WARSTWY = ["HTF", "LTF"] as const;
+/**
+ * Kolejnosc jest kolejnoscia wyswietlania wszedzie, gdzie warstwy sa listowane:
+ * chipy interwalow przy tagu, filtr "Warstwa TF", sortowanie wymiaru w
+ * statystykach. LTF idzie pierwsze, bo od niego zaczyna sie praca - najpierw
+ * moment wejscia, dopiero potem obraz z gory (decyzja uzytkownika, 2026-08-29).
+ */
+export const WARSTWY = ["LTF", "HTF"] as const;
 
 export const WARSTWA_NAZWY: Record<Warstwa, string> = {
   HTF: "HTF (1h i wyżej)",

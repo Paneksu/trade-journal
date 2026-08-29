@@ -18,10 +18,15 @@ export function NoTradeDayForm({
   sessionId,
   dataFrom,
   dataTo,
+  domyslnyDzien,
 }: {
   sessionId: number;
   dataFrom: string | null;
   dataTo: string | null;
+  /** Dzien klikniety w kalendarzu sesji - formularz otwiera sie juz na nim.
+      Wymaga `key` przy uzyciu, inaczej `defaultValue` nie odswiezy sie po
+      przejsciu na inny dzien (2026-08-29). */
+  domyslnyDzien?: string | null;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveBacktestDayNote, {});
 
@@ -38,6 +43,7 @@ export function NoTradeDayForm({
           name="day"
           type="date"
           required
+          defaultValue={domyslnyDzien ?? undefined}
           min={dataFrom ?? undefined}
           max={dataTo ?? undefined}
           className="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text transition-colors duration-150 hover:border-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none"
