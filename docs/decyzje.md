@@ -900,3 +900,38 @@ a nie w `parseFilters` — dokładnie tym samym chwytem, co nadpisanie
 realnego. W parze z tym idzie nowy, trójstanowy wymiar `?pominiete=`:
 `status=missed` wyrażał „tylko nie wzięte", ale nie było jak powiedzieć „bez
 nie wziętych".
+
+Migracja jest nieodwracalna: Postgres nie umie usunąć wartości z enuma, więc
+odwrót wymaga przepisania typu, nie cofnięcia pliku. Cofnięcie samej aplikacji
+na starszy obraz jest bezpieczne, ale degraduje — stary kod nie zna klucza
+`missed`, więc etykieta statusu renderuje się pusta, a `countTradesOnDay` bez
+wyjątku znów policzy pominięte setupy jako trade'y dnia i zablokuje znacznik
+„dzień bez transakcji". Statystyki zostają czyste, bo stare `closedOnly` też
+pyta dosłownie o `"closed"`.
+
+**Dryf zakresu ponad plan (dopisane po recenzji 2026-08-30).** Dwie zmiany
+wyszły poza to, co ta ADR pierwotnie planowała, i obie zasługują na osobny
+zapis, żeby nie wróciły jako „błąd" w kolejnym audycie.
+
+Pierwsza to token `--color-flat` w `globals.css`. Kafel BE w galerii miał być
+odróżnialny od pominiętego trade'a — ale przy tej okazji odkryto, że
+`--color-flat` był identyczny z `--color-faint` (#838f9d), więc wynik BE był
+wizualnie nierozróżnialny od tekstu wyciszonego (kontrast 1,00, zmierzone na
+pikselach). Poprawka zmieniła sam token na #bfc7d0, nie tylko klasę w galerii
+— dotyczy to więc **każdego** wyświetlenia wyniku BE w całej aplikacji
+(tabela, karta trade'a, lista, kalendarz), nie tylko przebudowanej galerii.
+Świadome, pożądane rozszerzenie zakresu, ale nie było go w pierwotnym planie
+tej ADR.
+
+Druga to zachowanie przy przełączeniu statusu `closed → missed`.
+`normalizujKierunek` (patrz `lib/actions/trades.ts`, parametr `oceniane`)
+liczy trafność kierunku tylko dla statusu `"closed"` — zapis z jakimkolwiek
+innym statusem, `"missed"` włącznie, dostaje `kontekst.oceniane === false`
+i wraca z pustym wynikiem: `directionCorrect`, `badExecutionReason` i
+`potentialR` idą na `NULL`. Efekt: użytkownik, który miał zamknięty trade
+z ocenionym kierunkiem i przełączy go na „nie wzięty" (np. korygując
+pomyłkę przy wpisywaniu), **traci tę ocenę bezpowrotnie** — formularz nie ma
+skąd jej odtworzyć, trzeba wpisać ją ponownie ręcznie. To świadome
+zachowanie (kierunek dobry/zły zakłada egzekucję, a „missed" jej nie ma —
+patrz akapit o bloku kierunku wyżej), nie błąd, ale nieodwracalność bez
+ostrzeżenia w UI jest warta świadomości przy kolejnym audycie interfejsu.

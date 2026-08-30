@@ -14,7 +14,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
-import { czyPominiety, type StatusTrade } from "@/lib/domain/status";
+import { czyPominiety } from "@/lib/domain/status";
 import { statystykiPominietych } from "@/lib/domain/pominiete";
 import {
   builtinDimensions,
@@ -63,7 +63,7 @@ export default async function StatsPage({
   const progi = await getProgi();
   const closed = closedOnly(trades);
   const stats = computeStats(closed, progi);
-  const pominiete = trades.filter((t) => czyPominiety(t.status as StatusTrade));
+  const pominiete = trades.filter((t) => czyPominiety(t.status));
   const pominieteStats = statystykiPominietych(pominiete, progi);
   const account = accounts.find((k) => k.id === filters.accounts[0]) ?? accounts[0];
   const currency = account?.currency ?? settings.baseCurrency;

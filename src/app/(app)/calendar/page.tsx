@@ -12,7 +12,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/lib/domain/day-log";
 import { computeStats, dailyPnl } from "@/lib/domain/stats";
-import { czyPominiety, type StatusTrade } from "@/lib/domain/status";
+import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
@@ -55,7 +55,7 @@ export default async function CalendarPage({
      wiec klient nie moze go liczyc tez. Bez tego wyszarzalby checkbox, ktorego
      serwer by nie zablokowal - rozjazd bez komunikatu bledu. `dayTrades` (z
      pominietymi) zostaje bez zmian dla TradeList - lista dnia ma je pokazywac. */
-  const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status as StatusTrade));
+  const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status));
 
   const note = day ? notes.find((n) => n.day === day) : undefined;
   const dayShots = day ? await getDayScreenshots(note?.id) : [];
@@ -69,19 +69,25 @@ export default async function CalendarPage({
   const noTradeDays = pauses.map((n) => ({ day: n.day, reason: reasonName(n.noTradeReason) }));
   const powody = noTradeBreakdown(pauses);
 
-  // Setup byl, ale nie zostal wzięty - te dni maja pozostac "pauza" w gridzie,
+  // Setup byl, ale nie zostal wziety - te dni maja pozostac "pauza" w gridzie,
   // ale zasluguja na dyskretny znacznik (patrz missedDays w MonthGrid).
   const missedDays = [
     ...new Set(
-      monthTrades.filter((t) => czyPominiety(t.status as StatusTrade)).map((t) => t.tradingDay),
+      monthTrades.filter((t) => czyPominiety(t.status)).map((t) => t.tradingDay),
     ),
   ];
+
+  // Zapisany nie wziety setup JEST wpisem do dziennika - dzien z samym "missed"
+  // (bez zamknietego trade'a i bez notatki pauzy) ma sie liczyc jako pokryty,
+  // a nie karac uzytkownika za uczciwe przyznanie sie do odpuszczonego setupu
+  // (recenzja 2026-08-30, znalezisko 6).
+  const coveredDays = new Set([...traded, ...missedDays]);
 
   const coverage = journalCoverage({
     from,
     to,
     today,
-    tradedDays: traded,
+    tradedDays: coveredDays,
     noTradeDays: pauses.map((n) => n.day),
   });
 

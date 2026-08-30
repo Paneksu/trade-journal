@@ -16,11 +16,22 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, Columns3, Image as ImageIcon, Trash
 import { Badge, Button, EmptyState } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { deleteMany, tagMany } from "@/lib/actions/trades";
-import { maWynik, type StatusTrade } from "@/lib/domain/status";
+import { maWynik } from "@/lib/domain/status";
 import { SESSION_NAMES, TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import { formatValue, type FieldDef } from "@/lib/fields/fields";
 import { POWOD_NAZWY, type PowodZlejEgzekucji } from "@/lib/domain/kierunek";
-import { dateTime, duration, int, money, num, pnlClass, price, rValue, wynikClass } from "@/lib/format";
+import {
+  dateTime,
+  duration,
+  int,
+  money,
+  num,
+  pnlClass,
+  price,
+  rValue,
+  wynikClass,
+  WYNIK_SKROT,
+} from "@/lib/format";
 import type { TradeRecord } from "@/lib/queries/trades";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
@@ -171,7 +182,7 @@ export function TradesTable({ trades, fields, tags, currency }: Props) {
         accessorKey: "pnl",
         header: "Wynik",
         cell: ({ row }) =>
-          maWynik(row.original.status as StatusTrade) ? (
+          maWynik(row.original.status) ? (
             <span className={cx("font-medium", wynikClass(row.original.wynik))}>
               {/* "~" zamiast "hipot." - ta sama konwencja co galeria i lista
                   dnia, zeby ten sam trade nie mial dwoch roznych znacznikow
@@ -195,9 +206,9 @@ export function TradesTable({ trades, fields, tags, currency }: Props) {
             // Ten sam trade w galerii nazywa sie "NIE WZIETY" - "L" tutaj
             // bylby druga prawda o tym samym rekordzie.
             <span className="text-xs font-semibold uppercase text-accent">NW</span>
-          ) : maWynik(row.original.status as StatusTrade) ? (
+          ) : maWynik(row.original.status) ? (
             <span className={cx("text-xs font-semibold uppercase", wynikClass(row.original.wynik))}>
-              {row.original.wynik === "zysk" ? "W" : row.original.wynik === "strata" ? "L" : "BE"}
+              {WYNIK_SKROT[row.original.wynik]}
             </span>
           ) : (
             <span className="text-faint">—</span>

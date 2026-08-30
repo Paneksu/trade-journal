@@ -10,6 +10,7 @@ import {
   type WariantKierunku,
 } from "@/lib/domain/kierunek";
 import { sqlWynik, type Progi, type Wynik } from "@/lib/domain/outcome";
+import { czyStatus } from "@/lib/domain/status";
 
 /**
  * Filtry tabeli i statystyk. Jedno miejsce, w ktorym adres URL zamienia sie
@@ -114,6 +115,7 @@ export function parseFilters(p: SearchParams): Filters {
   const directionHit = one("kierunek_ok");
   const zrzuty = one("zezrzutem");
   const pominiete = one("pominiete");
+  const status = one("status");
 
   return {
     from: one("od"),
@@ -129,7 +131,9 @@ export function parseFilters(p: SearchParams): Filters {
     withShots: zrzuty === "1" ? true : zrzuty === "0" ? false : null,
     missed: pominiete === "tylko" ? "tylko" : pominiete === "nie" ? "bez" : null,
     direction: direction === "long" ? "long" : direction === "short" ? "short" : null,
-    status: one("status"),
+    // Nieznany status w adresie (literowka, stara wartosc z zakladki) trafialby
+    // wprost do SQL bez ostrzezenia - `czyStatus` domyka nowo powstaly modul.
+    status: czyStatus(status) ? status : null,
     sessions: texts(p.rynek),
     outcome:
       outcome === "zysk" || outcome === "strata" || outcome === "be" ? outcome : null,
@@ -224,7 +228,7 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
         f.outcome,
       ),
     );
-    // "zysk"/"strata"/"be" opisuja ZREALIZOWANY rezultat - trade nie wzięty
+    // "zysk"/"strata"/"be" opisuja ZREALIZOWANY rezultat - trade nie wziety
     // ("missed") nigdy go nie ma, wiec domyslnie nie wchodzi do zadnej z tych
     // etykiet (inaczej "przegrane" mieszalyby prawdziwe straty z hipotetycznymi
     // wynikami pominietych setupow). Wyjatek: gdy uzytkownik jawnie prosi o same
@@ -285,6 +289,11 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
         f.directionHit,
       ),
     );
+    // Trafnosc kierunku ocenia egzekucje, ktora faktycznie sie odbyla - trade
+    // nie wziety ("missed") ma tylko wynik hipotetyczny, wiec domyslnie nie
+    // wchodzi do miary (ten sam wzorzec co przy filtrze wyniku wyzej).
+    // Wyjatek: `f.missed === "tylko"` prosi jawnie o same pominiete.
+    if (f.missed !== "tylko") w.push(sql`${trades.status}::text <> 'missed'`);
   }
 
   if (f.reasons.length) {

@@ -72,6 +72,20 @@ describe("journalCoverage", () => {
     expect(c.expected).toBe(5);
   });
 
+  it("liczy dzien z samym nie wzietym setupem jako pokryty", () => {
+    // Zapisany "missed" (setup byl, nie zostal wziety) jest wpisem do
+    // dziennika tak samo jak trade zamkniety - wywolujacy ma go wliczyc do
+    // `tradedDays`, mimo ze nie ma tam zadnego zamknietego trade'a ani
+    // notatki "bez transakcji" (recenzja 2026-08-30, znalezisko 6).
+    const c = journalCoverage({
+      ...zakres,
+      tradedDays: ["2026-08-03"],
+      noTradeDays: [],
+    });
+    expect(c.covered).toBe(1);
+    expect(c.missing).not.toContain("2026-08-03");
+  });
+
   it("zakres bez dni roboczych nie ma pokrycia, a nie zerowe", () => {
     const c = journalCoverage({
       from: "2026-08-08",

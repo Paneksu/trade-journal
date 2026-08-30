@@ -16,6 +16,7 @@ import {
 import { czyInterwal, porzadekInterwalu } from "@/lib/domain/interwaly";
 import { czyPowod, kierunekTrafiony } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
+import type { StatusTrade } from "@/lib/domain/status";
 import type { TradeForAnalysis } from "@/lib/domain/types";
 import { getProgi } from "./dictionaries";
 import { whereClause, type Filters } from "./filters";
@@ -77,7 +78,7 @@ const columns = {
 };
 
 export type TradeRecord = TradeForAnalysis & {
-  status: string;
+  status: StatusTrade;
   entryPrice: string;
   exitPrice: string | null;
   exitTime: Date | null;

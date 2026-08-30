@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
-import { maWynik, type StatusTrade } from "@/lib/domain/status";
+import { maWynik } from "@/lib/domain/status";
 import { TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import type { TradeRecord } from "@/lib/queries/trades";
 import { dateTime, money, pnlClass, price, rValue, wynikClass } from "@/lib/format";
@@ -92,10 +92,10 @@ export function TradeList({
                   litera nie rozsadza sztywnej szerokosci kolumny tak jak
                   robilo to dopisane slowo. */}
               {t.status === "missed" && "~"}
-              {maWynik(t.status as StatusTrade)
+              {maWynik(t.status)
                 ? money(t.pnl, { currency: t.currency, sign: true })
                 : TRADE_STATUS_NAMES[t.status]}
-              {maWynik(t.status as StatusTrade) && t.wynik === "be" && (
+              {maWynik(t.status) && t.wynik === "be" && (
                 <span className="ml-1 text-xs opacity-70">BE</span>
               )}
             </span>

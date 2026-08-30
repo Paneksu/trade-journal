@@ -115,16 +115,18 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const exitTime = exitTimeRaw ? fromLocalInput(exitTimeRaw, strefaGieldy) : null;
   const exitPrice = number(data, "exitPrice");
 
+  // Najpierw walidacja, dopiero potem korekta. Odwrotna kolejnosc miala cicha
+  // dziure: status spoza enuma omijal gałąź "closed" i ladowal na "closed"
+  // Z POMINIECIEM korekty, wiec trade bez ceny wyjscia zapisywal sie jako
+  // zamkniety, dostawal pnl = null, a odczyt zamienial to na zero - pozycja
+  // wchodzila do statystyk jako BE, ktorego nie bylo.
+  if (!czyStatus(statusRaw)) {
+    return { ok: false, error: "Nieznany status trade'a." };
+  }
+
   // Brak ceny wyjscia oznacza, ze pozycja jest wciaz otwarta - nie zmuszamy
-  // uzytkownika do przelaczania statusu recznie. Walidacja przez czyStatus,
-  // bo surowy string z formularza (statusRaw) nie jest zaufany - dowolna
-  // wartosc leciala prosto do Postgresa.
-  const status =
-    statusRaw === "closed" && exitPrice === null
-      ? "open"
-      : czyStatus(statusRaw)
-        ? statusRaw
-        : "closed";
+  // uzytkownika do przelaczania statusu recznie.
+  const status = statusRaw === "closed" && exitPrice === null ? "open" : statusRaw;
 
   // "closed" i "missed" maja policzalny wynik (maWynik, domain/status.ts) -
   // oba wymagaja daty wyjscia, inaczej nie ma z czego liczyc R/PnL.

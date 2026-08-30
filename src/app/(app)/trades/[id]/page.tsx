@@ -7,7 +7,7 @@ import { Badge, DataPoint, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { POWOD_NAZWY } from "@/lib/domain/kierunek";
-import { maWynik, type StatusTrade } from "@/lib/domain/status";
+import { maWynik } from "@/lib/domain/status";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
 import { formatValue } from "@/lib/fields/fields";
 import { getFields } from "@/lib/queries/dictionaries";
@@ -45,7 +45,7 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
      `getFields()` ich nie zwraca i tu sie nie pojawia. */
   const filled = fields.filter((f) => trade.custom?.[f.key] !== undefined);
 
-  const pokazWynik = maWynik(trade.status as StatusTrade);
+  const pokazWynik = maWynik(trade.status);
 
   return (
     <div className="space-y-4">

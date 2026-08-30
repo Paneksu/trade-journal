@@ -87,7 +87,10 @@ export function MonthGrid({
         {all.map((day) => {
           const result = byDay.get(day);
           const pause = result ? undefined : noTradeByDay.get(day);
-          const missed = pause ? missedSet.has(day) : false;
+          // Kropka ma sie pojawic na kazdym dniu z nie wzietym setupem, nawet
+          // gdy dzien nie ma pauzy ani wyniku - inaczej legenda liczy dni,
+          // ktorych siatka nie oznacza (recenzja 2026-08-30, znalezisko 2).
+          const missed = missedSet.has(day);
           const value = result ? (unit === "cash" ? result.pnl : result.r) : 0;
           const alpha = result ? intensity(value) : 0;
           // Skladowe zgodne z tokenami --color-profit i --color-loss.
@@ -100,7 +103,9 @@ export function MonthGrid({
               ]
                 .filter(Boolean)
                 .join(" · ")
-            : undefined;
+            : missed
+              ? "1 trade nie wzięty"
+              : undefined;
 
           return (
             <Link

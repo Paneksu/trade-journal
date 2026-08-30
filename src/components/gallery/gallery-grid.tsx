@@ -3,9 +3,9 @@ import { ImageOff } from "lucide-react";
 
 import { Badge } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
-import { czyPominiety, type StatusTrade } from "@/lib/domain/status";
+import { czyPominiety } from "@/lib/domain/status";
 import type { TradeRecord } from "@/lib/queries/trades";
-import { longDate, rValue, WYNIK_SKROT } from "@/lib/format";
+import { longDate, rValue, wynikClass, WYNIK_SKROT } from "@/lib/format";
 
 /** Kolor i etykieta wyniku na kaflu - "nie wziety" dostaje `accent`, bo zielen
  * i czerwien sa zajete przez zysk/strate (globals.css:25-34). */
@@ -14,13 +14,6 @@ const PASEK_KOLOR: Record<"zysk" | "strata" | "be" | "missed", string> = {
   strata: "bg-loss",
   be: "bg-flat",
   missed: "bg-accent",
-};
-
-const TEKST_KOLOR: Record<"zysk" | "strata" | "be" | "missed", string> = {
-  zysk: "text-profit",
-  strata: "text-loss",
-  be: "text-flat",
-  missed: "text-accent",
 };
 
 /**
@@ -42,11 +35,15 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
       {trades.map((t) => {
-        const pominiety = czyPominiety(t.status as StatusTrade);
+        const pominiety = czyPominiety(t.status);
         const klucz = pominiety ? "missed" : t.wynik;
         // Przy 375px "NIE WZIĘTY" zostawia zero znakow na symbol instrumentu
         // obok (recenzja 2026-08-30, znalezisko 3) - ponizej `sm:` skrot na
         // dwie litery, pelna forma wraca od `sm:` w gore.
+        // Jedno miejsce prawdy o kolorze wyniku: `wynikClass` z format.ts,
+        // ten sam wzorzec co w tabeli i na karcie trade'a - bez wlasnej mapy
+        // (recenzja 2026-08-30, znalezisko 7).
+        const tekstKolor = pominiety ? "text-accent" : wynikClass(t.wynik);
         const skrotKrotki = pominiety ? "NW" : WYNIK_SKROT[t.wynik];
         const skrotPelny = pominiety ? "NIE WZIĘTY" : WYNIK_SKROT[t.wynik];
         const pelnaNazwa = pominiety
@@ -104,7 +101,7 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
                       <span
                         className={cx(
                           "shrink-0 text-sm font-semibold uppercase tracking-wide",
-                          TEKST_KOLOR[klucz],
+                          tekstKolor,
                         )}
                       >
                         <span className="sm:hidden">{skrotKrotki}</span>
@@ -115,7 +112,7 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
                         {t.instrumentSymbol}
                       </span>
                     </span>
-                    <span className={cx("liczba shrink-0 text-sm", TEKST_KOLOR[klucz])}>
+                    <span className={cx("liczba shrink-0 text-sm", tekstKolor)}>
                       {pominiety ? "~" : ""}
                       {rValue(t.rMultiple)}
                     </span>

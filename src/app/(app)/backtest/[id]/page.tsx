@@ -20,6 +20,7 @@ import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, reasonName } from "@/lib/domain/day-log";
 import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
+import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getSessionDayNotes, screenshotCountsForDayNotes } from "@/lib/queries/journal";
@@ -60,6 +61,7 @@ export default async function BacktestSessionPage({
   const closed = closedOnly(sessionTrades);
   const stats = computeStats(closed, progi);
   const sample = assessSample(stats.count, session.targetTrades, settings.minSample);
+  const missedCount = sessionTrades.filter((t) => czyPominiety(t.status)).length;
 
   // Porownanie z realem: te same statystyki dla tej samej strategii w dzienniku.
   const liveTrades = session.strategyId
@@ -306,7 +308,19 @@ export default async function BacktestSessionPage({
         </Panel>
       </div>
 
-      <Panel title="Trade'y sesji" description={`${sessionTrades.length} wpisów`}>
+      {/* "Wpisow" liczy sie tak samo jak na liscie sesji /backtest (stats.count
+          z closedOnly) - ten sam obiekt nie ma dawac dwoch roznych liczb na
+          dwoch ekranach. Nie wziete maja wlasna wzmianke obok, zamiast po
+          cichu wpasc do sumy zamknietych trade'ow (recenzja 2026-08-30,
+          znalezisko 5). */}
+      <Panel
+        title="Trade'y sesji"
+        description={
+          missedCount > 0
+            ? `${stats.count} wpisów, ${missedCount} nie wziętych`
+            : `${stats.count} wpisów`
+        }
+      >
         <TradeList
           trades={sessionTrades}
           emptyText="Sesja nie ma jeszcze żadnego trade'a."

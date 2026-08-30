@@ -7,8 +7,16 @@
 -- zadnym module domeny.
 --
 -- Plik musi zawierac WYLACZNIE ten jeden statement, bez statement-breakpoint
--- na koncu. Migrator wykonuje plik w transakcji, a Postgres nie pozwala
--- uzyc swiezo dodanej wartosci enuma w tej samej transakcji, w ktorej ja
--- dodano. Kazdy UPDATE/CHECK/indeks z literalem 'missed' idzie do 0014.
+-- na koncu, bo Postgres nie pozwala uzyc swiezo dodanej wartosci enuma w tej
+-- samej transakcji, w ktorej ja dodano.
+--
+-- UWAGA dla nastepnych migracji: migrator drizzle owija JEDNA transakcja caly
+-- przebieg wszystkich zaleglych plikow, nie kazdy plik z osobna (patrz
+-- drizzle-orm/pg-core/dialect.js). Przeniesienie literalu 'missed' do 0014
+-- NIE wystarczy: na bazie, gdzie 0013 jest juz zaaplikowane, przejdzie, ale
+-- na SWIEZEJ bazie (nowy serwer, odtworzenie z zera, baza CI) oba pliki ida
+-- w jednej transakcji i deploy padnie na migracji. Porownuj wiec przez
+-- rzutowanie: status::text = 'missed' - tak, jak robi to juz warstwa zapytan
+-- (queries/filters.ts). To jest transakcyjnie bezpieczne.
 
 ALTER TYPE "trade_status" ADD VALUE IF NOT EXISTS 'missed';
