@@ -46,3 +46,6 @@ test-results/
 playwright-report/
 e2e/.sesja.json
 .playwright-mcp/
+
+# Zrzuty z przegladow wizualnych - widac na nich wlasne dane finansowe.
+.zrzuty-recenzja/

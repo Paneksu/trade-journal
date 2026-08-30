@@ -25,6 +25,24 @@ async function wynik(page: Page): Promise<number> {
   return liczbaZTekstu(wartosc);
 }
 
+/**
+ * Dzien z szerokiego, praktycznie niekolidujacego zakresu lat - do testow,
+ * ktore licza DOKLADNA liczbe trade'ow za dany dzien (np. sekcja "Pominiete").
+ * Testy w tym pliku nie sprzataja trade'ow po sobie, wiec dwa przebiegi na
+ * tej samej bazie na STALYM dniu podwoilyby taka liczbe.
+ *
+ * Zakres CELOWO konczy sie przed rokiem 2020: /trades sortuje po
+ * `entryTime` malejaco (queries/trades.ts), a inne testy tego pliku klikaja
+ * "pierwszy wiersz" tabeli zakladajac, ze to zwykly zamkniety trade. Losowy
+ * dzien z przyszlosci wzgledem tamtych stalych dat (np. 2026) potrafilby
+ * wskoczyc na czolo listy i podmienic im ten wiersz pod noga.
+ */
+function losowyDzien(): string {
+  const bazowy = new Date(Date.UTC(1995, 0, 1));
+  bazowy.setUTCDate(bazowy.getUTCDate() + Math.floor(Math.random() * 9000));
+  return bazowy.toISOString().slice(0, 10);
+}
+
 test("nowy trade liczy wynik zgodnie z parametrami kontraktu", async ({ page }) => {
   await page.goto("/trades/new");
 
@@ -629,4 +647,196 @@ test("galeria pokazuje kafle ze zrzutem i filtruje po tagu", async ({ page }) =>
     await kafle.first().locator("a").click();
     await expect(page).toHaveURL(/\/trades\/\d+$/);
   }
+});
+
+/*
+ * Status "missed" ("nie wzięty"): setup byl, ale uzytkownik go nie wzial.
+ * Ma pelny wynik hipotetyczny (pnl, rMultiple), ale nie liczy sie do
+ * statystyk - bariera to doslownie `status === "closed"` (closedOnly,
+ * queries/trades.ts). Testy nizej pilnuja tej granicy z obu stron: ze
+ * "missed" NIE wchodzi tam, gdzie nie powinien, i ze WCHODZI tam, gdzie ma
+ * (sekcja "Pominiete", galeria, kafel pauzy w kalendarzu).
+ */
+
+test("trade nie wzięty z dodatnim wynikiem nie rusza KPI pulpitu, ale liczy się w sekcji Pominięte", async ({
+  page,
+}) => {
+  // Dzien losowany przy kazdym przebiegu (szeroki, niewykorzystywany przez
+  // zaden inny test zakres lat) - testy tego pliku nie sprzataja po sobie
+  // trade'ow (konwencja calego zestawu), wiec dwa kolejne przebiegi na tej
+  // samej bazie lokalnej na STALYM dniu podwoilyby liczbe "Pominietych" i
+  // asercja "dokladnie 1" pekalaby przy kazdym powtornym uruchomieniu.
+  const dzien = losowyDzien();
+
+  await page.goto("/?zakres=wszystko");
+  const przed = await wynik(page);
+
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill(`${dzien}T15:30`);
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#exitTime").fill(`${dzien}T16:00`);
+  await page.locator("#exitPrice").fill("5010");
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+  // Karta pokazuje wynik hipotetyczny mimo statusu "nie wzięty" (maWynik).
+  await expect(page.getByText(/\+500,00\s?USD/).first()).toBeVisible();
+
+  // Pulpit: dokladnie ta sama kwota co przed zapisem - "missed" nie wchodzi
+  // do closedOnly, wiec KPI nie moze drgnac.
+  await page.goto("/?zakres=wszystko");
+  const po = await wynik(page);
+  expect(Number((po - przed).toFixed(2))).toBe(0);
+
+  // /stats: filtr na dokladnie ten dzien, zeby liczba "Pominietych" byla
+  // policzalna niezaleznie od reszty danych w bazie.
+  await page.goto(`/stats?od=${dzien}&do=${dzien}`);
+  const panel = page.locator("section.panel").filter({ hasText: "Pominięte" });
+  await expect(page.getByRole("heading", { name: "Pominięte" })).toBeVisible();
+  await expect(panel).toContainText(/1\s?trade/);
+});
+
+test("dzień z samym pominiętym trade'em da się oznaczyć jako bez transakcji", async ({ page }) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-02-10T15:30");
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#exitTime").fill("2021-02-10T16:00");
+  await page.locator("#exitPrice").fill("4990");
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  // Lustrzane wobec "dnia z trade'ami nie da się oznaczyć jako bez transakcji"
+  // (ok. l. 368): tam prawdziwy trade blokuje znacznik, tu sam "missed" go
+  // NIE blokuje, bo countTradesOnDay (queries/journal.ts) go pomija.
+  await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-10");
+  const znacznik = page.getByLabel("Dzień bez transakcji");
+  await expect(znacznik).toBeEnabled();
+  await expect(page.getByText("Tego dnia są już zapisane trade'y.")).toHaveCount(0);
+
+  await znacznik.check();
+  await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+
+  // Sprzatanie - test nie zostawia notatki dnia w bazie (sam trade zostaje,
+  // tak jak w pozostalych testach tego pliku).
+  await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-10");
+  await page.getByLabel("Dzień bez transakcji").uncheck();
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+});
+
+test("kafel kalendarza z samym pominiętym trade'em pokazuje dalej pauzę, nie dzień handlowy", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-02-11T15:30");
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#exitTime").fill("2021-02-11T16:00");
+  await page.locator("#exitPrice").fill("4990");
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-11");
+  await page.getByLabel("Dzień bez transakcji").check();
+  await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+
+  await page.goto("/calendar?miesiac=2021-02");
+  // Kafel gridu: dalej "bez transakcji" (pauza), z dyskretnym znacznikiem
+  // pominietego setupu - nie zamienia sie w kafel dnia handlowego.
+  // Filtr po href, nie samej roli - gdyby w miesiacu byla wiecej niz jedna
+  // pauza, `getByRole("link", { name: /bez transakcji/ })` trafilby w kilka
+  // naraz i test padlby na "strict mode violation" zamiast na sedno sprawy.
+  const kafelDnia = page.locator('a[href="/calendar?dzien=2021-02-11"]');
+  await expect(kafelDnia).toContainText("bez transakcji");
+  await expect(kafelDnia).toHaveAttribute("title", /1 trade nie wzięty/);
+  await expect(kafelDnia.locator(".sr-only", { hasText: "1 trade nie wzięty" })).toHaveCount(1);
+
+  // Sprzatanie.
+  await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-11");
+  await page.getByLabel("Dzień bez transakcji").uncheck();
+  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+});
+
+test("galeria ma więcej kafli niż widok tylko dziennika żywego (backtesty się liczą)", async ({
+  page,
+}) => {
+  // Wlasny trade w sesji backtestu, zeby test nie zalezal od tego, czy
+  // reszta zestawu zostawila jakis w bazie.
+  const nazwa = `Sesja galerii ${Date.now()}`;
+  await page.goto("/backtest");
+  await page.getByRole("button", { name: "Nowa sesja backtestu" }).click();
+  await page.locator("#name").fill(nazwa);
+  await page.locator("#dataFrom").fill("2021-03-01");
+  await page.locator("#dataTo").fill("2021-03-05");
+  await page.getByRole("button", { name: "Utwórz sesję" }).click();
+  await expect(page).toHaveURL(/\/backtest\/\d+$/);
+
+  await page.getByRole("link", { name: "Dodaj trade do sesji" }).click();
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-03-02T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#exitTime").fill("2021-03-02T15:55");
+  await page.locator("#exitPrice").fill("20010");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  // "zezrzutem=wszystko" w obu adresach, zeby porownanie mierzylo TYLKO
+  // roznice zrodla (ADR-019 inaczej odfiltrowalby ten trade, bo jest bez
+  // zrzutu) - /galeria bez parametrow domyslnie i tak startuje z "wszystko"
+  // zrodel, ale test ustawia to jawnie, zeby nie zalezec od domyslnej wartosci.
+  //
+  // Filtr na dokladnie ten dzien (od/do): galeria stronicuje po 60 kafli
+  // (ROZMIAR_STRONY), a baza po dluzszym przebiegu zestawu ma ich wiecej -
+  // bez zawezenia porownanie liczyloby dwie strony ucięte do tego samego
+  // limitu i wygladaloby na rowne, mimo realnej roznicy w danych.
+  await page.goto("/galeria?zezrzutem=wszystko&zrodlo=wszystko&od=2021-03-02&do=2021-03-02");
+  const ileWszystko = await page.locator("main ul > li").count();
+
+  await page.goto("/galeria?zezrzutem=wszystko&zrodlo=live&od=2021-03-02&do=2021-03-02");
+  const ileLive = await page.locator("main ul > li").count();
+
+  expect(ileWszystko).toBeGreaterThan(ileLive);
+});
+
+test("przełączenie trade'a closed → missed → closed w edycji zachowuje kwotę wyniku", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-04-06T15:30");
+  await page.locator("#entryPrice").fill("5100");
+  await page.locator("#exitTime").fill("2021-04-06T16:00");
+  await page.locator("#exitPrice").fill("5110");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  const adresKarty = page.url();
+  const wynikPrzed = await page.getByText(/\+500,00\s?USD/).first().innerText();
+
+  await page.goto(`${adresKarty}/edit`);
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: /zapisz zmiany/i }).click();
+  await page.waitForURL(adresKarty);
+  // "missed" tez ma maWynik - kwota musi zostac dokladnie ta sama.
+  await expect(page.getByText(wynikPrzed).first()).toBeVisible();
+
+  await page.goto(`${adresKarty}/edit`);
+  await page.locator("#status").selectOption("closed");
+  await page.getByRole("button", { name: /zapisz zmiany/i }).click();
+  await page.waitForURL(adresKarty);
+  await expect(page.getByText(wynikPrzed).first()).toBeVisible();
 });

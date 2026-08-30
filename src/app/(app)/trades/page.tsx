@@ -74,7 +74,19 @@ export default async function TradesPage({
         />
       </div>
 
-      <KpiRow stats={stats} currency={currency} />
+      {filters.missed === "tylko" ? (
+        // Rzad KPI liczy tylko trade'y zamkniete (closedOnly) - przy filtrze
+        // "nie wziete: tylko te" dalby "0 trade'ow, skutecznosc 0,0%" tuz nad
+        // tabela pokazujaca kilkanascie wierszy. Semantycznie poprawne, ale
+        // czyta sie jak zepsuta strona (recenzja 2026-08-30, znalezisko 4) -
+        // wiec zamiast siedmiu pustych kafli, jedno zdanie wprost.
+        <p className="panel px-4 py-3 text-sm text-faint">
+          Pominięte trade&apos;y nie mają wyniku, więc nie wchodzą do statystyk powyżej — filtr
+          pokazuje tylko listę poniżej.
+        </p>
+      ) : (
+        <KpiRow stats={stats} currency={currency} />
+      )}
 
       <div className="panel">
         <TradesTable

@@ -1,0 +1,22 @@
+-- Status "nie wziety" - setup byl, ale uzytkownik go nie wzial (2026-08-30).
+--
+-- Trade nie wziety ma pelny wynik hipotetyczny (wejscie, stop, wyjscie -> R
+-- i PnL liczone normalnie), ale nie liczy sie do statystyk. Nowa wartosc
+-- enuma, nie kolumna boolean - closedOnly (trades.ts) zostaje doslownie
+-- status === "closed" i caly aparat statystyk znika "missed" bez zmiany w
+-- zadnym module domeny.
+--
+-- Plik musi zawierac WYLACZNIE ten jeden statement, bez statement-breakpoint
+-- na koncu, bo Postgres nie pozwala uzyc swiezo dodanej wartosci enuma w tej
+-- samej transakcji, w ktorej ja dodano.
+--
+-- UWAGA dla nastepnych migracji: migrator drizzle owija JEDNA transakcja caly
+-- przebieg wszystkich zaleglych plikow, nie kazdy plik z osobna (patrz
+-- drizzle-orm/pg-core/dialect.js). Przeniesienie literalu 'missed' do 0014
+-- NIE wystarczy: na bazie, gdzie 0013 jest juz zaaplikowane, przejdzie, ale
+-- na SWIEZEJ bazie (nowy serwer, odtworzenie z zera, baza CI) oba pliki ida
+-- w jednej transakcji i deploy padnie na migracji. Porownuj wiec przez
+-- rzutowanie: status::text = 'missed' - tak, jak robi to juz warstwa zapytan
+-- (queries/filters.ts). To jest transakcyjnie bezpieczne.
+
+ALTER TYPE "trade_status" ADD VALUE IF NOT EXISTS 'missed';

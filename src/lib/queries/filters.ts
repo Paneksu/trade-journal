@@ -10,6 +10,7 @@ import {
   type WariantKierunku,
 } from "@/lib/domain/kierunek";
 import { sqlWynik, type Progi, type Wynik } from "@/lib/domain/outcome";
+import { czyStatus } from "@/lib/domain/status";
 
 /**
  * Filtry tabeli i statystyk. Jedno miejsce, w ktorym adres URL zamienia sie
@@ -38,6 +39,13 @@ export type Filters = {
    * nie ma w adresie w ogole; jawne `zezrzutem=wszystko` to zdejmuje.
    */
   withShots: boolean | null;
+  /**
+   * Trade'y nie wziete ("missed"). `"tylko"` = wylacznie one, `"bez"` = wszystko
+   * poza nimi, `null` = bez filtru wszedzie (rozni sie od `withShots`, ktory w
+   * galerii dostaje domyslna wartosc - tu domyslne zachowanie jest takie samo
+   * na kazdym ekranie: nie wziete pokazuja sie razem z reszta).
+   */
+  missed: "tylko" | "bez" | null;
   direction: "long" | "short" | null;
   status: string | null;
   sessions: string[];
@@ -61,6 +69,7 @@ export const EMPTY_FILTERS: Filters = {
   directionHit: null,
   reasons: [],
   withShots: null,
+  missed: null,
   direction: null,
   status: null,
   sessions: [],
@@ -105,6 +114,8 @@ export function parseFilters(p: SearchParams): Filters {
   const outcome = one("wynik");
   const directionHit = one("kierunek_ok");
   const zrzuty = one("zezrzutem");
+  const pominiete = one("pominiete");
+  const status = one("status");
 
   return {
     from: one("od"),
@@ -118,8 +129,11 @@ export function parseFilters(p: SearchParams): Filters {
     directionHit: czyWariantKierunku(directionHit) ? directionHit : null,
     reasons: texts(p.powod).filter(czyPowod),
     withShots: zrzuty === "1" ? true : zrzuty === "0" ? false : null,
+    missed: pominiete === "tylko" ? "tylko" : pominiete === "nie" ? "bez" : null,
     direction: direction === "long" ? "long" : direction === "short" ? "short" : null,
-    status: one("status"),
+    // Nieznany status w adresie (literowka, stara wartosc z zakladki) trafialby
+    // wprost do SQL bez ostrzezenia - `czyStatus` domyka nowo powstaly modul.
+    status: czyStatus(status) ? status : null,
     sessions: texts(p.rynek),
     outcome:
       outcome === "zysk" || outcome === "strata" || outcome === "be" ? outcome : null,
@@ -147,6 +161,7 @@ export function toSearchParams(f: Filters): URLSearchParams {
   put("kierunek_ok", f.directionHit);
   if (f.reasons.length) p.set("powod", f.reasons.join(","));
   if (f.withShots !== null) p.set("zezrzutem", f.withShots ? "1" : "0");
+  if (f.missed !== null) p.set("pominiete", f.missed === "tylko" ? "tylko" : "nie");
   put("kierunek", f.direction);
   put("status", f.status);
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
@@ -172,6 +187,7 @@ export function activeFilterCount(f: Filters): number {
   if (f.directionHit) n += 1;
   if (f.reasons.length) n += 1;
   if (f.withShots !== null) n += 1;
+  if (f.missed !== null) n += 1;
   if (f.direction) n += 1;
   if (f.status) n += 1;
   if (f.sessions.length) n += 1;
@@ -212,6 +228,13 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
         f.outcome,
       ),
     );
+    // "zysk"/"strata"/"be" opisuja ZREALIZOWANY rezultat - trade nie wziety
+    // ("missed") nigdy go nie ma, wiec domyslnie nie wchodzi do zadnej z tych
+    // etykiet (inaczej "przegrane" mieszalyby prawdziwe straty z hipotetycznymi
+    // wynikami pominietych setupow). Wyjatek: gdy uzytkownik jawnie prosi o same
+    // pominiete (`f.missed === "tylko"`), wykluczenie by dawalo zawsze pustke -
+    // wtedy filtr wyniku ocenia hipotetyczny wynik samych "missed".
+    if (f.missed !== "tylko") w.push(sql`${trades.status}::text <> 'missed'`);
   }
 
   if (f.search) {
@@ -266,6 +289,11 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
         f.directionHit,
       ),
     );
+    // Trafnosc kierunku ocenia egzekucje, ktora faktycznie sie odbyla - trade
+    // nie wziety ("missed") ma tylko wynik hipotetyczny, wiec domyslnie nie
+    // wchodzi do miary (ten sam wzorzec co przy filtrze wyniku wyzej).
+    // Wyjatek: `f.missed === "tylko"` prosi jawnie o same pominiete.
+    if (f.missed !== "tylko") w.push(sql`${trades.status}::text <> 'missed'`);
   }
 
   if (f.reasons.length) {
@@ -276,6 +304,9 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
     const istnieje = sql`EXISTS (SELECT 1 FROM screenshots s WHERE s.trade_id = ${trades.id})`;
     w.push(f.withShots ? istnieje : sql`NOT ${istnieje}`);
   }
+
+  if (f.missed === "tylko") w.push(sql`${trades.status}::text = 'missed'`);
+  if (f.missed === "bez") w.push(sql`${trades.status}::text <> 'missed'`);
 
   for (const [key, values] of Object.entries(f.fields)) {
     /* Wartosc pola wlasnego bywa tablica (lista wielokrotnego wyboru),

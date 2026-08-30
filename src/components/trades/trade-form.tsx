@@ -507,7 +507,14 @@ export function TradeForm({
                   <option value="open">otwarty</option>
                   <option value="planned">planowany</option>
                   <option value="cancelled">anulowany</option>
+                  <option value="missed">nie wzięty</option>
                 </Select>
+                {status === "missed" && (
+                  <p className="text-xs text-faint">
+                    Setup był, ale go nie wziąłeś — wynik hipotetyczny się liczy, ale trade nie
+                    liczy się do statystyk.
+                  </p>
+                )}
               </div>
             </div>
 

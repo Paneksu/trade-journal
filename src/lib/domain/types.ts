@@ -91,4 +91,5 @@ export const TRADE_STATUS_NAMES: Record<string, string> = {
   open: "otwarty",
   closed: "zamknięty",
   cancelled: "anulowany",
+  missed: "nie wzięty",
 };

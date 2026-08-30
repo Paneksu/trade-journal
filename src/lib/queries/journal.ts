@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { dayNotes, screenshots, trades } from "@/lib/db/schema";
@@ -86,7 +86,15 @@ export async function countSessionTradesOnDay(sessionId: number, day: string): P
   const [row] = await db
     .select({ ile: count() })
     .from(trades)
-    .where(and(eq(trades.backtestSessionId, sessionId), eq(trades.tradingDay, day)));
+    .where(
+      and(
+        eq(trades.backtestSessionId, sessionId),
+        eq(trades.tradingDay, day),
+        /* Nie wzieta pozycja nie jest wykonanym trade'em - patrz komentarz
+           przy countTradesOnDay ponizej. */
+        sql`${trades.status}::text <> 'missed'`,
+      ),
+    );
   return row?.ile ?? 0;
 }
 
@@ -95,11 +103,22 @@ export async function countSessionTradesOnDay(sessionId: number, day: string): P
  * oznaczony jako "bez transakcji" nie przeczyl zapisanym trade'om.
  * Trade'y z backtestu sie nie licza - symulacja nie jest dowodem na to,
  * co dzialo sie w dzienniku.
+ *
+ * Trade nie wziety ("missed") tez sie nie liczy - jest dowodem odwrotnym:
+ * setup byl, uzytkownik go NIE wzial, wiec dzien wciaz jest "bez transakcji"
+ * w sensie, o ktory chodzi tej fladze. Jedyny wyjatek od zasady "trade'y
+ * wygrywaja z flaga" (ADR-006) - patrz ADR-024.
  */
 export async function countTradesOnDay(day: string): Promise<number> {
   const [row] = await db
     .select({ ile: count() })
     .from(trades)
-    .where(and(eq(trades.tradingDay, day), isNull(trades.backtestSessionId)));
+    .where(
+      and(
+        eq(trades.tradingDay, day),
+        isNull(trades.backtestSessionId),
+        sql`${trades.status}::text <> 'missed'`,
+      ),
+    );
   return row?.ile ?? 0;
 }

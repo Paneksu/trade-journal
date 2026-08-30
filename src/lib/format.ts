@@ -197,6 +197,13 @@ export const WYNIK_NAZWY: Record<Wynik, string> = {
   be: "BE",
 };
 
+/** Skrot wyniku do kafla galerii - czytelny z odleglosci, nie sama ikona. */
+export const WYNIK_SKROT: Record<Wynik, string> = {
+  zysk: "W",
+  strata: "L",
+  be: "BE",
+};
+
 /** Klasa koloru dla wyniku BE (ADR-011) - taka sama konwencja jak `pnlClass`. */
 export function wynikClass(w: Wynik): string {
   if (w === "zysk") return "text-profit";

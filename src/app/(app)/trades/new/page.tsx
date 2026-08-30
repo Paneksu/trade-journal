@@ -18,11 +18,12 @@ export const metadata = { title: "Nowy trade — Dziennik tradingowy" };
 export default async function NewTradePage({
   searchParams,
 }: {
-  searchParams: Promise<{ sesja?: string }>;
+  searchParams: Promise<{ sesja?: string; dzien?: string; status?: string }>;
 }) {
   const settings = await requireSession();
-  const { sesja } = await searchParams;
+  const { sesja, dzien, status } = await searchParams;
   const sessionId = sesja ? Number(sesja) : null;
+  const statusMissed = status === "missed";
 
   const [accounts, instruments, sessions, tags, categories, fields, last, progi] =
     await Promise.all([
@@ -53,7 +54,11 @@ export default async function NewTradePage({
       <header>
         <p className="etykieta">Dziennik</p>
         <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
-          {sessionId ? "Nowy trade w sesji backtestu" : "Nowy trade"}
+          {statusMissed
+            ? "Trade, którego nie wziąłem"
+            : sessionId
+              ? "Nowy trade w sesji backtestu"
+              : "Nowy trade"}
         </h1>
       </header>
 
@@ -70,7 +75,15 @@ export default async function NewTradePage({
           accountId: last.accountId,
           instrumentId: last.instrumentId,
           contracts: last.contracts ? String(Number(last.contracts)) : "1",
-          entryTime: toLocalInput(new Date(), pierwszy?.exchangeTimezone ?? settings.timezone),
+          /* Z karty dnia przychodzi konkretny dzien (`dzien`) bez godziny -
+             domyslna godzina to otwarcie sesji regularnej instrumentu
+             (rthFrom), NIE 00:00: naiwne `${dzien}T00:00` daje
+             marketSession="overnight" (calc.ts), a przy godzinie >=18:00
+             tradingDay przeskakuje na nastepny dzien (otwarcie CME). */
+          entryTime: dzien
+            ? `${dzien}T${pierwszy?.rthFrom ?? "09:30"}`
+            : toLocalInput(new Date(), pierwszy?.exchangeTimezone ?? settings.timezone),
+          status: statusMissed ? "missed" : undefined,
         }}
       />
     </div>

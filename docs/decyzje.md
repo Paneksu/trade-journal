@@ -859,3 +859,79 @@ Miesiąc jest parametrem adresu (`?miesiac=`), nie stanem klienta: widok da się
 wysłać linkiem, a powrót z karty dnia wraca na ten sam miesiąc. Domyślny
 miesiąc to PIERWSZY z wpisami — sesję backtestu czyta się od początku
 zakresu, nie od dzisiaj.
+
+## ADR-024 — trade nie wzięty jako wartość statusu (2026-08-30)
+
+Dziennik umiał zapisać, że dnia nie było czego brać (`day_notes.noTrade`,
+ADR-006). Nie umiał zapisać sytuacji odwrotnej: setup był, tylko go nie
+wziąłem. A to jest ten drugi rodzaj błędu — nie zła egzekucja, tylko brak
+decyzji — i do wczoraj nie było go widać nigdzie.
+
+Trade nie wzięty to **nowa wartość enuma `trade_status`**, nie osobna kolumna
+logiczna. Cały aparat statystyk przechodzi przez jeden filtr, `closedOnly`
+(`status === "closed"`), więc jedna wartość wystarczyła, żeby pominięte
+zniknęły z winrate, PnL, krzywej kapitału, obsunięcia, kalendarza, Edge
+Findera i dyscypliny — bez zmiany w ani jednym module domeny. Żaden z nich
+w ogóle nie zna statusu. Kolumna logiczna wymagałaby poprawki `closedOnly`
+tak samo, a dodatkowo otwierałaby stany, których nic nie pilnuje: pozycja
+otwarta i jednocześnie nie wzięta.
+
+`closedOnly` zostaje dosłownie przy `"closed"` i to jest cała bariera. Obok
+stoi `maWynik` z `lib/domain/status.ts`, które mówi `true` także dla
+pominiętego — bo trade nie wzięty **ma policzony wynik**. Wpisujesz wejście,
+stopa i wyjście, a system liczy R i PnL normalnie, tylko oznacza je jako
+hipotetyczne. Bez tego panel „Pominięte" nie miałby czego pokazać, a pytanie
+„ile mnie kosztowało to, że nie wszedłem" zostałoby bez odpowiedzi. Dwie
+funkcje, które wyglądają na niekonsekwencję, są dwoma różnymi pytaniami:
+„czy to wchodzi do statystyk" i „czy to ma wynik".
+
+Blok kierunku (ADR-018) pominiętego **nie dotyczy** i celowo dalej pyta
+o `"closed"`. „Kierunek dobry, zawiodła egzekucja" zakłada, że egzekucja
+w ogóle była.
+
+Trade nie wzięty **nie unieważnia flagi „dzień bez transakcji"** — to jedyny
+wyjątek od zasady z ADR-006, że trade'y wygrywają z flagą. `countTradesOnDay`
+i `countSessionTradesOnDay` go pomijają, bo pominięty trade nie jest dowodem
+na to, że dzień był handlowy. Jest dowodem na to, że nie był.
+
+Galeria zmienia domyślne źródło na „wszystko" u siebie, w `galeria/page.tsx`,
+a nie w `parseFilters` — dokładnie tym samym chwytem, co nadpisanie
+`withShots` (ADR-019). `/trades` i `/stats` dalej startują z dziennika
+realnego. W parze z tym idzie nowy, trójstanowy wymiar `?pominiete=`:
+`status=missed` wyrażał „tylko nie wzięte", ale nie było jak powiedzieć „bez
+nie wziętych".
+
+Migracja jest nieodwracalna: Postgres nie umie usunąć wartości z enuma, więc
+odwrót wymaga przepisania typu, nie cofnięcia pliku. Cofnięcie samej aplikacji
+na starszy obraz jest bezpieczne, ale degraduje — stary kod nie zna klucza
+`missed`, więc etykieta statusu renderuje się pusta, a `countTradesOnDay` bez
+wyjątku znów policzy pominięte setupy jako trade'y dnia i zablokuje znacznik
+„dzień bez transakcji". Statystyki zostają czyste, bo stare `closedOnly` też
+pyta dosłownie o `"closed"`.
+
+**Dryf zakresu ponad plan (dopisane po recenzji 2026-08-30).** Dwie zmiany
+wyszły poza to, co ta ADR pierwotnie planowała, i obie zasługują na osobny
+zapis, żeby nie wróciły jako „błąd" w kolejnym audycie.
+
+Pierwsza to token `--color-flat` w `globals.css`. Kafel BE w galerii miał być
+odróżnialny od pominiętego trade'a — ale przy tej okazji odkryto, że
+`--color-flat` był identyczny z `--color-faint` (#838f9d), więc wynik BE był
+wizualnie nierozróżnialny od tekstu wyciszonego (kontrast 1,00, zmierzone na
+pikselach). Poprawka zmieniła sam token na #bfc7d0, nie tylko klasę w galerii
+— dotyczy to więc **każdego** wyświetlenia wyniku BE w całej aplikacji
+(tabela, karta trade'a, lista, kalendarz), nie tylko przebudowanej galerii.
+Świadome, pożądane rozszerzenie zakresu, ale nie było go w pierwotnym planie
+tej ADR.
+
+Druga to zachowanie przy przełączeniu statusu `closed → missed`.
+`normalizujKierunek` (patrz `lib/actions/trades.ts`, parametr `oceniane`)
+liczy trafność kierunku tylko dla statusu `"closed"` — zapis z jakimkolwiek
+innym statusem, `"missed"` włącznie, dostaje `kontekst.oceniane === false`
+i wraca z pustym wynikiem: `directionCorrect`, `badExecutionReason` i
+`potentialR` idą na `NULL`. Efekt: użytkownik, który miał zamknięty trade
+z ocenionym kierunkiem i przełączy go na „nie wzięty" (np. korygując
+pomyłkę przy wpisywaniu), **traci tę ocenę bezpowrotnie** — formularz nie ma
+skąd jej odtworzyć, trzeba wpisać ją ponownie ręcznie. To świadome
+zachowanie (kierunek dobry/zły zakłada egzekucję, a „missed" jej nie ma —
+patrz akapit o bloku kierunku wyżej), nie błąd, ale nieodwracalność bez
+ostrzeżenia w UI jest warta świadomości przy kolejnym audycie interfejsu.

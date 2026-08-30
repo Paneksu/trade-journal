@@ -7,6 +7,7 @@ import { Badge, DataPoint, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { POWOD_NAZWY } from "@/lib/domain/kierunek";
+import { maWynik } from "@/lib/domain/status";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
 import { formatValue } from "@/lib/fields/fields";
 import { getFields } from "@/lib/queries/dictionaries";
@@ -44,8 +45,16 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
      `getFields()` ich nie zwraca i tu sie nie pojawia. */
   const filled = fields.filter((f) => trade.custom?.[f.key] !== undefined);
 
+  const pokazWynik = maWynik(trade.status);
+
   return (
     <div className="space-y-4">
+      {trade.status === "missed" && (
+        <div className="border-l-2 border-accent bg-accent-dim px-3 py-2 text-sm text-accent-strong">
+          Trade nie wzięty — wynik hipotetyczny, poza statystykami.
+        </div>
+      )}
+
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="etykieta">
@@ -79,11 +88,16 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
             </span>
             <span className="text-sm text-faint">{num(trade.contracts, 0)} kontr.</span>
             <span className={cx("liczba text-xl font-semibold", wynikClass(trade.wynik))}>
-              {trade.status === "closed"
+              {pokazWynik
                 ? money(trade.pnl, { currency: trade.currency, sign: true })
                 : TRADE_STATUS_NAMES[trade.status]}
-              {trade.status === "closed" && trade.wynik === "be" && (
+              {pokazWynik && trade.wynik === "be" && (
                 <span className="ml-1 text-sm opacity-70">BE</span>
+              )}
+              {trade.status === "missed" && (
+                <span className="ml-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                  hipot.
+                </span>
               )}
             </span>
             <span className={cx("liczba text-sm", pnlClass(trade.rMultiple))}>
@@ -212,7 +226,11 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
                       title={t.interval ? `${t.category} · ${t.interval}` : t.category}
                     >
                       {t.name}
-                      {t.interval && <span className="opacity-60"> {t.interval}</span>}
+                      {/* 0.8, nie 0.6 - ta sama poprawka co na kaflu galerii,
+                          gdzie przezroczystosc zbijala dopisek interwalu do
+                          3,35:1. Ta strona nie jest w EKRANACH z audytu axe,
+                          wiec nikt by tego tutaj nie zlapal. */}
+                      {t.interval && <span className="opacity-80"> {t.interval}</span>}
                     </Badge>
                   ))}
                 </div>

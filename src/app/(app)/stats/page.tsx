@@ -7,12 +7,15 @@ import { EdgeFinderPanel } from "@/components/stats/edge-finder-panel";
 import { GroupTable } from "@/components/stats/group-table";
 import { KpiRow } from "@/components/stats/kpi-row";
 import { SampleBar } from "@/components/stats/kpi";
+import { PominietePanel } from "@/components/stats/pominiete-panel";
 import { FilterBar } from "@/components/trades/filter-bar";
 import { DataPoint, EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
+import { czyPominiety } from "@/lib/domain/status";
+import { statystykiPominietych } from "@/lib/domain/pominiete";
 import {
   builtinDimensions,
   dimension,
@@ -60,6 +63,8 @@ export default async function StatsPage({
   const progi = await getProgi();
   const closed = closedOnly(trades);
   const stats = computeStats(closed, progi);
+  const pominiete = trades.filter((t) => czyPominiety(t.status));
+  const pominieteStats = statystykiPominietych(pominiete, progi);
   const account = accounts.find((k) => k.id === filters.accounts[0]) ?? accounts[0];
   const currency = account?.currency ?? settings.baseCurrency;
 
@@ -124,15 +129,27 @@ export default async function StatsPage({
       />
 
       {closed.length === 0 ? (
-        <Panel>
-          <EmptyState
-            title="Brak zamkniętych trade'ów w tym zakresie"
-            description="Statystyki liczymy tylko z pozycji zamkniętych. Zmień filtry albo dopisz wyjścia do otwartych trade'ów."
-          />
-        </Panel>
+        <>
+          <Panel>
+            <EmptyState
+              title="Brak zamkniętych trade'ów w tym zakresie"
+              description="Statystyki liczymy tylko z pozycji zamkniętych. Zmień filtry albo dopisz wyjścia do otwartych trade'ów."
+            />
+          </Panel>
+          {/* Sekcja pokazuje sie tez bez zamknietych trade'ow - pominiete nie
+              wymagaja zadnego closedOnly, wiec maja co pokazac nawet wtedy
+              (recenzja 2026-08-30, znalezisko 9). */}
+          <PominietePanel stats={pominieteStats} />
+        </>
       ) : (
         <>
           <KpiRow stats={stats} currency={currency} />
+
+          {/* Pod KpiRow, nie nad nim - opis panelu mowi "nie wchodzi do
+              zadnej liczby powyzej", a nad pasekiem filtrow nie bylo niczego,
+              do czego to zdanie mogloby sie odnosic (recenzja 2026-08-30,
+              znalezisko 9). */}
+          <PominietePanel stats={pominieteStats} />
 
           <div className="panel">
             <SampleBar {...sample} />

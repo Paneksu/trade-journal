@@ -11,6 +11,7 @@ import { db } from "@/lib/db";
 import { backtestSessions } from "@/lib/db/schema";
 import { reasonName } from "@/lib/domain/day-log";
 import { computeStats } from "@/lib/domain/stats";
+import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayScreenshots, getSessionDayNote } from "@/lib/queries/journal";
@@ -69,6 +70,12 @@ export default async function DzienSesjiPage({
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
   const stats = computeStats(closedOnly(dayTrades), progi);
   const powod = reasonName(note?.noTradeReason ?? null);
+  /* Nie wzieta pozycja nie jest dowodem, ze dzien mial sygnal - serwer
+     (countSessionTradesOnDay) jej nie liczy przy blokadzie formularza "bez
+     sygnalu", wiec klient nie moze go liczyc tez. Ten sam rozjazd co na
+     /calendar (patrz dayRealne tam) - bez tego formularz sie nie renderuje,
+     a naglowek czyta zdanie, ktore klamie (recenzja 2026-08-30, znalezisko 1). */
+  const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status));
 
   return (
     <div className="space-y-4">
@@ -88,8 +95,8 @@ export default async function DzienSesjiPage({
             {longDate(data)}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {dayTrades.length > 0
-              ? `${tradesCount(dayTrades.length)} w tym dniu`
+            {dayRealne.length > 0
+              ? `${tradesCount(dayRealne.length)} w tym dniu`
               : note
                 ? `Dzień bez sygnału${powod ? ` — ${powod.toLowerCase()}` : ""}`
                 : "Ten dzień nie ma jeszcze wpisu."}
@@ -106,7 +113,7 @@ export default async function DzienSesjiPage({
         </div>
       </header>
 
-      {dayTrades.length > 0 && (
+      {dayRealne.length > 0 && (
         <div className="panel">
           <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-4">
             <DataPoint label="Wynik dnia">
@@ -144,9 +151,9 @@ export default async function DzienSesjiPage({
               : "Zapisz, dlaczego ten dzień nie dał sygnału."
           }
         >
-          {dayTrades.length > 0 ? (
+          {dayRealne.length > 0 ? (
             <p className="px-4 py-6 text-sm text-faint">
-              Ta sesja ma tego dnia {plural(dayTrades.length, "trade", "trade'y", "trade'ów")} —
+              Ta sesja ma tego dnia {plural(dayRealne.length, "trade", "trade'y", "trade'ów")} —
               dzień nie był bez sygnału, więc wpisu się tu nie zakłada.
             </p>
           ) : (
