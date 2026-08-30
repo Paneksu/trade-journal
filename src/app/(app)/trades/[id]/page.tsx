@@ -55,9 +55,15 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
   const czesciowoZamkniete = trade.status === "open" && trade.exitCount > 0;
 
   const sumaKontraktowWyjsc = trade.exits.reduce((s, e) => s + e.contracts, 0);
-  const sumaPnlWyjsc = trade.exits.reduce((s, e) => s + (e.pnl ?? 0), 0);
-  const maRWyjsc = trade.exits.some((e) => e.rMultiple !== null);
-  const sumaRWyjsc = maRWyjsc ? trade.exits.reduce((s, e) => s + (e.rMultiple ?? 0), 0) : null;
+  /* Wiersz sumy bierze wynik i R z trade'a, NIE z sumowania kolumn wyzej.
+     Dwa powody. R kawalka jest liczone wzgledem ryzyka proporcjonalnego do
+     jego wielkosci, wiec suma kolumny bez wazenia udzialem daje liczbe
+     zawyzona (dwa kawalki po +5R i +1R przy trade'cie +3R). A `pnl` kawalka
+     nie zna kwoty z rachunku podanej dla calego trade'a (ADR-016), wiec
+     suma kolumny rozjechalaby sie z kwota w naglowku strony. Zrodlem prawdy
+     jest `computeTrade`, nie dodawanie w widoku. */
+  const sumaPnlWyjsc = trade.pnl;
+  const sumaRWyjsc = trade.rMultiple;
 
   return (
     <div className="space-y-4">

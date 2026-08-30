@@ -274,6 +274,23 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     };
   }
 
+  /* Trade rozstrzygniety musi miec czas kazdego wyjscia. Dawny formularz
+     wymagal jednej daty wyjscia i ten wymog zostaje - bez czasu `durationS`
+     jest `null`, wiec trade po cichu wypadalby ze statystyk czasu trzymania.
+     Przy kilku kawalkach czas jest dodatkowo tym, co ustala ich kolejnosc,
+     a od kolejnosci zalezy `scalingR`. Kolumna `trade_exits.exit_time` jest
+     mimo to NULLABLE - dla pozycji otwartych i dla kawalkow wpisywanych
+     w trakcie, gdy godziny jeszcze sie nie zna. */
+  if (status === "closed" || status === "missed") {
+    const bezCzasu = wszystkieWyjscia.findIndex((w) => w.time === null);
+    if (bezCzasu !== -1) {
+      return {
+        ok: false,
+        error: `Wyjście #${bezCzasu + 1}: podaj czas wyjścia. Trade zamknięty musi mieć godziny wszystkich wyjść.`,
+      };
+    }
+  }
+
   const stopLoss = number(data, "stopLoss");
   const takeProfit = number(data, "takeProfit");
   const mae = number(data, "mae");

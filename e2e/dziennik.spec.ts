@@ -980,6 +980,13 @@ test("trade z dwoma wyjściami liczy sumę, średnią cenę i wpływ skalowania"
   const stopka = panelWyjsc.locator("tfoot tr");
   await expect(stopka).toContainText("Suma");
   await expect(stopka).toContainText("2");
+
+  /* Stopka pokazuje R CALEGO trade'a (+3.00R), a nie sume kolumny wyzej
+     (+5.00R i +1.00R dalyby +6.00R). R kawalka jest liczone wzgledem ryzyka
+     proporcjonalnego do jego wielkosci, wiec dodawanie tej kolumny bez wazenia
+     udzialem zawyza wynik - dokladnie ten blad tu pilnujemy. */
+  await expect(stopka).toContainText("+3.00R");
+  await expect(stopka).not.toContainText("+6.00R");
 });
 
 test("pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wynik z etykietą „częściowo” i nie rusza KPI pulpitu", async ({

@@ -247,6 +247,12 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
     // pominiete (`f.missed === "tylko"`), wykluczenie by dawalo zawsze pustke -
     // wtedy filtr wyniku ocenia hipotetyczny wynik samych "missed".
     if (f.missed !== "tylko") w.push(sql`${trades.status}::text <> 'missed'`);
+    /* Pozycja czesciowo zamknieta ma juz niepuste `pnl` (zysk zrealizowany),
+       ale jej wynik NIE jest rozstrzygniety - status zostaje "open". Bez tego
+       warunku wchodzilaby na liste pod ?wynik=zysk, podczas gdy KPI nad ta
+       sama lista licza sie z `closedOnly`, wiec lista i licznik pokazywalyby
+       dwa rozne zbiory. */
+    w.push(sql`${trades.status}::text in ('closed', 'missed')`);
   }
 
   if (f.search) {

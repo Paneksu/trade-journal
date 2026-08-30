@@ -7,6 +7,14 @@ import { marketHour, marketSession, timeParts, tradingDay } from "../src/lib/dom
 import * as schema from "../src/lib/db/schema";
 
 /*
+ * ZUZYTY - NIE URUCHAMIAC po migracji 0014 (czesciowe wyjscia, 2026-08-30).
+ *
+ * Skrypt przesuwa `trades.entry_time` i `trades.exit_time`, ale nie zna tabeli
+ * `trade_exits`. Po migracji 0014 `trades.exit_time` jest polem POCHODNYM -
+ * czasem ostatniego kawalka - wiec przesuniecie samego trade'a rozjechaloby je
+ * ze zrodlem. Gdyby taka naprawa byla kiedys znowu potrzebna, trzeba najpierw
+ * dopisac tu przesuniecie wierszy potomnych.
+ *
  * Jednorazowa naprawa historii po ADR-022 (2026-08-30).
  *
  * Do 29.08.2026 formularz czytal godziny trade'a w strefie z USTAWIEN

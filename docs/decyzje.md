@@ -1017,6 +1017,14 @@ to dalej dosłownie `closedOnly` (`status === "closed"`), nietknięta od ADR-024
 bo połowa pozycji liczyłaby się jako cały trade. Statusy `closed` i `missed` wymagają, żeby
 wyjścia sumowały się do całości.
 
+**Czas wyjścia zostaje wymagany przy trade'cie rozstrzygniętym.** Dawny formularz żądał
+jednej daty wyjścia i ten wymóg obowiązuje dalej, tylko teraz dotyczy każdego kawałka przy
+statusie `closed` i `missed`. Bez czasu `duration_s` jest `null`, więc trade po cichu
+wypadałby ze statystyk czasu trzymania, a przy kilku wyjściach czas jest dodatkowo tym, co
+ustala ich kolejność — a od kolejności zależy `scaling_r`. Kolumna `trade_exits.exit_time`
+zostaje mimo to NULLABLE: potrzebują tego pozycje otwarte i kawałki wpisywane w trakcie,
+gdy godziny jeszcze się nie zna.
+
 **Bez CHECK-a pilnującego sumy kontraktów.** Postgres nie wyrazi ograniczenia sięgającego do
 drugiej tabeli, a walidacja i tak musi siedzieć w akcji zapisu, żeby użytkownik dostał zdanie
 po polsku, a nie surowy komunikat bazy — ta sama zasada, co przy `normalizujKierunek`

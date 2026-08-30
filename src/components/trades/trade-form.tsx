@@ -29,6 +29,7 @@ import { saveTrade, type FormState } from "@/lib/actions/trades";
 import {
   computeTrade,
   exitPriceForAmount,
+  fromLocalInput,
   type Direction,
   type ExitForAmount,
   type ExitInput,
@@ -85,8 +86,13 @@ type StanWyjscia = {
   price: string;
   contracts: string;
   kwota: string;
-  defaultTime: string;
-  defaultNote: string;
+  /* Czas i notatka sa KONTROLOWANE, tak jak cena i kontrakty. Czas musi byc,
+     bo podglad sortuje po nim kawalki dokladnie tak, jak robi to akcja zapisu
+     - bez tego "ostatnie wyjscie" w podgladzie i w zapisie to dwa rozne
+     wiersze i `scalingR` potrafi zmienic znak. Notatka dla parzystosci: o tym,
+     czy wiersz jest pusty, decyduja te same piec pol po obu stronach. */
+  time: string;
+  note: string;
 };
 
 /** Tolerancja przy porownaniach sum kontraktow - liczby z formularza to
@@ -99,15 +105,15 @@ const EPS_KONTRAKTY = 1e-6;
  * losowe id (np. crypto.randomUUID) tutaj zrobiloby mismatch. */
 function poczatkoweWyjscia(exits: ExitFormValue[] | undefined): StanWyjscia[] {
   if (!exits || exits.length === 0) {
-    return [{ id: "wy-init-0", price: "", contracts: "", kwota: "", defaultTime: "", defaultNote: "" }];
+    return [{ id: "wy-init-0", price: "", contracts: "", kwota: "", time: "", note: "" }];
   }
   return exits.map((e, i) => ({
     id: `wy-init-${i}`,
     price: e.price ?? "",
     contracts: e.contracts ?? "",
     kwota: e.brokerAmount ?? "",
-    defaultTime: e.time ?? "",
-    defaultNote: e.note ?? "",
+    time: e.time ?? "",
+    note: e.note ?? "",
   }));
 }
 
@@ -266,15 +272,25 @@ export function TradeForm({
   const [rozwinieteWyjscia, setRozwinieteWyjscia] = useState<Set<string>>(() => new Set());
 
   function dodajWyjscie() {
+    /* Zanim dolozymy wiersz, utrwalamy cene, ktora do tej pory byla WYLICZANA
+       z kwoty brokera dla calego trade'a. Ta podpowiedz dziala tylko przy
+       jednym wyjsciu, wiec bez utrwalenia pole pierwszego wiersza pustoszaloby
+       w chwili kliniecia "Dodaj wyjscie" - a wiersz bez ceny jest przy zapisie
+       odsiewany jako pusty i kwota z rachunku przepadalaby bez slowa. */
+    const zKwotyTrade = wyliczCeneZKwotyTrade();
     setWyjscia((w) => [
-      ...w,
+      ...w.map((x, i) =>
+        i === 0 && x.price.trim() === "" && x.kwota.trim() === "" && zKwotyTrade
+          ? { ...x, price: String(zKwotyTrade.exitPrice) }
+          : x,
+      ),
       {
         id: `wy-nowe-${licznikWyjsc.current++}`,
         price: "",
         contracts: "",
         kwota: "",
-        defaultTime: "",
-        defaultNote: "",
+        time: "",
+        note: "",
       },
     ]);
   }
@@ -300,10 +316,31 @@ export function TradeForm({
 
   /* Cena wyliczona z kwoty brokera TEGO kawalka - jednokierunkowe, jak dawny
      mechanizm na poziomie calego trade'a (ADR-016), teraz per wiersz. */
+  /* Wiersz "niepusty" znaczy tu DOKLADNIE to samo, co w akcji zapisu: cokolwiek
+     wpisano w ktorekolwiek z pieciu pol. Akcja odsiewa puste wiersze zanim
+     policzy, ile ich zostalo, wiec podglad musi liczyc tak samo. Liczenie
+     wierszy widocznych w DOM (`wyjscia.length`) dawalo cichy rozjazd: dolozony
+     pusty wiersz gasil regule w podgladzie, a zapis i tak domykal kontrakty do
+     calej pozycji i zamykal trade'a. */
+  function niepustyWiersz(w: StanWyjscia): boolean {
+    return (
+      w.price.trim() !== "" ||
+      w.contracts.trim() !== "" ||
+      w.kwota.trim() !== "" ||
+      w.time.trim() !== "" ||
+      w.note.trim() !== ""
+    );
+  }
+
+  const niepustychWierszy = wyjscia.filter(niepustyWiersz).length;
+  /** Czy obowiazuje regula "puste kontrakty znacza cala pozycje" - tylko przy
+   * dokladnie jednym wypelnionym wierszu. */
+  const jedenWiersz = niepustychWierszy <= 1;
+
   /** Kontrakty tego wiersza - z uwzglednieniem reguly "jedyny wiersz z pustym
    * polem znaczy cala pozycje" (ta sama, co w akcji zapisu). */
   function kontraktyWiersza(wiersz: StanWyjscia): number | null {
-    if (wiersz.contracts.trim() === "" && wyjscia.length === 1) return parse(contracts);
+    if (wiersz.contracts.trim() === "" && jedenWiersz) return parse(contracts);
     return parse(wiersz.contracts);
   }
 
@@ -352,7 +389,7 @@ export function TradeForm({
       const wyliczona = wyliczCeneWiersza(wiersz);
       return wyliczona ? String(wyliczona.exitPrice) : "";
     }
-    if (wiersz.price.trim() === "" && wyjscia.length === 1) {
+    if (wiersz.price.trim() === "" && jedenWiersz) {
       const zTrade = wyliczCeneZKwotyTrade();
       if (zTrade) return String(zTrade.exitPrice);
     }
@@ -374,29 +411,42 @@ export function TradeForm({
     zmienWiersz(wiersz, { contracts: String(wartosc) });
   }
 
-  /* Kawalki wyjscia gotowe dla `computeTrade` - podajemy je w kolejnosci
-     wierszy formularza, funkcja sama ich NIE sortuje (kontrakt `calc.ts`).
-     Czas kazdego kawalka jest polem niekontrolowanym (patrz uzasadnienie w
-     JSX), wiec podglad go nie zna - to nie zmienia pnl/R/scalingR, tylko
-     nie liczy tu duration/exitTime, ktorych panel podogladu i tak nie pokazuje. */
+  /* Kawalki wyjscia gotowe dla `computeTrade`. `computeTrade` sam ich NIE
+     sortuje (kontrakt `calc.ts`), a od kolejnosci zalezy, ktory kawalek jest
+     "ostatni" w `scalingR` - wiec podglad musi ustawic ja DOKLADNIE tak samo
+     jak akcja zapisu: po czasie rosnaco, a wiersze bez czasu na koncu, w
+     kolejnosci wpisania. Inaczej panel podgladu pokazywalby inny wplyw
+     skalowania niz karta trade'a po zapisie.
+
+     Zaleznosci `useMemo` sa wypisane recznie, bo cialo wola funkcje
+     zdefiniowane w komponencie (`efektywnaCenaWiersza`, `kontraktyWiersza`),
+     ktorych linter nie potrafi rozlozyc na skladniki - lista pokrywa wszystko,
+     co te funkcje faktycznie czytaja. */
   const previewExits = useMemo(() => {
-    const list: ExitInput[] = [];
-    /* Jedno wyjscie z pusta liczba kontraktow = cala pozycja. Ta sama regula
-       co w akcji zapisu (`czytajWyjscia`) - podglad musi ja powtorzyc, inaczej
-       pokazywalby pusty wynik dla trade'a, ktory zapisze sie poprawnie. */
-    for (const w of wyjscia) {
+    const strefa = spec?.exchangeTimezone ?? "UTC";
+    const zebrane: { exit: ExitInput; czas: Date | null; idx: number }[] = [];
+    for (const [idx, w] of wyjscia.entries()) {
       const cena = parse(efektywnaCenaWiersza(w));
       const kontrakty = kontraktyWiersza(w);
       if (cena === null || kontrakty === null || kontrakty <= 0) continue;
       const kwota = parse(w.kwota);
-      list.push({
-        price: cena,
-        contracts: kontrakty,
-        time: null,
-        brokerAmount: kwota === null ? null : Math.round(kwota * 100),
+      const czas = w.time.trim() === "" ? null : fromLocalInput(w.time, strefa);
+      zebrane.push({
+        czas,
+        idx,
+        exit: {
+          price: cena,
+          contracts: kontrakty,
+          time: czas,
+          brokerAmount: kwota === null ? null : Math.round(kwota * 100),
+        },
       });
     }
-    return list;
+    const zCzasem = zebrane
+      .filter((z) => z.czas !== null)
+      .sort((a, b) => a.czas!.getTime() - b.czas!.getTime() || a.idx - b.idx);
+    const bezCzasu = zebrane.filter((z) => z.czas === null);
+    return [...zCzasem, ...bezCzasu].map((z) => z.exit);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wyjscia, entryPrice, direction, spec, contracts, netTarget]);
 
@@ -702,7 +752,8 @@ export function TradeForm({
                             id={`wy-${i}-czas`}
                             name="wy_czas"
                             type="datetime-local"
-                            defaultValue={w.defaultTime}
+                            value={w.time}
+                            onChange={(e) => zmienWiersz(w, { time: e.target.value })}
                           />
                         </div>
                         <div className="min-w-[6.5rem] flex-1 space-y-1">
@@ -729,7 +780,7 @@ export function TradeForm({
                                podpowiedz pokazuje ta liczbe, zeby regula nie dzialala
                                po cichu. Przy kilku wierszach nie ma czego domyslac. */
                             placeholder={
-                              wyjscia.length === 1 && contracts.trim() !== ""
+                              jedenWiersz && contracts.trim() !== ""
                                 ? `${contracts} (cała pozycja)`
                                 : undefined
                             }
@@ -786,7 +837,12 @@ export function TradeForm({
                         </div>
                         <div className="space-y-1">
                           <Label htmlFor={`wy-${i}-notatka`}>Notatka</Label>
-                          <Input id={`wy-${i}-notatka`} name="wy_notatka" defaultValue={w.defaultNote} />
+                          <Input
+                            id={`wy-${i}-notatka`}
+                            name="wy_notatka"
+                            value={w.note}
+                            onChange={(e) => zmienWiersz(w, { note: e.target.value })}
+                          />
                         </div>
                       </div>
                     </fieldset>

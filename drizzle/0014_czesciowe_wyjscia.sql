@@ -27,6 +27,14 @@
 -- wiersza w "trade_exits" - zostaje wylacznie na poziomie trade'a. Gdyby
 -- wpisac ja tez do kawalka, przy sumowaniu podwoilaby wynik.
 --
+-- Warunek "contracts > 0" w backfillu jest bezpiecznikiem, nie filtrem na
+-- dane, ktorych sie spodziewamy. Akcja zapisu odrzuca niedodatnia wielkosc
+-- pozycji od poczatku istnienia dziennika i w bazie takich wierszy nie ma, ale
+-- w "trades" nie ma CHECK-a, ktory by tego pilnowal - a "trade_exits" taki
+-- CHECK ma. Jeden odziedziczony wiersz z zerem wywrocilby INSERT, a migrator
+-- owija JEDNA transakcja caly przebieg, wiec padloby cale wdrozenie. Taki
+-- trade zostaje po prostu bez wiersza-potomka i z exit_count = 0.
+--
 -- Migracja nie dodaje wartosci do zadnego enuma, wiec pulapka z 0013
 -- (migrator owija jedna transakcja caly przebieg zaleglych plikow) tu nie
 -- gryzie - CREATE TABLE, ALTER TABLE ADD COLUMN i UPDATE moga bezpiecznie
@@ -60,10 +68,10 @@ ALTER TABLE "trades" ADD COLUMN "scaling_r" numeric(12, 4);--> statement-breakpo
 INSERT INTO "trade_exits" ("trade_id", "sort_order", "exit_time", "exit_price", "contracts", "broker_amount")
 SELECT "id", 0, "exit_time", "exit_price", "contracts", NULL
 FROM "trades"
-WHERE "exit_price" IS NOT NULL;--> statement-breakpoint
+WHERE "exit_price" IS NOT NULL AND "contracts" > 0;--> statement-breakpoint
 
 UPDATE "trades"
 SET "closed_contracts" = "contracts", "exit_count" = 1
-WHERE "exit_price" IS NOT NULL;--> statement-breakpoint
+WHERE "exit_price" IS NOT NULL AND "contracts" > 0;--> statement-breakpoint
 
 CREATE INDEX "trades_skalowanie_idx" ON "trades" USING btree ("exit_count") WHERE "exit_count" > 1;
