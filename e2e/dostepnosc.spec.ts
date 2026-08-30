@@ -66,6 +66,70 @@ test("dostępność: sesja backtestu", async ({ page }) => {
   expect(opis, opis.join("\n")).toEqual([]);
 });
 
+/*
+ * Status "missed" ("nie wzięty") dorzuca nowe elementy wizualne, ktorych
+ * EKRANY powyzej nie widzą, bo lecą po pustym stanie: pasek koloru "accent"
+ * na kaflu galerii (etykieta "NIE WZIĘTY") i sekcja "Pominięte" na /stats.
+ * Oba testuje sie tylko wtedy, gdy dany trade faktycznie istnieje na
+ * ekranie - inaczej audyt przechodziłby bez sprawdzenia niczego nowego.
+ */
+test("dostępność: /stats z sekcją Pominięte", async ({ page }) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-09-01T15:30");
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#exitTime").fill("2021-09-01T16:00");
+  await page.locator("#exitPrice").fill("5010");
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  await page.goto("/stats?od=2021-09-01&do=2021-09-01");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("heading", { name: "Pominięte" })).toBeVisible();
+
+  const wynik = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+
+  const opis = wynik.violations.map(
+    (v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} el.`,
+  );
+  expect(opis, opis.join("\n")).toEqual([]);
+});
+
+test("dostępność: /galeria z kaflem trade'a nie wziętego", async ({ page }) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("1");
+  await page.locator("#entryTime").fill("2021-09-02T15:30");
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#exitTime").fill("2021-09-02T16:00");
+  await page.locator("#exitPrice").fill("5010");
+  await page.locator("#status").selectOption("missed");
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  // Kafel bez zrzutu tez ma sie pojawic - "zezrzutem=wszystko" zdejmuje
+  // domyslny filtr ADR-019, inaczej ten trade nie trafiłby na ekran wcale.
+  // Filtr na dokladnie ten dzien (od/do): galeria stronicuje po 60 kafli, a
+  // baza ma ich juz wiecej po dluzszym przebiegu zestawu - bez zawezenia
+  // trade z 2021 roku spadlby poza pierwsza strone (sortowanie od najnowszych).
+  await page.goto("/galeria?zezrzutem=wszystko&od=2021-09-02&do=2021-09-02");
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByText("NIE WZIĘTY").first()).toBeVisible();
+
+  const wynik = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+
+  const opis = wynik.violations.map(
+    (v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} el.`,
+  );
+  expect(opis, opis.join("\n")).toEqual([]);
+});
+
 test("dostępność: logowanie", async ({ browser }) => {
   const czysty = await browser.newContext({ storageState: undefined });
   const strona = await czysty.newPage();

@@ -24,6 +24,7 @@ export function FilterBar({
   fields,
   activeCount,
   embedded = false,
+  domyslnieOtwarty = true,
 }: {
   accounts: Account[];
   instruments: Instrument[];
@@ -32,10 +33,15 @@ export function FilterBar({
   activeCount: number;
   /** Gdy pasek jest czescia wiekszego panelu, nie rysuje wlasnej ramki. */
   embedded?: boolean;
+  /** Galeria wlacza `withShots` sama, z rozpedu - to nie jest filtr, ktory
+   *  uzytkownik swiadomie ustawil, wiec nie powinien rozwijac panelu przy
+   *  wejsciu (recenzja 2026-08-30, znalezisko 2). `/trades` i `/stats` nie
+   *  przekazuja tego propa i zachowuja stare zachowanie. */
+  domyslnieOtwarty?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [open, setOpen] = useState(activeCount > 0);
+  const [open, setOpen] = useState(domyslnieOtwarty && activeCount > 0);
 
   const value = (key: string) => params.get(key) ?? "";
   const values = (key: string) => (params.get(key) ?? "").split(",").filter(Boolean);
@@ -212,6 +218,15 @@ export function FilterBar({
               <option value="wszystko">wszystkie</option>
               <option value="1">tylko ze zrzutem</option>
               <option value="0">tylko bez zrzutu</option>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="pominiete">Nie wzięte</Label>
+            <Select id="pominiete" name="pominiete" defaultValue={value("pominiete")}>
+              <option value="">wszystkie</option>
+              <option value="nie">pomiń</option>
+              <option value="tylko">tylko te</option>
             </Select>
           </div>
 

@@ -35,6 +35,7 @@ export function MonthGrid({
   month,
   days,
   noTradeDays = [],
+  missedDays = [],
   currency,
   unit = "cash",
   linkBase = "/calendar",
@@ -43,6 +44,8 @@ export function MonthGrid({
   month: string;
   days: DayResult[];
   noTradeDays?: NoTradeDay[];
+  /** Dni-pauzy, na ktorych mimo wszystko lezy trade `missed` (setup byl, nie wzieto go). */
+  missedDays?: string[];
   currency: string;
   unit?: "cash" | "r";
   linkBase?: string;
@@ -52,6 +55,7 @@ export function MonthGrid({
 }) {
   const byDay = new Map(days.map((d) => [d.day, d]));
   const noTradeByDay = new Map(noTradeDays.map((d) => [d.day, d]));
+  const missedSet = new Set(missedDays);
   const all = daysInMonth(month);
   const offset = all.length > 0 ? weekdayIndex(all[0]) : 0;
 
@@ -83,15 +87,19 @@ export function MonthGrid({
         {all.map((day) => {
           const result = byDay.get(day);
           const pause = result ? undefined : noTradeByDay.get(day);
+          const missed = pause ? missedSet.has(day) : false;
           const value = result ? (unit === "cash" ? result.pnl : result.r) : 0;
           const alpha = result ? intensity(value) : 0;
           // Skladowe zgodne z tokenami --color-profit i --color-loss.
           const rgb = value > 0 ? "70 192 139" : "229 101 79";
 
           const opis = pause
-            ? pause.reason
-              ? `Dzień bez transakcji: ${pause.reason.toLowerCase()}`
-              : "Dzień bez transakcji"
+            ? [
+                pause.reason ? `Dzień bez transakcji: ${pause.reason.toLowerCase()}` : "Dzień bez transakcji",
+                missed && "1 trade nie wzięty",
+              ]
+                .filter(Boolean)
+                .join(" · ")
             : undefined;
 
           return (
@@ -100,7 +108,7 @@ export function MonthGrid({
               href={linkDnia ? linkDnia(day) : `${linkBase}?dzien=${day}`}
               title={opis}
               className={cx(
-                "flex min-h-16 flex-col rounded-[var(--radius-control)] border p-1.5",
+                "relative flex min-h-16 flex-col rounded-[var(--radius-control)] border p-1.5",
                 "transition-colors duration-150",
                 result || pause ? "border-line-strong" : "border-line hover:border-line-strong",
                 // Dzien bez transakcji nie jest ani zyskiem, ani strata - zadnego tintu.
@@ -124,7 +132,11 @@ export function MonthGrid({
                 <>
                   <span
                     className={cx(
-                      "liczba mt-auto text-xs font-medium",
+                      // `whitespace-nowrap`: `moneyShort` skleja U+2212 z symbolem
+                      // waluty ("−$460"), a przegladarka bez tego lamie wiersz na
+                      // znaku minus - strata wygladala jak kwota bez znaku
+                      // (recenzja 2026-08-30, znalezisko 11).
+                      "liczba mt-auto whitespace-nowrap text-xs font-medium",
                       value > 0
                         ? "text-profit-bright"
                         : value < 0
@@ -135,6 +147,17 @@ export function MonthGrid({
                     {unit === "cash" ? moneyShort(result.pnl, currency) : rValue(result.r)}
                   </span>
                   <span className="liczba text-[11px] text-muted">{result.count} tr.</span>
+                </>
+              )}
+              {missed && (
+                <>
+                  {/* Sama kropka nie moze byc jedynym nosnikiem informacji (WCAG 1.4.1)
+                      - ma odpowiednik w `title` kafla i w tekscie dla czytnika ekranu. */}
+                  <span
+                    aria-hidden="true"
+                    className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-accent"
+                  />
+                  <span className="sr-only">1 trade nie wzięty</span>
                 </>
               )}
               {pause && (

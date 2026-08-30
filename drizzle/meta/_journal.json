@@ -92,6 +92,13 @@
       "when": 1787570000000,
       "tag": "0012_gotowosc",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787580000000,
+      "tag": "0013_nie_wziety",
+      "breakpoints": true
     }
   ]
 }

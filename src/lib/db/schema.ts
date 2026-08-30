@@ -31,6 +31,7 @@ export const tradeStatusEnum = pgEnum("trade_status", [
   "open",
   "closed",
   "cancelled",
+  "missed",
 ]);
 export const accountTypeEnum = pgEnum("account_type", ["live", "demo", "prop", "paper"]);
 export const fieldTypeEnum = pgEnum("field_type", [

@@ -11,6 +11,7 @@ import { computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc"
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import { czyPowod, normalizujKierunek } from "@/lib/domain/kierunek";
 import { wynikTrade } from "@/lib/domain/outcome";
+import { czyStatus, maWynik } from "@/lib/domain/status";
 import { cleanValues, fieldsForScope, readFromForm, validateValues } from "@/lib/fields/fields";
 import { getFields, getProgi, instrumentSpec } from "@/lib/queries/dictionaries";
 import { deleteScreenshot, deleteTradeDir, saveScreenshot } from "@/lib/screenshots";
@@ -115,14 +116,26 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const exitPrice = number(data, "exitPrice");
 
   // Brak ceny wyjscia oznacza, ze pozycja jest wciaz otwarta - nie zmuszamy
-  // uzytkownika do przelaczania statusu recznie.
+  // uzytkownika do przelaczania statusu recznie. Walidacja przez czyStatus,
+  // bo surowy string z formularza (statusRaw) nie jest zaufany - dowolna
+  // wartosc leciala prosto do Postgresa.
   const status =
     statusRaw === "closed" && exitPrice === null
       ? "open"
-      : (statusRaw as "planned" | "open" | "closed" | "cancelled");
+      : czyStatus(statusRaw)
+        ? statusRaw
+        : "closed";
 
-  if (status === "closed" && !exitTime) {
+  // "closed" i "missed" maja policzalny wynik (maWynik, domain/status.ts) -
+  // oba wymagaja daty wyjscia, inaczej nie ma z czego liczyc R/PnL.
+  if (maWynik(status) && !exitTime) {
     return { ok: false, error: "Trade zamknięty musi mieć datę wyjścia." };
+  }
+  // Nie wzieta pozycja MUSI miec tez cene wyjscia - bez niej nie ma czego
+  // liczyc, a puste R/PnL zgubiloby sie po cichu w statystykach "Pominietych"
+  // (dla "closed" to samo pilnuje juz auto-korekta closed->open wyzej).
+  if (status === "missed" && exitPrice === null) {
+    return { ok: false, error: "Trade nie wzięty musi mieć cenę wyjścia — bez niej nie ma czego liczyć." };
   }
   if (exitTime && exitTime.getTime() < entryTime.getTime()) {
     return { ok: false, error: "Wyjście nie może być wcześniej niż wejście." };
@@ -139,7 +152,7 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
      pozycja wyniku nie ma, wiec kwota jej nie dotyczy. */
   const brokerRaw = number(data, "brokerAmount");
   const brokerAmount =
-    status === "closed" && exitPrice !== null && brokerRaw !== null
+    maWynik(status) && exitPrice !== null && brokerRaw !== null
       ? Math.round(brokerRaw * 100)
       : null;
 
@@ -148,13 +161,13 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     direction,
     contracts,
     entryPrice,
-    exitPrice: status === "closed" ? exitPrice : null,
+    exitPrice: maWynik(status) ? exitPrice : null,
     stopLoss,
     takeProfit,
     mae,
     mfe,
     entryTime,
-    exitTime: status === "closed" ? exitTime : null,
+    exitTime: maWynik(status) ? exitTime : null,
     brokerAmount,
   });
 
@@ -184,6 +197,11 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
       potentialR: number(data, "potentialR"),
     },
     {
+      // Blok kierunku (ADR-018) celowo zostaje na `=== "closed"`, NIE
+      // `maWynik`. Nie wzieta pozycja nie ma egzekucji - "kierunek dobry,
+      // zawiodla egzekucja" nie ma sensu dla setupu, ktorego nikt nie
+      // wykonal. Pola ida na `null` i CHECK `trades_kierunek` przechodzi.
+      //
       // Brak `pnl` (trade bez ceny wyjscia) nie jest wygrana - jest brakiem
       // rozstrzygniecia, a wtedy `oceniane` i tak jest falszem.
       wygrana:
@@ -211,8 +229,8 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     status,
     entryTime,
     entryPrice: String(entryPrice),
-    exitTime: status === "closed" ? exitTime : null,
-    exitPrice: status === "closed" && exitPrice !== null ? String(exitPrice) : null,
+    exitTime: maWynik(status) ? exitTime : null,
+    exitPrice: maWynik(status) && exitPrice !== null ? String(exitPrice) : null,
     contracts: String(contracts),
     stopLoss: stopLoss === null ? null : String(stopLoss),
     takeProfit: takeProfit === null ? null : String(takeProfit),

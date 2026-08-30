@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { Badge } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
+import { maWynik, type StatusTrade } from "@/lib/domain/status";
+import { TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import type { TradeRecord } from "@/lib/queries/trades";
 import { dateTime, money, pnlClass, price, rValue, wynikClass } from "@/lib/format";
 
@@ -81,12 +83,19 @@ export function TradeList({
 
             <span
               className={cx(
-                "liczba w-[5.5rem] shrink-0 text-right text-sm font-medium sm:w-24",
+                "liczba w-24 shrink-0 text-right text-sm font-medium sm:w-28",
                 wynikClass(t.wynik),
               )}
             >
-              {t.status === "closed" ? money(t.pnl, { currency: t.currency, sign: true }) : "otwarty"}
-              {t.status === "closed" && t.wynik === "be" && (
+              {/* Prefiks "~" zamiast osobnego znacznika "hipot." (ta sama
+                  konwencja co w galerii, ADR recenzji 2026-08-30) - jedna
+                  litera nie rozsadza sztywnej szerokosci kolumny tak jak
+                  robilo to dopisane slowo. */}
+              {t.status === "missed" && "~"}
+              {maWynik(t.status as StatusTrade)
+                ? money(t.pnl, { currency: t.currency, sign: true })
+                : TRADE_STATUS_NAMES[t.status]}
+              {maWynik(t.status as StatusTrade) && t.wynik === "be" && (
                 <span className="ml-1 text-xs opacity-70">BE</span>
               )}
             </span>

@@ -30,8 +30,12 @@
      kaflu podstawowa zielen ma 3,6:1, a te odmiany trzymaja 4,5:1. */
   --color-profit-bright: #6fd6a8;
   --color-loss-bright: #f08a78;
-  /* Wynik zerowy. Ciemniejszy odcien nie przechodzil 4,5:1 na tle panelu. */
-  --color-flat: #838f9d;
+  /* Wynik zerowy (BE). Byl identyczny z --color-faint (#838f9d, kontrast
+     1,00 miedzy nimi) - na kaflu BE wiersz wyniku nie roznil sie niczym od
+     metadaty pod spodem (recenzja 2026-08-30, znalezisko 7). Jasniejszy
+     odcien, miedzy --color-muted a --color-text: 11,32:1 na tle --color-bg
+     (mierzone na pikselach), 1,93:1 wobec --color-faint. */
+  --color-flat: #bfc7d0;
 
   --color-viz-1: #e8a44c;
   --color-viz-2: #5aa9e6;

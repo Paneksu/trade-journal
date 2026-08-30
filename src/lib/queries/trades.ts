@@ -335,7 +335,13 @@ export async function countTrades(f: Filters): Promise<number> {
   return row?.n ?? 0;
 }
 
-/** Tylko zamkniete trade'y - podstawa wszystkich statystyk. */
+/**
+ * Tylko zamkniete trade'y - podstawa wszystkich statystyk. Doslownie
+ * `=== "closed"`, celowo NIE `maWynik` (domain/status.ts): "missed" ma
+ * policzalny wynik, ale ma nie liczyc sie do statystyk (sekcja "Pominiete"
+ * na /stats liczy je osobno). To jest cala bariera - pulpit, /stats,
+ * /trades, kalendarz i ekrany backtestu przechodza przez ten filtr.
+ */
 export function closedOnly(list: TradeRecord[]): TradeRecord[] {
   return list.filter((t) => t.status === "closed");
 }
@@ -384,6 +390,9 @@ export async function tradeCountsBySession(): Promise<Map<number, number>> {
   const rows = await db
     .select({ sessionId: trades.backtestSessionId, count: sql<number>`count(*)::int` })
     .from(trades)
+    /* Nie wzieta pozycja nie jest wykonanym trade'em backtestu - licznik
+       sesji ma nie zawyzac sie o setupy, ktorych nikt nie wzial. */
+    .where(sql`${trades.status}::text <> 'missed'`)
     .groupBy(trades.backtestSessionId);
   const map = new Map<number, number>();
   for (const w of rows) if (w.sessionId !== null) map.set(w.sessionId, w.count);

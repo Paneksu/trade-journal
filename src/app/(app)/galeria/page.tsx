@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { GalleryGrid } from "@/components/gallery/gallery-grid";
+import { SourceSwitch } from "@/components/layout/toolbar";
 import { FilterBar } from "@/components/trades/filter-bar";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
@@ -38,6 +39,10 @@ export default async function GaleriaPage({
   const filtry = parseFilters(params);
   // Domyslnie tylko ze zrzutem - chyba ze adres mowi inaczej.
   if (params.zezrzutem === undefined) filtry.withShots = true;
+  // Galeria to trening rozpoznawania wzorcow - domyslnie ogladamy wszystko,
+  // dziennik i backtesty razem. `parseFilters` zostaje nietkniety, zeby
+  // /trades i /stats dalej startowaly z "live".
+  if (params.zrodlo === undefined) filtry.source = "all";
 
   const strona = Math.max(1, Number(oneParam(params.strona) ?? 1) || 1);
   const offset = (strona - 1) * ROZMIAR_STRONY;
@@ -60,9 +65,16 @@ export default async function GaleriaPage({
           <p className="etykieta">Dziennik</p>
           <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Galeria</h1>
         </div>
-        <p className="text-sm text-faint">
-          {ile === 0 ? "brak trade'ów" : `${ile} trade'ów · strona ${strona} z ${stron}`}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <SourceSwitch
+            active={
+              filtry.source === "backtest" ? "backtest" : filtry.source === "all" ? "wszystko" : "live"
+            }
+          />
+          <p className="text-sm text-faint">
+            {ile === 0 ? "brak trade'ów" : `${ile} trade'ów · strona ${strona} z ${stron}`}
+          </p>
+        </div>
       </header>
 
       <div className="panel">
@@ -73,6 +85,7 @@ export default async function GaleriaPage({
           fields={fields}
           activeCount={activeFilterCount(filtry)}
           embedded
+          domyslnieOtwarty={false}
         />
       </div>
 
@@ -122,6 +135,10 @@ function linkStrony(
   // Brak parametru znaczy w galerii "tylko ze zrzutem", wiec zdjecie filtru
   // musi trafic do adresu JAWNIE - sama nieobecnosc niczego by nie wylaczyla.
   if (zeZrzutem === null) p.set("zezrzutem", "wszystko");
+  // To samo dla zrodla: `toSearchParams` pomija parametr, gdy source === "live"
+  // (bo to jej wlasny domyslny stan), ale w galerii brak parametru znaczy
+  // "wszystko" - bez tego "Nastepna ->" cofnieloby uzytkownika z "dziennik" na "razem".
+  if (filtry.source === "live") p.set("zrodlo", "live");
   if (strona > 1) p.set("strona", String(strona));
   const query = p.toString();
   return query ? `/galeria?${query}` : "/galeria";

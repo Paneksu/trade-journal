@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { DayNoteForm } from "@/components/calendar/day-note-form";
 import { MonthNav } from "@/components/calendar/month-nav";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
@@ -10,6 +12,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/lib/domain/day-log";
 import { computeStats, dailyPnl } from "@/lib/domain/stats";
+import { czyPominiety, type StatusTrade } from "@/lib/domain/status";
 import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
@@ -47,6 +50,12 @@ export default async function CalendarPage({
 
   const dayTrades = day ? monthTrades.filter((t) => t.tradingDay === day) : [];
   const dayStats = computeStats(closedOnly(dayTrades), progi);
+  /* Nie wzieta pozycja nie jest dowodem, ze dzien byl handlowy - serwer
+     (countTradesOnDay) jej nie liczy przy blokadzie checkboxa "bez transakcji",
+     wiec klient nie moze go liczyc tez. Bez tego wyszarzalby checkbox, ktorego
+     serwer by nie zablokowal - rozjazd bez komunikatu bledu. `dayTrades` (z
+     pominietymi) zostaje bez zmian dla TradeList - lista dnia ma je pokazywac. */
+  const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status as StatusTrade));
 
   const note = day ? notes.find((n) => n.day === day) : undefined;
   const dayShots = day ? await getDayScreenshots(note?.id) : [];
@@ -59,6 +68,14 @@ export default async function CalendarPage({
   const pauses = notes.filter((n) => n.noTrade && !traded.has(n.day));
   const noTradeDays = pauses.map((n) => ({ day: n.day, reason: reasonName(n.noTradeReason) }));
   const powody = noTradeBreakdown(pauses);
+
+  // Setup byl, ale nie zostal wzięty - te dni maja pozostac "pauza" w gridzie,
+  // ale zasluguja na dyskretny znacznik (patrz missedDays w MonthGrid).
+  const missedDays = [
+    ...new Set(
+      monthTrades.filter((t) => czyPominiety(t.status as StatusTrade)).map((t) => t.tradingDay),
+    ),
+  ];
 
   const coverage = journalCoverage({
     from,
@@ -127,13 +144,27 @@ export default async function CalendarPage({
           month={month}
           days={days}
           noTradeDays={noTradeDays}
+          missedDays={missedDays}
           currency={currency}
           unit={unit}
         />
-        {powody.length > 0 && (
-          <p className="border-t border-line px-3 py-2 text-xs text-muted">
-            <span className="etykieta mr-2">Powody pauz</span>
-            {powody.map((p) => `${p.label} ${p.count}`).join(" · ")}
+        {(powody.length > 0 || missedDays.length > 0) && (
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-3 py-2 text-xs text-muted">
+            {powody.length > 0 && (
+              <span>
+                <span className="etykieta mr-2">Powody pauz</span>
+                {powody.map((p) => `${p.label} ${p.count}`).join(" · ")}
+              </span>
+            )}
+            {missedDays.length > 0 && (
+              // Znaczenie kropki na kaflu zylo dotad tylko w `title` i
+              // `sr-only` - bez wpisu w legendzie nie da sie go odczytac bez
+              // najechania (recenzja 2026-08-30, znalezisko 12).
+              <span className="inline-flex items-center gap-1.5">
+                <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
+                nie wzięty setup {missedDays.length}
+              </span>
+            )}
           </p>
         )}
       </Panel>
@@ -144,11 +175,24 @@ export default async function CalendarPage({
             <Panel
               title={longDate(day)}
               description={
-                dayTrades.length > 0
+                dayRealne.length > 0
                   ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnl, { currency, sign: true })} · ${rValue(dayStats.sumR)}${dayStats.be > 0 ? ` · ${dayStats.be} BE` : ""}`
                   : note?.noTrade
                     ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? ` — ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
                     : "Brak trade'ów tego dnia."
+              }
+              actions={
+                // Byl 120x16px tekstem z podkresleniem na hover - ponizej
+                // minimalnego celu dotykowego 24x24 z WCAG 2.2 AA (2.5.8) i
+                // czytal sie jak etykieta stanu, nie akcja (recenzja
+                // 2026-08-30, znalezisko 13). Ramka i tlo daja mu forme
+                // przycisku, h-7 (28px) daje cel dotykowy z zapasem.
+                <Link
+                  href={`/trades/new?dzien=${day}&status=missed`}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 text-xs text-text transition-colors duration-150 hover:border-accent hover:text-accent"
+                >
+                  Był setup, nie wziąłem
+                </Link>
               }
             >
               <TradeList
@@ -173,7 +217,7 @@ export default async function CalendarPage({
               key={day}
               day={day}
               accountId={account?.id ?? null}
-              hasTrades={dayTrades.length > 0}
+              hasTrades={dayRealne.length > 0}
               values={{
                 preSession: note?.preSession,
                 postSession: note?.postSession,
