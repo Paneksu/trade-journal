@@ -46,6 +46,12 @@ export type Filters = {
    * na kazdym ekranie: nie wziete pokazuja sie razem z reszta).
    */
   missed: "tylko" | "bez" | null;
+  /**
+   * Czesciowe wyjscia z pozycji. `"skalowane"` = tylko trade'y z wiecej niz
+   * jednym wyjsciem (`exit_count > 1`), `"jedno"` = tylko z dokladnie jednym,
+   * `null` = bez filtru. Trzy stany, ten sam wzorzec co `missed`.
+   */
+  skalowanie: "skalowane" | "jedno" | null;
   direction: "long" | "short" | null;
   status: string | null;
   sessions: string[];
@@ -70,6 +76,7 @@ export const EMPTY_FILTERS: Filters = {
   reasons: [],
   withShots: null,
   missed: null,
+  skalowanie: null,
   direction: null,
   status: null,
   sessions: [],
@@ -115,6 +122,7 @@ export function parseFilters(p: SearchParams): Filters {
   const directionHit = one("kierunek_ok");
   const zrzuty = one("zezrzutem");
   const pominiete = one("pominiete");
+  const skalowanie = one("skalowanie");
   const status = one("status");
 
   return {
@@ -130,6 +138,8 @@ export function parseFilters(p: SearchParams): Filters {
     reasons: texts(p.powod).filter(czyPowod),
     withShots: zrzuty === "1" ? true : zrzuty === "0" ? false : null,
     missed: pominiete === "tylko" ? "tylko" : pominiete === "nie" ? "bez" : null,
+    skalowanie:
+      skalowanie === "skalowane" ? "skalowane" : skalowanie === "jedno" ? "jedno" : null,
     direction: direction === "long" ? "long" : direction === "short" ? "short" : null,
     // Nieznany status w adresie (literowka, stara wartosc z zakladki) trafialby
     // wprost do SQL bez ostrzezenia - `czyStatus` domyka nowo powstaly modul.
@@ -162,6 +172,7 @@ export function toSearchParams(f: Filters): URLSearchParams {
   if (f.reasons.length) p.set("powod", f.reasons.join(","));
   if (f.withShots !== null) p.set("zezrzutem", f.withShots ? "1" : "0");
   if (f.missed !== null) p.set("pominiete", f.missed === "tylko" ? "tylko" : "nie");
+  if (f.skalowanie !== null) p.set("skalowanie", f.skalowanie);
   put("kierunek", f.direction);
   put("status", f.status);
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
@@ -188,6 +199,7 @@ export function activeFilterCount(f: Filters): number {
   if (f.reasons.length) n += 1;
   if (f.withShots !== null) n += 1;
   if (f.missed !== null) n += 1;
+  if (f.skalowanie !== null) n += 1;
   if (f.direction) n += 1;
   if (f.status) n += 1;
   if (f.sessions.length) n += 1;
@@ -235,6 +247,12 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
     // pominiete (`f.missed === "tylko"`), wykluczenie by dawalo zawsze pustke -
     // wtedy filtr wyniku ocenia hipotetyczny wynik samych "missed".
     if (f.missed !== "tylko") w.push(sql`${trades.status}::text <> 'missed'`);
+    /* Pozycja czesciowo zamknieta ma juz niepuste `pnl` (zysk zrealizowany),
+       ale jej wynik NIE jest rozstrzygniety - status zostaje "open". Bez tego
+       warunku wchodzilaby na liste pod ?wynik=zysk, podczas gdy KPI nad ta
+       sama lista licza sie z `closedOnly`, wiec lista i licznik pokazywalyby
+       dwa rozne zbiory. */
+    w.push(sql`${trades.status}::text in ('closed', 'missed')`);
   }
 
   if (f.search) {
@@ -307,6 +325,11 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
 
   if (f.missed === "tylko") w.push(sql`${trades.status}::text = 'missed'`);
   if (f.missed === "bez") w.push(sql`${trades.status}::text <> 'missed'`);
+
+  // Czesciowe wyjscia z pozycji - to jedyne miejsce, w ktorym adres URL
+  // zamienia sie na warunek SQL po `exit_count`.
+  if (f.skalowanie === "skalowane") w.push(sql`${trades.exitCount} > 1`);
+  if (f.skalowanie === "jedno") w.push(sql`${trades.exitCount} = 1`);
 
   for (const [key, values] of Object.entries(f.fields)) {
     /* Wartosc pola wlasnego bywa tablica (lista wielokrotnego wyboru),

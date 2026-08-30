@@ -117,18 +117,56 @@ async function main() {
       ? entryPrice + Math.max(0.2, rWynik + losowa(0, 1)) * riskTicks * tickSize
       : entryPrice - Math.max(0.2, rWynik + losowa(0, 1)) * riskTicks * tickSize;
 
+    /* Wyjscia czesciowe (2026-08-30): mniej wiecej co czwarty wygrany trade
+       skaluje sie na 2-3 kawalki o roznych cenach, zeby panele skalowania w
+       danych demo mialy na czym pokazywac cokolwiek. Przegrane i trade'y z
+       jednym kontraktem zostaja przy pojedynczym wyjsciu - trudno "skalowac"
+       strate albo jeden kontrakt na kawalki > 0. */
+    const mozeSkalowac = wygrana && contracts >= 2;
+    const liczbaWyjsc = mozeSkalowac && Math.random() < 0.25 ? Math.min(contracts, Math.random() < 0.6 ? 2 : 3) : 1;
+
+    const exits: { price: number; contracts: number; time: Date | null; brokerAmount?: number | null }[] = [];
+    if (liczbaWyjsc === 1) {
+      exits.push({ price: exitPrice, contracts, time: exitTime, brokerAmount: null });
+    } else {
+      // Podzial kontraktow na kawalki, ostatni dostaje reszte z zaokraglenia.
+      const wielkosci: number[] = [];
+      let zostalo = contracts;
+      for (let k = 0; k < liczbaWyjsc - 1; k += 1) {
+        const kawalek = Math.max(1, Math.floor(contracts / liczbaWyjsc));
+        wielkosci.push(Math.min(kawalek, zostalo - (liczbaWyjsc - 1 - k)));
+        zostalo -= wielkosci[k];
+      }
+      wielkosci.push(zostalo);
+
+      // Kazdy kolejny kawalek pozniej w czasie i - dla typowego "scale out" -
+      // pierwszy kawalek bierze mniejszy ruch niz ostatni (runner).
+      let czasKawalka = new Date(dzien.getTime() + Math.floor(losowa(60, 1800)) * 1000);
+      for (let k = 0; k < liczbaWyjsc; k += 1) {
+        const udzial = (k + 1) / liczbaWyjsc;
+        const rKawalka = rWynik * (0.4 + 0.6 * udzial) * losowa(0.85, 1.15);
+        const cenaKawalka =
+          direction === "long"
+            ? entryPrice + rKawalka * riskTicks * tickSize
+            : entryPrice - rKawalka * riskTicks * tickSize;
+        exits.push({ price: cenaKawalka, contracts: wielkosci[k], time: czasKawalka, brokerAmount: null });
+        czasKawalka = new Date(
+          Math.min(exitTime.getTime(), czasKawalka.getTime() + Math.floor(losowa(60, 1800)) * 1000),
+        );
+      }
+    }
+
     const wynik = computeTrade({
       instrument: spec,
       direction,
       contracts,
       entryPrice,
-      exitPrice,
+      exits,
       stopLoss: Math.random() < 0.94 ? stopLoss : null,
       takeProfit: null,
       mae,
       mfe,
       entryTime: dzien,
-      exitTime,
     });
 
     const zasady = strategy?.rules ?? [];
@@ -144,8 +182,8 @@ async function main() {
         status: "closed",
         entryTime: dzien,
         entryPrice: String(entryPrice),
-        exitTime,
-        exitPrice: String(exitPrice),
+        exitTime: wynik.exitTime,
+        exitPrice: wynik.exitPrice === null ? null : String(wynik.exitPrice),
         contracts: String(contracts),
         stopLoss: wynik.riskTicks ? String(stopLoss) : null,
         mae: String(mae),
@@ -175,10 +213,25 @@ async function main() {
         weekday: wynik.weekday,
         entryHour: wynik.entryHour,
         tradingDay: wynik.tradingDay,
+        closedContracts: String(wynik.closedContracts),
+        exitCount: wynik.exitCount,
+        scalingR: wynik.scalingR === null ? null : wynik.scalingR.toFixed(4),
       })
       .returning({ id: schema.trades.id });
 
     wstawione.push(nowy.id);
+
+    await db.insert(schema.tradeExits).values(
+      exits.map((e, idx) => ({
+        tradeId: nowy.id,
+        sortOrder: idx,
+        exitTime: e.time,
+        exitPrice: String(e.price),
+        contracts: String(e.contracts),
+        brokerAmount: e.brokerAmount ?? null,
+        note: liczbaWyjsc > 1 ? (idx === liczbaWyjsc - 1 ? "runner" : `TP${idx + 1}`) : null,
+      })),
+    );
 
     const wybraneTagi = tags.filter(() => Math.random() < 0.18).slice(0, 3);
     if (wybraneTagi.length > 0) {

@@ -36,13 +36,12 @@ function input(overrides: Partial<TradeInput> = {}): TradeInput {
     direction: "long",
     contracts: 2,
     entryPrice: 20000,
-    exitPrice: 20025.5,
+    exits: [{ price: 20025.5, contracts: 2, time: new Date("2026-03-10T15:12:30Z") }],
     stopLoss: 19990,
     takeProfit: null,
     mae: null,
     mfe: null,
     entryTime: new Date("2026-03-10T14:30:00Z"),
-    exitTime: new Date("2026-03-10T15:12:30Z"),
     ...overrides,
   };
 }
@@ -86,6 +85,13 @@ describe("computeTrade - trade zyskowny na NQ", () => {
   it("liczy czas trwania w sekundach", () => {
     expect(w.durationS).toBe(2550);
   });
+
+  it("jedno wyjscie zamyka cala pozycje", () => {
+    expect(w.closedContracts).toBe(2);
+    expect(w.exitCount).toBe(1);
+    expect(w.exitPrice).toBe(20025.5);
+    expect(w.exitTime?.toISOString()).toBe("2026-03-10T15:12:30.000Z");
+  });
 });
 
 describe("computeTrade - trade stratny na ES po stronie short", () => {
@@ -95,7 +101,7 @@ describe("computeTrade - trade stratny na ES po stronie short", () => {
       direction: "short",
       contracts: 1,
       entryPrice: 5000,
-      exitPrice: 5010,
+      exits: [{ price: 5010, contracts: 1, time: new Date("2026-03-10T15:12:30Z") }],
       stopLoss: 5005,
     }),
   );
@@ -130,11 +136,15 @@ describe("computeTrade - przypadki brzegowe", () => {
   });
 
   it("trade otwarty nie ma wyniku, ale ma policzone ryzyko", () => {
-    const w = computeTrade(input({ exitPrice: null, exitTime: null }));
+    const w = computeTrade(input({ exits: [] }));
     expect(w.pnl).toBeNull();
     expect(w.rMultiple).toBeNull();
     expect(w.durationS).toBeNull();
     expect(w.riskAmount).toBe(40_000);
+    expect(w.exitPrice).toBeNull();
+    expect(w.exitTime).toBeNull();
+    expect(w.closedContracts).toBe(0);
+    expect(w.exitCount).toBe(0);
   });
 
   it("przelicza MAE i MFE na wielokrotnosc ryzyka", () => {
@@ -148,7 +158,7 @@ describe("computeTrade - przypadki brzegowe", () => {
       input({
         direction: "short",
         entryPrice: 20000,
-        exitPrice: 19950,
+        exits: [{ price: 19950, contracts: 2, time: new Date("2026-03-10T15:12:30Z") }],
         stopLoss: 20010,
         mae: 20005,
         mfe: 19940,
@@ -161,7 +171,12 @@ describe("computeTrade - przypadki brzegowe", () => {
   });
 
   it("zaokragla wynik do pelnych centow przy ulamkowej liczbie kontraktow", () => {
-    const w = computeTrade(input({ contracts: 0.5 }));
+    const w = computeTrade(
+      input({
+        contracts: 0.5,
+        exits: [{ price: 20025.5, contracts: 0.5, time: new Date("2026-03-10T15:12:30Z") }],
+      }),
+    );
     expect(w.pnl).toBe(25_500);
   });
 });
@@ -206,7 +221,13 @@ describe("computeTrade - kwota z brokera bije siatke tickow (ADR-016)", () => {
      lezy na siatce - cena wyjscia wypada tam, gdzie daloby 117,00 USD. Wynikiem
      ma byc to, co pokazuje rachunek, czyli 116,00 USD. */
   const w = computeTrade(
-    input({ contracts: 0.9, entryPrice: 12, exitPrice: 18.5, stopLoss: 8, brokerAmount: 11600 }),
+    input({
+      contracts: 0.9,
+      entryPrice: 12,
+      exits: [{ price: 18.5, contracts: 0.9, time: new Date("2026-03-10T15:12:30Z") }],
+      stopLoss: 8,
+      brokerAmount: 11600,
+    }),
   );
 
   it("zapisuje kwote z rachunku jako wynik", () => {
@@ -236,15 +257,284 @@ describe("computeTrade - kwota z brokera bije siatke tickow (ADR-016)", () => {
   });
 
   it("pozycja otwarta nie ma wyniku, nawet z podana kwota", () => {
-    const otwarta = computeTrade(
-      input({ exitPrice: null, exitTime: null, brokerAmount: 11600 }),
-    );
+    const otwarta = computeTrade(input({ exits: [], brokerAmount: 11600 }));
     expect(otwarta.pnl).toBeNull();
     expect(otwarta.rMultiple).toBeNull();
   });
 
   it("bez kwoty liczy po staremu, z tickow", () => {
     expect(computeTrade(input({ brokerAmount: null })).pnl).toBe(computeTrade(input()).pnl);
+  });
+});
+
+describe("computeTrade - suma kilku kawalkow wyjscia na NQ", () => {
+  const w = computeTrade(
+    input({
+      contracts: 3,
+      exits: [
+        { price: 20010, contracts: 1, time: new Date("2026-03-10T14:40:00Z") },
+        { price: 20030, contracts: 2, time: new Date("2026-03-10T15:12:30Z") },
+      ],
+    }),
+  );
+
+  it("pnl to suma dwoch kawalkow: 40 tickow*1k + 120 tickow*2k, po 5,00 USD", () => {
+    // kawalek 1: 40 * 1 * 5000 / 10 = 20 000; kawalek 2: 120 * 2 * 5000 / 10 = 120 000
+    expect(w.pnl).toBe(140_000);
+  });
+
+  it("ticks to srednia wazona kontraktami, nie ruch z usrednionej ceny", () => {
+    // (40*1 + 120*2) / 3 = 280 / 3 = 93,33 -> 93
+    expect(w.ticks).toBe(93);
+  });
+
+  it("exitPrice to srednia wazona ceny wyjscia", () => {
+    // (20010*1 + 20030*2) / 3 = 20023,333... -> 20023,33
+    expect(w.exitPrice).toBe(20023.33);
+  });
+
+  it("closedContracts i exitCount licza kawalki", () => {
+    expect(w.closedContracts).toBe(3);
+    expect(w.exitCount).toBe(2);
+  });
+});
+
+describe("computeTrade - srednia wazona ceny i tickow przy 3 wyjsciach o roznej wielkosci", () => {
+  const w = computeTrade(
+    input({
+      contracts: 6,
+      exits: [
+        { price: 20010, contracts: 1, time: new Date("2026-03-10T14:40:00Z") },
+        { price: 20020, contracts: 2, time: new Date("2026-03-10T14:50:00Z") },
+        { price: 20040, contracts: 3, time: new Date("2026-03-10T15:12:30Z") },
+      ],
+    }),
+  );
+
+  it("ticks: (40*1 + 80*2 + 160*3) / 6 = 680/6 = 113,33 -> 113", () => {
+    expect(w.ticks).toBe(113);
+  });
+
+  it("exitPrice: (20010*1 + 20020*2 + 20040*3) / 6 = 20028,33", () => {
+    expect(w.exitPrice).toBe(20028.33);
+  });
+
+  it("closedContracts sumuje wszystkie kawalki", () => {
+    expect(w.closedContracts).toBe(6);
+    expect(w.exitCount).toBe(3);
+  });
+});
+
+describe("computeTrade - zaokraglenie per kawalek na ZN (tick 15,625 USD)", () => {
+  it("suma dwoch kawalkow rozni sie o 1 cent od zaokraglenia raz na koncu", () => {
+    const w = computeTrade(
+      input({
+        instrument: ZN,
+        contracts: 2,
+        entryPrice: 110,
+        stopLoss: 109,
+        exits: [
+          { price: 110.015625, contracts: 1, time: new Date("2026-03-10T14:45:00Z") },
+          { price: 110.015625, contracts: 1, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+
+    /* Kazdy kawalek to ruch 1 ticku na 1 kontrakcie: 1 * 15625 / 10 = 1562,5
+       centa - Math.round zaokragla w gore do 1563. Dwa kawalki dają 3126.
+       Gdyby liczyc to RAZ NA KONCU z 2 kontraktow lacznie (bledny model,
+       ktorego to wymaganie zakazuje): 1 * 2 * 15625 / 10 = 3125,0 centa -
+       liczba juz calkowita, wiec ten "zgubiony" cent po prostu by zniknal.
+       Zaokraglanie per kawalek jest tym, co utrzymuje wynik zgodny z tym,
+       co realnie zaksiegowalby broker za kazde wypelnienie osobno. */
+    expect(w.ticks).toBe(1);
+    expect(w.pnl).toBe(3_126);
+  });
+});
+
+describe("computeTrade - pierwszenstwo kwot: trade > kawalek > siatka tickow", () => {
+  it("kwota trade'a bije wszystko, nawet gdy kawalek ma wlasna kwote", () => {
+    const w = computeTrade(
+      input({
+        exits: [
+          {
+            price: 20025.5,
+            contracts: 2,
+            time: new Date("2026-03-10T15:12:30Z"),
+            brokerAmount: 50_000,
+          },
+        ],
+        brokerAmount: 77_777,
+      }),
+    );
+    expect(w.pnl).toBe(77_777);
+  });
+
+  it("kwota kawalka bije siatke tickow, gdy nie ma kwoty trade'a", () => {
+    const w = computeTrade(
+      input({
+        contracts: 3,
+        exits: [
+          {
+            price: 20010,
+            contracts: 1,
+            time: new Date("2026-03-10T14:40:00Z"),
+            brokerAmount: 12_345,
+          },
+          { price: 20030, contracts: 2, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+    // Pierwszy kawalek bierze wlasna kwote wprost. Drugi liczony z tickow:
+    // 120 tickow * 2 kontrakty * 5000 / 10 = 120 000.
+    expect(w.pnl).toBe(12_345 + 120_000);
+  });
+});
+
+describe("computeTrade - scalingR", () => {
+  it("dodatnie, gdy wczesniejszy kawalek wyszedl lepiej niz ostatni", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        exits: [
+          { price: 20050, contracts: 1, time: new Date("2026-03-10T14:40:00Z") },
+          { price: 20010, contracts: 1, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+    // sumTickAmounts = 200*1*5000/10 + 40*1*5000/10 = 100 000 + 20 000 = 120 000
+    // allAtLast (40 tickow na 2 kontraktach) = 40*2*5000/10 = 40 000
+    // (120 000 - 40 000) / riskAmount(40 000) = 2
+    expect(w.scalingR).toBeCloseTo(2, 4);
+  });
+
+  it("ujemne, gdy cena biegla dalej i ostatni kawalek wyszedl najlepiej", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        exits: [
+          { price: 20010, contracts: 1, time: new Date("2026-03-10T14:40:00Z") },
+          { price: 20050, contracts: 1, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+    // sumTickAmounts = 20 000 + 100 000 = 120 000
+    // allAtLast (200 tickow na 2 kontraktach) = 200*2*5000/10 = 200 000
+    // (120 000 - 200 000) / 40 000 = -2
+    expect(w.scalingR).toBeCloseTo(-2, 4);
+  });
+
+  it("null przy jednym wyjsciu - nie ma czego porownywac", () => {
+    const w = computeTrade(input());
+    expect(w.exitCount).toBe(1);
+    expect(w.scalingR).toBeNull();
+  });
+
+  it("null bez stopa, nawet przy dwoch wyjsciach", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        stopLoss: null,
+        exits: [
+          { price: 20050, contracts: 1, time: new Date("2026-03-10T14:40:00Z") },
+          { price: 20010, contracts: 1, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+    expect(w.scalingR).toBeNull();
+  });
+
+  it("ignoruje kwoty brokera - liczy sie wylacznie siatka tickow", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        exits: [
+          {
+            price: 20050,
+            contracts: 1,
+            time: new Date("2026-03-10T14:40:00Z"),
+            brokerAmount: 90_000,
+          },
+          {
+            price: 20010,
+            contracts: 1,
+            time: new Date("2026-03-10T15:12:30Z"),
+            brokerAmount: 15_000,
+          },
+        ],
+        brokerAmount: 111_111,
+      }),
+    );
+    // pnl idzie za kwota trade'a, ale scalingR ocenia decyzje o skalowaniu
+    // niezaleznie od poslizgu/wypelnien, wiec zostaje przy tickach: 2.
+    expect(w.pnl).toBe(111_111);
+    expect(w.scalingR).toBeCloseTo(2, 4);
+  });
+});
+
+describe("computeTrade - czas trwania i exitTime przy wielu wyjsciach", () => {
+  it("durationS liczy sie do najpozniejszego wyjscia, nawet gdy nie jest ostatnie w tablicy", () => {
+    const w = computeTrade(
+      input({
+        contracts: 3,
+        exits: [
+          { price: 20010, contracts: 1, time: new Date("2026-03-10T14:45:00Z") },
+          { price: 20020, contracts: 1, time: new Date("2026-03-10T16:00:00Z") },
+          { price: 20030, contracts: 1, time: new Date("2026-03-10T15:00:00Z") },
+        ],
+      }),
+    );
+    expect(w.exitTime?.toISOString()).toBe("2026-03-10T16:00:00.000Z");
+    // entryTime 14:30:00Z do 16:00:00Z = 5400 s.
+    expect(w.durationS).toBe(5400);
+  });
+
+  it("exitTime jest null, gdy zaden kawalek nie ma czasu", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        exits: [
+          { price: 20010, contracts: 1, time: null },
+          { price: 20020, contracts: 1, time: null },
+        ],
+      }),
+    );
+    expect(w.exitTime).toBeNull();
+    expect(w.durationS).toBeNull();
+    expect(w.pnl).not.toBeNull();
+  });
+
+  it("czesc kawalkow bez czasu nie przeszkadza wziac najpozniejszy z pozostalych", () => {
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        exits: [
+          { price: 20010, contracts: 1, time: null },
+          { price: 20020, contracts: 1, time: new Date("2026-03-10T15:00:00Z") },
+        ],
+      }),
+    );
+    expect(w.exitTime?.toISOString()).toBe("2026-03-10T15:00:00.000Z");
+    expect(w.durationS).toBe(1800);
+  });
+});
+
+describe("computeTrade - pozycja czesciowo zamknieta", () => {
+  it("pnl liczony tylko z zamknietej czesci, R liczone wobec pelnego ryzyka", () => {
+    const w = computeTrade(
+      input({
+        contracts: 3,
+        stopLoss: 19990,
+        exits: [{ price: 20025.5, contracts: 1, time: new Date("2026-03-10T15:12:30Z") }],
+      }),
+    );
+    expect(w.closedContracts).toBe(1);
+    expect(w.exitCount).toBe(1);
+    // 102 ticki * 1 kontrakt * 5000 / 10 = 51 000.
+    expect(w.pnl).toBe(51_000);
+    // Ryzyko z pelnych 3 kontraktow wejsciowych: 40 tickow * 3 * 5000 / 10 = 60 000.
+    expect(w.riskAmount).toBe(60_000);
+    expect(w.rMultiple).toBeCloseTo(51_000 / 60_000, 4);
   });
 });
 
@@ -262,9 +552,33 @@ describe("exitPriceForAmount", () => {
     expect(r!.ticks).toBe(100);
     expect(r!.diff).toBe(0);
 
-    const w = computeTrade(input({ contracts: 2, entryPrice: 20000, exitPrice: r!.exitPrice }));
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        entryPrice: 20000,
+        exits: [{ price: r!.exitPrice, contracts: 2, time: new Date("2026-03-10T15:12:30Z") }],
+      }),
+    );
     expect(w.pnl).toBe(100_000);
     expect(w.pnl).toBe(r!.pnl);
+
+    // Wariant z dwoma kawalkami: rozbicie tej samej laczej liczby kontraktow
+    // na dwa wyjscia po tej samej cenie musi dac ten sam wynik co jedno
+    // wyjscie - NQ ma tickValue=5000, wiec kazda polowka dzieli sie rowno,
+    // bez zadnej straty na zaokragleniu per kawalek.
+    const wDwaKawalki = computeTrade(
+      input({
+        contracts: 2,
+        entryPrice: 20000,
+        exits: [
+          { price: r!.exitPrice, contracts: 1, time: new Date("2026-03-10T15:00:00Z") },
+          { price: r!.exitPrice, contracts: 1, time: new Date("2026-03-10T15:12:30Z") },
+        ],
+      }),
+    );
+    expect(wDwaKawalki.pnl).toBe(w.pnl);
+    expect(wDwaKawalki.closedContracts).toBe(2);
+    expect(wDwaKawalki.exitCount).toBe(2);
   });
 
   it("short na ES - cena wychodzi ponizej wejscia, znak sie zgadza", () => {
@@ -306,7 +620,13 @@ describe("exitPriceForAmount", () => {
     expect(r).not.toBeNull();
     expect(r!.diff).not.toBe(0);
 
-    const w = computeTrade(input({ contracts: 2, entryPrice: 20000, exitPrice: r!.exitPrice }));
+    const w = computeTrade(
+      input({
+        contracts: 2,
+        entryPrice: 20000,
+        exits: [{ price: r!.exitPrice, contracts: 2, time: new Date("2026-03-10T15:12:30Z") }],
+      }),
+    );
     expect(w.pnl).toBe(r!.pnl);
   });
 
@@ -360,7 +680,7 @@ describe("exitPriceForAmount", () => {
         instrument: ZN,
         contracts: 1,
         entryPrice: 110,
-        exitPrice: r!.exitPrice,
+        exits: [{ price: r!.exitPrice, contracts: 1, time: new Date("2026-03-10T15:12:30Z") }],
       }),
     );
     expect(w.pnl).toBe(r!.pnl);
@@ -394,7 +714,7 @@ describe("exitPriceForAmount", () => {
                 direction,
                 contracts,
                 entryPrice: entry,
-                exitPrice: r!.exitPrice,
+                exits: [{ price: r!.exitPrice, contracts, time: new Date("2026-03-10T15:12:30Z") }],
               }),
             );
             expect(w.pnl, `${nazwa} ${direction} ${contracts} ${kwota}`).toBe(r!.pnl);

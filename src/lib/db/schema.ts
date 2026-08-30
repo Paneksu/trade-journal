@@ -220,6 +220,16 @@ export const trades = pgTable(
 
     entryTime: timestamp({ withTimezone: true }).notNull(),
     entryPrice: numeric({ precision: 18, scale: 8 }).notNull(),
+    /* --- Wyjscia czesciowe (2026-08-30) ------------------------------------
+       Trade moze miec wiele wyjsc w tabeli `trade_exits` (ETAP 1 planu
+       skalowania z pozycji). Ponizsze dwie kolumny ZOSTAJA, ale zmieniaja
+       status: przestaja byc zrodlem prawdy o wyjsciu i staja sie polami
+       POCHODNYMI - `exitPrice` to srednia wazona kontraktami cen ze wszystkich
+       wierszy `trade_exits`, `exitTime` to czas OSTATNIEGO wyjscia. Wypelnia
+       je akcja zapisu przy kazdej zmianie wyjsc, nie licz ich tutaj w bazie.
+       Nie kasowac i nie traktowac jako niezaleznego zrodla - historyczne
+       trade'y sprzed tej zmiany maja tu jedyny zapis, backfillowany 1:1 do
+       `trade_exits` w migracji 0014. */
     exitTime: timestamp({ withTimezone: true }),
     exitPrice: numeric({ precision: 18, scale: 8 }),
     contracts: numeric({ precision: 14, scale: 4 }).notNull(),
@@ -284,6 +294,25 @@ export const trades = pgTable(
        jest miara tego, ile kosztuje egzekucja. */
     potentialR: numeric({ precision: 12, scale: 4 }),
 
+    /* --- Wyjscia czesciowe (2026-08-30) ------------------------------------
+       Suma i licznik pochodzace z `trade_exits` - denormalizacja swiadoma,
+       z tego samego powodu co `ticks`/`pnl` wyzej: filtry i statystyki nie
+       moga za kazdym razem doliczac wszystkich wierszy potomnych. Wypelnia je
+       akcja zapisu, nie trigger.
+       SWIADOMIE bez CHECK-a "closed_contracts == contracts": Postgres nie
+       wyrazi warunku miedzy tabelami (suma z trade_exits vs trades.contracts),
+       a i tak walidacja musi siedziec w akcji zapisu, zeby uzytkownik dostal
+       polski komunikat zamiast surowego bledu bazy - ta sama zasada, co przy
+       normalizujKierunek w lib/domain/kierunek.ts. */
+    closedContracts: numeric({ precision: 14, scale: 4 }).notNull().default("0"),
+    exitCount: smallint().notNull().default(0),
+    /* Wplyw skalowania na wynik w R - dodatni gdy czesciowe wyjscia poprawily
+       R wzgledem hipotetycznego jednego wyjscia, ujemny gdy pogorszyly.
+       NULL dla calej historii sprzed tej migracji: kazdy stary trade ma
+       dokladnie jedno wyjscie, wiec miara "wplyw skalowania" nie ma tam
+       znaczenia - to poprawny stan, nie brak danych. */
+    scalingR: numeric({ precision: 12, scale: 4 }),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
@@ -309,6 +338,11 @@ export const trades = pgTable(
     index("trades_session_idx").on(t.backtestSessionId),
     index("trades_trading_day_idx").on(t.tradingDay),
     index("trades_custom_idx").using("gin", t.custom),
+    /* Czesciowy indeks - interesuje nas tylko podzbior trade'ow ze
+       skalowaniem, reszta (wiekszosc historii) go nie potrzebuje. */
+    index("trades_skalowanie_idx")
+      .on(t.exitCount)
+      .where(sql`${t.exitCount} > 1`),
   ],
 );
 
@@ -377,6 +411,43 @@ export const screenshots = pgTable(
       "screenshots_owner",
       sql`(${t.tradeId} is null) != (${t.dayNoteId} is null)`,
     ),
+  ],
+);
+
+/* --- Wyjscia czesciowe (ETAP 1 planu skalowania z pozycji, 2026-08-30) ---- */
+
+export const tradeExits = pgTable(
+  "trade_exits",
+  {
+    id: serial().primaryKey(),
+    tradeId: integer()
+      .notNull()
+      .references(() => trades.id, { onDelete: "cascade" }),
+    // Kolejnosc wyjsc w ramach jednego trade'a (ADR-009, wzorzec ze
+    // `screenshots`): sortowanie po (sort_order, id), nie po czasie - wyjscie
+    // moze nie miec exit_time (patrz nizej).
+    sortOrder: integer().notNull().default(0),
+    /* NULLABLE, celowo: historyczne trade'y maja `exit_price` bez
+       `exit_time` (formularz nigdy nie wymagal czasu wyjscia), a backfill w
+       migracji 0014 kopiuje te wiersze 1:1 do `trade_exits`. Gdyby ta kolumna
+       byla NOT NULL, backfill padlby na kazdym takim trade'cie. */
+    exitTime: timestamp({ withTimezone: true }),
+    exitPrice: numeric({ precision: 18, scale: 8 }).notNull(),
+    // Ulamki dozwolone, tak jak w trades.contracts (kontrakty czastkowe na
+    // niektorych rachunkach/instrumentach).
+    contracts: numeric({ precision: 14, scale: 4 }).notNull(),
+    // Kwota z rachunku brokera w centach DLA TEGO KAWALKA. NULL gdy
+    // uzytkownik nie wpisal jej recznie. Kwota na poziomie calego trade'a
+    // (trades.brokerAmount) zostaje osobno i NIE jest suma tych wierszy -
+    // backfill w 0014 celowo jej tu nie kopiuje, zeby sie nie podwoila.
+    brokerAmount: bigint({ mode: "number" }),
+    // Np. "TP1", "runner" - opisowa etykieta kawalka, nie enum.
+    note: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("trade_exits_trade_idx").on(t.tradeId),
+    check("trade_exits_kontrakty", sql`${t.contracts} > 0`),
   ],
 );
 
@@ -463,6 +534,7 @@ export type TagCategory = typeof tagCategories.$inferSelect;
 export type CustomFieldRow = typeof customFields.$inferSelect;
 export type TradeRow = typeof trades.$inferSelect;
 export type Screenshot = typeof screenshots.$inferSelect;
+export type TradeExit = typeof tradeExits.$inferSelect;
 export type DayNote = typeof dayNotes.$inferSelect;
 export type SavedView = typeof savedViews.$inferSelect;
 export type Settings = typeof settings.$inferSelect;

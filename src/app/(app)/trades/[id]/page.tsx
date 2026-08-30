@@ -20,6 +20,7 @@ import {
   longDate,
   money,
   num,
+  percent,
   pnlClass,
   price,
   rValue,
@@ -46,6 +47,23 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
   const filled = fields.filter((f) => trade.custom?.[f.key] !== undefined);
 
   const pokazWynik = maWynik(trade.status);
+  /* Pozycja czesciowo zamknieta: "open" z co najmniej jednym wyjsciem ma juz
+     zrealizowany kawalek wyniku, ale `maWynik` celowo go nie pokazuje - status
+     "open" nie ma policzalnego KONCOWEGO wyniku. Tutaj chodzi o co innego:
+     pokazac to, co juz zrealizowane, z etykieta mowiaca wprost, ze to nie
+     jest wynik zamknietego trade'a. */
+  const czesciowoZamkniete = trade.status === "open" && trade.exitCount > 0;
+
+  const sumaKontraktowWyjsc = trade.exits.reduce((s, e) => s + e.contracts, 0);
+  /* Wiersz sumy bierze wynik i R z trade'a, NIE z sumowania kolumn wyzej.
+     Dwa powody. R kawalka jest liczone wzgledem ryzyka proporcjonalnego do
+     jego wielkosci, wiec suma kolumny bez wazenia udzialem daje liczbe
+     zawyzona (dwa kawalki po +5R i +1R przy trade'cie +3R). A `pnl` kawalka
+     nie zna kwoty z rachunku podanej dla calego trade'a (ADR-016), wiec
+     suma kolumny rozjechalaby sie z kwota w naglowku strony. Zrodlem prawdy
+     jest `computeTrade`, nie dodawanie w widoku. */
+  const sumaPnlWyjsc = trade.pnl;
+  const sumaRWyjsc = trade.rMultiple;
 
   return (
     <div className="space-y-4">
@@ -87,16 +105,28 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               {trade.direction}
             </span>
             <span className="text-sm text-faint">{num(trade.contracts, 0)} kontr.</span>
-            <span className={cx("liczba text-xl font-semibold", wynikClass(trade.wynik))}>
+            <span
+              className={cx(
+                "liczba text-xl font-semibold",
+                pokazWynik ? wynikClass(trade.wynik) : czesciowoZamkniete ? pnlClass(trade.pnl) : undefined,
+              )}
+            >
               {pokazWynik
                 ? money(trade.pnl, { currency: trade.currency, sign: true })
-                : TRADE_STATUS_NAMES[trade.status]}
+                : czesciowoZamkniete
+                  ? money(trade.pnl, { currency: trade.currency, sign: true })
+                  : TRADE_STATUS_NAMES[trade.status]}
               {pokazWynik && trade.wynik === "be" && (
                 <span className="ml-1 text-sm opacity-70">BE</span>
               )}
               {trade.status === "missed" && (
                 <span className="ml-1 text-xs font-semibold uppercase tracking-wide text-accent">
                   hipot.
+                </span>
+              )}
+              {czesciowoZamkniete && (
+                <span className="ml-1 text-xs font-semibold uppercase tracking-wide text-accent">
+                  częściowo
                 </span>
               )}
             </span>
@@ -144,8 +174,15 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
                 ktorej sie go wpisuje. */}
             <DataPoint label="Wejście">{dateTime(trade.entryTime, trade.exchangeTimezone)}</DataPoint>
             <DataPoint label="Cena wejścia">{price(trade.entryPrice, trade.tickSize)}</DataPoint>
-            <DataPoint label="Wyjście">{dateTime(trade.exitTime, trade.exchangeTimezone)}</DataPoint>
-            <DataPoint label="Cena wyjścia">{price(trade.exitPrice, trade.tickSize)}</DataPoint>
+            {/* Przy wiecej niz jednym wyjsciu `exitTime`/`exitPrice` to juz nie
+                pojedynczy fakt, tylko ostatni moment i srednia wazona - etykieta
+                musi to mowic wprost, inaczej sugeruje jedno wyjscie z pozycji. */}
+            <DataPoint label={trade.exitCount > 1 ? "Ostatnie wyjście" : "Wyjście"}>
+              {dateTime(trade.exitTime, trade.exchangeTimezone)}
+            </DataPoint>
+            <DataPoint label={trade.exitCount > 1 ? "Średnia cena wyjścia" : "Cena wyjścia"}>
+              {price(trade.exitPrice, trade.tickSize)}
+            </DataPoint>
 
             <DataPoint label="Stop loss">{price(trade.stopLoss, trade.tickSize)}</DataPoint>
             <DataPoint label="Take profit">{price(trade.takeProfit, trade.tickSize)}</DataPoint>
@@ -171,6 +208,11 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
             <DataPoint label="Dzień">
               {trade.weekday === null ? "—" : WEEKDAY_NAMES[trade.weekday]}
             </DataPoint>
+            {trade.exitCount > 1 && (
+              <DataPoint label="Wpływ skalowania" valueClassName={pnlClass(trade.scalingR)}>
+                {rValue(trade.scalingR)}
+              </DataPoint>
+            )}
           </div>
 
           {/* Kierunek a egzekucja (ADR-018) - osobny wiersz, bo to ocena
@@ -276,6 +318,87 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
           <p className="px-4 py-6 text-sm text-faint">Bez notatki.</p>
         )}
       </Panel>
+
+      {trade.exits.length > 0 && (
+        <Panel
+          title="Wyjścia"
+          description={
+            trade.exitCount > 1
+              ? `${trade.exitCount} wyjść z pozycji, po kolei.`
+              : "Jedno wyjście z pozycji."
+          }
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-line">
+                  <th scope="col" className="etykieta px-3 py-2 text-left">Czas</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-left">Cena</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-right">Kontrakty</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-right">Udział</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-right">Ticki</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-right">Wynik</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-right">R</th>
+                  <th scope="col" className="etykieta px-3 py-2 text-left">Notatka</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trade.exits.map((e) => (
+                  <tr key={e.id} className="border-b border-line">
+                    <td className="liczba px-3 py-2 whitespace-nowrap">
+                      {dateTime(e.exitTime, trade.exchangeTimezone)}
+                    </td>
+                    <td className="liczba px-3 py-2">{price(e.exitPrice, trade.tickSize)}</td>
+                    <td className="liczba px-3 py-2 text-right">{num(e.contracts, 0)}</td>
+                    <td className="liczba px-3 py-2 text-right text-muted">
+                      {trade.contracts > 0 ? percent(e.contracts / trade.contracts, 0) : "—"}
+                    </td>
+                    <td className={cx("liczba px-3 py-2 text-right", pnlClass(e.ticks))}>
+                      {e.ticks === null ? "—" : int(e.ticks)}
+                    </td>
+                    <td className={cx("liczba px-3 py-2 text-right", pnlClass(e.pnl))}>
+                      {money(e.pnl, { currency: trade.currency, sign: true })}
+                    </td>
+                    <td className={cx("liczba px-3 py-2 text-right", pnlClass(e.rMultiple))}>
+                      {rValue(e.rMultiple)}
+                    </td>
+                    <td className="px-3 py-2 text-muted">
+                      {e.note ?? "—"}
+                      {/* Kwota z rachunku brokera TEGO kawalka - tylko gdy jest ustawiona. */}
+                      {e.brokerAmount !== null && (
+                        <span className="ml-1.5 text-xs text-faint">
+                          ({money(e.brokerAmount, { currency: trade.currency })})
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {trade.exits.length > 1 && (
+                <tfoot>
+                  <tr className="border-t border-line-strong">
+                    <td className="px-3 py-2 font-medium text-text" colSpan={2}>
+                      Suma
+                    </td>
+                    <td className="liczba px-3 py-2 text-right font-medium text-text">
+                      {num(sumaKontraktowWyjsc, 0)}
+                    </td>
+                    <td className="px-3 py-2" />
+                    <td className="px-3 py-2" />
+                    <td className={cx("liczba px-3 py-2 text-right font-medium", pnlClass(sumaPnlWyjsc))}>
+                      {money(sumaPnlWyjsc, { currency: trade.currency, sign: true })}
+                    </td>
+                    <td className={cx("liczba px-3 py-2 text-right font-medium", pnlClass(sumaRWyjsc))}>
+                      {rValue(sumaRWyjsc)}
+                    </td>
+                    <td className="px-3 py-2" />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </Panel>
+      )}
 
       {/* Panele "Checklista strategii" i "Ten trade na tle strategii" zniknely
           stad 2026-08-29 razem ze strategia w formularzu - bez przypisania

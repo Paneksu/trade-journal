@@ -99,6 +99,13 @@
       "when": 1787580000000,
       "tag": "0013_nie_wziety",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787590000000,
+      "tag": "0014_czesciowe_wyjscia",
+      "breakpoints": true
     }
   ]
 }

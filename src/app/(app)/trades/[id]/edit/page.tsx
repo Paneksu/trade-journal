@@ -74,8 +74,6 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
              i zapis przesunelyby godzine o roznice stref. */
           entryTime: toLocalInput(trade.entryTime, trade.exchangeTimezone),
           entryPrice: trade.entryPrice ? String(Number(trade.entryPrice)) : "",
-          exitTime: toLocalInput(trade.exitTime, trade.exchangeTimezone),
-          exitPrice: trade.exitPrice ? String(Number(trade.exitPrice)) : "",
           contracts: String(Number(trade.contracts)),
           stopLoss: trade.stopLoss ? String(Number(trade.stopLoss)) : "",
           takeProfit: trade.takeProfit ? String(Number(trade.takeProfit)) : "",
@@ -92,6 +90,16 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           tags: trade.tags.map((t) => ({ id: t.id, interval: t.interval })),
           custom: trade.custom,
           shots,
+          /* Kawalki wyjscia (ETAP 4b) - ten sam wzorzec co entryTime/exitTime
+             wyzej: strefa gieldy instrumentu (ADR-022), nie strefa uzytkownika,
+             i centy z powrotem na kwote w walucie konta (ADR-016). */
+          exits: trade.exits.map((e) => ({
+            time: toLocalInput(e.exitTime, trade.exchangeTimezone),
+            price: String(e.exitPrice),
+            contracts: String(e.contracts),
+            brokerAmount: e.brokerAmount === null ? "" : String(e.brokerAmount / 100),
+            note: e.note ?? "",
+          })),
         }}
       />
     </div>

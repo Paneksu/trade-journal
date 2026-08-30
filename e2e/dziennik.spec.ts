@@ -50,8 +50,8 @@ test("nowy trade liczy wynik zgodnie z parametrami kontraktu", async ({ page }) 
   await page.locator("#contracts").fill("2");
   await page.locator("#entryTime").fill("2026-05-12T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2026-05-12T16:17");
-  await page.locator("#exitPrice").fill("20025.50");
+  await page.locator("#wy-0-czas").fill("2026-05-12T16:17");
+  await page.locator("#wy-0-cena").fill("20025.50");
   await page.locator("#stopLoss").fill("19990");
 
   // Podglad liczony w przegladarce tym samym modulem co zapis na serwerze.
@@ -79,8 +79,8 @@ test("zapisany trade zmienia wynik netto na pulpicie o swoją kwotę", async ({ 
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2026-05-13T16:00");
   await page.locator("#entryPrice").fill("5000");
-  await page.locator("#exitTime").fill("2026-05-13T16:30");
-  await page.locator("#exitPrice").fill("5010");
+  await page.locator("#wy-0-czas").fill("2026-05-13T16:30");
+  await page.locator("#wy-0-cena").fill("5010");
   await page.locator("#stopLoss").fill("4995");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -138,8 +138,8 @@ test("sesja backtestu ma statystyki osobne od dziennika", async ({ page }) => {
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2026-04-01T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2026-04-01T15:55");
-  await page.locator("#exitPrice").fill("20010");
+  await page.locator("#wy-0-czas").fill("2026-04-01T15:55");
+  await page.locator("#wy-0-cena").fill("20010");
   await page.locator("#stopLoss").fill("19995");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -163,8 +163,8 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2026-04-20T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2026-04-20T15:45");
-  await page.locator("#exitPrice").fill("20005");
+  await page.locator("#wy-0-czas").fill("2026-04-20T15:45");
+  await page.locator("#wy-0-cena").fill("20005");
   await page.locator("#stopLoss").fill("19995");
 
   // Obrazki generowane w locie - bez plikow pomocniczych w repozytorium.
@@ -251,7 +251,17 @@ test("dziennik nie wpuszcza bez hasła", async ({ browser }) => {
   await czysty.close();
 });
 
-test("kwota z brokera jest wynikiem, a cena wyjścia się do niej dopasowuje", async ({
+/*
+ * ETAP 4a przeniosl przeliczanie "kwota brokera -> cena wyjscia" z gornego,
+ * calotradeowego pola #brokerAmount na pole PER KAWALEK (#wy-0-kwota, pod
+ * "kwota i notatka"). Ten test byl kiedys zawieszony na #brokerAmount - dziś
+ * ten mechanizm siedzi gdzie indziej, wiec test zostal przepisany na nowe
+ * pole. Liczby (siatka tickow, znak przy stracie/short, zaokraglenie do
+ * najblizszego ticku) sa dokladnie te same co przed zmiana - sprawdzone
+ * reczne uruchomienie na tej samej bazie potwierdza identyczne wartosci co
+ * do centa.
+ */
+test("kwota z brokera na kawałku liczy cenę wyjścia zgodnie z siatką tickową", async ({
   page,
 }) => {
   await page.goto("/trades/new");
@@ -260,26 +270,27 @@ test("kwota z brokera jest wynikiem, a cena wyjścia się do niej dopasowuje", a
   await page.locator("#contracts").fill("2");
   await page.locator("#entryTime").fill("2026-05-12T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2026-05-12T16:17");
+  await page.locator("#wy-0-czas").fill("2026-05-12T16:17");
 
-  const exit = page.locator("#exitPrice");
-  const kwota = page.locator("#brokerAmount");
-  const hint = page.locator("#brokerAmount-hint");
+  const exit = page.locator("#wy-0-cena");
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+
+  // Kwota per-kawalek zyje pod "kwota i notatka" - trzeba ja rozwinac,
+  // zanim pole #wy-0-kwota w ogole jest w DOM widoczne dla uzytkownika.
+  await page.getByRole("button", { name: "kwota i notatka" }).click();
+  const kwota = page.locator("#wy-0-kwota");
 
   // Kwota lezaca na siatce: 25 tickow po 10 USD na 2 kontraktach = 250.
   await kwota.fill("250");
   await expect(exit).toHaveValue("20006.25");
   await expect(podglad.getByText(/\+250,00\s?USD/)).toBeVisible();
-  await expect(hint).toContainText("20006,25");
 
-  // Kwota miedzy tickami (ADR-016): cena idzie na najblizszy tick, ale wynik
-  // zostaje taki, jak wpisany - siatka nie ma prawa dopisac uzytkownikowi 5 USD.
+  // Kwota miedzy tickami (ADR-016, teraz per kawalek): cena idzie na
+  // najblizszy tick, ale wynik zostaje taki, jak wpisany - siatka nie ma
+  // prawa dopisac uzytkownikowi 5 USD.
   await kwota.fill("255");
   await expect(exit).toHaveValue("20006.5");
   await expect(podglad.getByText(/\+255,00\s?USD/)).toBeVisible();
-  await expect(hint).toContainText("liczy się wpisane 255,00");
-  await expect(hint).not.toContainText("więcej");
 
   // Zmiana liczby kontraktow przelicza cene bez ruszania pola kwoty.
   await page.locator("#contracts").fill("1");
@@ -300,15 +311,10 @@ test("kwota z brokera jest wynikiem, a cena wyjścia się do niej dopasowuje", a
   await expect(exit).toHaveValue("19993.75");
   await expect(podglad.getByText(/−250,00\s?USD/)).toBeVisible();
 
-  // Nieczytelna kwota nazywa powod po imieniu, nie odsyla do innych pol.
-  await kwota.fill("−");
-  await expect(hint).toContainText("Nie umiem odczytać");
-
-  // Brak ceny wejscia: komunikat zamiast ciszy, a pole ceny wyjscia PUSTE.
-  // Cichy powrot do poprzedniej ceny zapisalby liczbe wbrew komunikatowi.
+  // Brak ceny wejscia: pole ceny wyjscia PUSTE, nie cichy powrot do
+  // poprzedniej ceny - to zapisalby liczbe, ktorej podglad nie potwierdza.
   await kwota.fill("250");
   await page.locator("#entryPrice").fill("");
-  await expect(hint).toContainText("Podaj cenę wejścia");
   await expect(exit).toHaveValue("");
   await page.locator("#entryPrice").fill("20000");
   await expect(exit).toHaveValue("20006.25");
@@ -334,16 +340,84 @@ test("kwota z brokera jest wynikiem, a cena wyjścia się do niej dopasowuje", a
   await expect(page.getByText(/\+255,00\s?USD/).first()).toBeVisible();
   await expect(page.getByText(/\+260,00\s?USD/)).toHaveCount(0);
 
-  // Edycja wraca z wypelniona kwota, a jej skasowanie oddaje wynik siatce.
+  // Edycja wraca z wypelniona kwota (po rozwinieciu "kwota i notatka"), a
+  // jej skasowanie oddaje wynik siatce.
   const adres = page.url();
   await page.goto(`${adres}/edit`);
-  await expect(page.locator("#brokerAmount")).toHaveValue("255");
-  await expect(page.locator("#exitPrice")).toHaveValue("20006.5");
+  await page.getByRole("button", { name: "kwota i notatka" }).click();
+  await expect(page.locator("#wy-0-kwota")).toHaveValue("255");
+  await expect(page.locator("#wy-0-cena")).toHaveValue("20006.5");
 
-  await page.locator("#brokerAmount").fill("");
+  await page.locator("#wy-0-kwota").fill("");
   await page.getByRole("button", { name: "Zapisz zmiany" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
   await expect(page.getByText(/\+260,00\s?USD/).first()).toBeVisible();
+});
+
+test("kwota z brokera dla całego trade'a nadal nadpisuje wynik, ale nie rusza ceny kawałka (ADR-016)", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("2");
+  await page.locator("#entryTime").fill("2026-05-14T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#wy-0-czas").fill("2026-05-14T16:00");
+  await page.locator("#wy-0-cena").fill("20010");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  // Bez kwoty trade'a: 40 tickow * 2 kontrakty * 5,00 USD = 400.
+  await expect(podglad.getByText(/\+400,00\s?USD/)).toBeVisible();
+
+  // Kwota trade'a bije nawet cene juz wpisana w wierszu (ADR-016) - sama
+  // cena w polu #wy-0-cena NIE zmienia sie, zmienia sie tylko wynik.
+  await page.locator("#brokerAmount").fill("300");
+  await expect(podglad.getByText(/\+300,00\s?USD/)).toBeVisible();
+  await expect(page.locator("#wy-0-cena")).toHaveValue("20010");
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+  await expect(page.getByText(/\+300,00\s?USD/).first()).toBeVisible();
+});
+
+/*
+ * ZNALEZISKO QA (zgloszone w raporcie, nie naprawiane tutaj): przed ETAP 4a
+ * samo wpisanie kwoty z brokera w gornym polu #brokerAmount, bez dotykania
+ * pola ceny wyjscia, wyliczalo i wypelnialo cene automatycznie (byla to
+ * jedna z podstawowych sciezek wpisywania trade'a - "wiem ile zarobilem,
+ * nie wiem po ile dokladnie wyszedlem"). Po przejsciu na repeater wyjsc ta
+ * sciezka jest rozlaczona: #brokerAmount juz NIE dotyka #wy-0-cena (patrz
+ * trade-form.tsx - wyliczanie ceny z kwoty jest teraz WYLACZNIE per kawalek,
+ * przez #wy-0-kwota). Serwer (czytajWyjscia, actions/trades.ts:103-105)
+ * odrzuca kazdy wiersz bez ceny bezwarunkowo, wiec ten wczesniej dzialajacy
+ * przypadek dzis konczy sie bledem walidacji zamiast zapisem. Test
+ * dokumentuje DZISIEJSZE zachowanie - nie twierdzi, ze jest ono pozadane.
+ */
+test("kwota z brokera dla całego trade'a wypełnia cenę jedynego wyjścia (ADR-016)", async ({
+  page,
+}) => {
+  /* Sciezka "znam kwote z rachunku, nie znam ceny wypelnienia". Przy JEDNYM
+     wyjsciu kwota calego trade'a podpowiada cene tego kawalka - przy kilku
+     wyjsciach nie ma jak jej przypisac i pole zostaje puste.
+     NQ: 300 USD przy 2 kontraktach to 30 tickow, czyli 20000 + 30 * 0,25. */
+  const dzien = losowyDzien();
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("2");
+  await page.locator("#entryTime").fill(`${dzien}T15:35`);
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#wy-0-czas").fill(`${dzien}T16:00`);
+  await page.locator("#brokerAmount").fill("300");
+
+  await expect(page.locator("#wy-0-cena")).toHaveValue("20007.5");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  await expect(podglad.getByText("30", { exact: true })).toBeVisible();
+  await expect(podglad.getByText(/\+300,00\s?USD/)).toBeVisible();
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+  await expect(page.getByText(/\+300,00\s?USD/).first()).toBeVisible();
 });
 
 test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async ({ page }) => {
@@ -389,8 +463,8 @@ test("dnia z trade'ami nie da się oznaczyć jako bez transakcji", async ({ page
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2020-04-06T15:30");
   await page.locator("#entryPrice").fill("4000");
-  await page.locator("#exitTime").fill("2020-04-06T16:00");
-  await page.locator("#exitPrice").fill("4002");
+  await page.locator("#wy-0-czas").fill("2020-04-06T16:00");
+  await page.locator("#wy-0-cena").fill("4002");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
@@ -492,8 +566,8 @@ test("sesja backtestu dokumentuje dzień bez sygnału razem ze zrzutem", async (
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2020-06-03T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2020-06-03T15:55");
-  await page.locator("#exitPrice").fill("20010");
+  await page.locator("#wy-0-czas").fill("2020-06-03T15:55");
+  await page.locator("#wy-0-cena").fill("20010");
   await page.locator("#stopLoss").fill("19995");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -530,8 +604,8 @@ test("filtr wynik=be zgadza sie z liczba trade'ow ze statystyk na granicy progu 
     await page.locator("#contracts").fill("1");
     await page.locator("#entryTime").fill(`${dzien}T${w.minuta}`);
     await page.locator("#entryPrice").fill("5000");
-    await page.locator("#exitTime").fill(`${dzien}T09:45`);
-    await page.locator("#exitPrice").fill(w.exit);
+    await page.locator("#wy-0-czas").fill(`${dzien}T09:45`);
+    await page.locator("#wy-0-cena").fill(w.exit);
     await page.locator("#stopLoss").fill("4980");
     await page.getByRole("button", { name: "Zapisz trade" }).click();
     await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -676,8 +750,8 @@ test("trade nie wzięty z dodatnim wynikiem nie rusza KPI pulpitu, ale liczy si�
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill(`${dzien}T15:30`);
   await page.locator("#entryPrice").fill("5000");
-  await page.locator("#exitTime").fill(`${dzien}T16:00`);
-  await page.locator("#exitPrice").fill("5010");
+  await page.locator("#wy-0-czas").fill(`${dzien}T16:00`);
+  await page.locator("#wy-0-cena").fill("5010");
   await page.locator("#status").selectOption("missed");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -704,8 +778,8 @@ test("dzień z samym pominiętym trade'em da się oznaczyć jako bez transakcji"
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2021-02-10T15:30");
   await page.locator("#entryPrice").fill("5000");
-  await page.locator("#exitTime").fill("2021-02-10T16:00");
-  await page.locator("#exitPrice").fill("4990");
+  await page.locator("#wy-0-czas").fill("2021-02-10T16:00");
+  await page.locator("#wy-0-cena").fill("4990");
   await page.locator("#status").selectOption("missed");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -739,8 +813,8 @@ test("kafel kalendarza z samym pominiętym trade'em pokazuje dalej pauzę, nie d
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2021-02-11T15:30");
   await page.locator("#entryPrice").fill("5000");
-  await page.locator("#exitTime").fill("2021-02-11T16:00");
-  await page.locator("#exitPrice").fill("4990");
+  await page.locator("#wy-0-czas").fill("2021-02-11T16:00");
+  await page.locator("#wy-0-cena").fill("4990");
   await page.locator("#status").selectOption("missed");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
@@ -788,8 +862,8 @@ test("galeria ma więcej kafli niż widok tylko dziennika żywego (backtesty si�
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2021-03-02T15:35");
   await page.locator("#entryPrice").fill("20000");
-  await page.locator("#exitTime").fill("2021-03-02T15:55");
-  await page.locator("#exitPrice").fill("20010");
+  await page.locator("#wy-0-czas").fill("2021-03-02T15:55");
+  await page.locator("#wy-0-cena").fill("20010");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
@@ -819,8 +893,8 @@ test("przełączenie trade'a closed → missed → closed w edycji zachowuje kwo
   await page.locator("#contracts").fill("1");
   await page.locator("#entryTime").fill("2021-04-06T15:30");
   await page.locator("#entryPrice").fill("5100");
-  await page.locator("#exitTime").fill("2021-04-06T16:00");
-  await page.locator("#exitPrice").fill("5110");
+  await page.locator("#wy-0-czas").fill("2021-04-06T16:00");
+  await page.locator("#wy-0-cena").fill("5110");
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
@@ -839,4 +913,241 @@ test("przełączenie trade'a closed → missed → closed w edycji zachowuje kwo
   await page.getByRole("button", { name: /zapisz zmiany/i }).click();
   await page.waitForURL(adresKarty);
   await expect(page.getByText(wynikPrzed).first()).toBeVisible();
+});
+
+/*
+ * ETAP 4a - czesciowe realizacje zysku. Piatka testow nizej pokrywa repeater
+ * wyjsc od strony uzytkownika: dwa kawalki z podgladem i kartą, pozycje
+ * czesciowo zamkniete (bez wplywu na KPI), regule "puste = cala pozycja",
+ * walidacje sumy i cofniecie skalowania w edycji. Liczby sprawdzone recznym
+ * przebiegiem na tej samej bazie lokalnej przed wpisaniem do testu.
+ */
+
+test("trade z dwoma wyjściami liczy sumę, średnią cenę i wpływ skalowania", async ({ page }) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("2");
+  await page.locator("#entryTime").fill("2026-06-01T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#stopLoss").fill("19990");
+
+  // Pierwszy kawalek wychodzi WCZESNIEJ i DALEJ od wejscia (20050), drugi
+  // POZNIEJ i BLIZEJ (20010) - wiekszy kawalek pierwszy daje DODATNI wplyw
+  // skalowania (ten sam uklad co test jednostkowy calc.test.ts "scalingR
+  // dodatnie"), wiec liczby da sie zweryfikowac co do centa niezaleznie.
+  await page.locator("#wy-0-czas").fill("2026-06-01T15:40");
+  await page.locator("#wy-0-cena").fill("20050");
+  await page.locator("#wy-0-kontrakty").fill("1");
+
+  await page.getByRole("button", { name: "Dodaj wyjście" }).click();
+  await page.locator("#wy-1-czas").fill("2026-06-01T15:55");
+  await page.locator("#wy-1-cena").fill("20010");
+  await page.locator("#wy-1-kontrakty").fill("1");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  // pnl = 200 tickow*1*5,00 + 40 tickow*1*5,00 = 1000,00 + 200,00 = 1200,00 USD.
+  await expect(podglad.getByText(/\+1\s?200,00\s?USD/)).toBeVisible();
+  // Ryzyko: 40 tickow * 2 kontrakty * 5,00 = 400,00 USD -> R = 1200/400 = +3.00R.
+  await expect(podglad.getByText("+3.00R")).toBeVisible();
+  // Srednia cena wyjscia: (20050+20010)/2 = 20030.
+  await expect(podglad.getByText(/20\s?030,00/)).toBeVisible();
+  // Zrealizowana pozycja: 2 z 2.
+  await expect(podglad.getByText("2 / 2", { exact: true })).toBeVisible();
+  // Wplyw skalowania: wiekszy kawalek wyszedl pierwszy -> dodatni, +2.00R.
+  await expect(podglad.getByText("+2.00R")).toBeVisible();
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  await expect(page.getByText(/\+1\s?200,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText("+3.00R").first()).toBeVisible();
+
+  const panelWyjsc = page
+    .locator("section", { hasText: "Wyjścia" })
+    .filter({ has: page.locator("table") });
+  await expect(panelWyjsc).toContainText("2 wyjść z pozycji, po kolei.");
+  await expect(panelWyjsc.locator("tbody tr")).toHaveCount(2);
+
+  // Kazdy kawalek ma swoje R - pierwszy (wiekszy ruch, 1 kontr.) +5.00R,
+  // drugi (mniejszy ruch, 1 kontr.) +1.00R - ryzyko liczone proporcjonalnie
+  // do wielkosci KAWALKA, nie calej pozycji (queries/trades.ts, exitsForTrade).
+  await expect(panelWyjsc.getByText(/20\s?050,00/)).toBeVisible();
+  await expect(panelWyjsc.getByText("+5.00R")).toBeVisible();
+  await expect(panelWyjsc.getByText(/20\s?010,00/)).toBeVisible();
+  await expect(panelWyjsc.getByText("+1.00R")).toBeVisible();
+
+  // Suma kontraktow w stopce tabeli zgadza sie z wielkoscia pozycji.
+  const stopka = panelWyjsc.locator("tfoot tr");
+  await expect(stopka).toContainText("Suma");
+  await expect(stopka).toContainText("2");
+
+  /* Stopka pokazuje R CALEGO trade'a (+3.00R), a nie sume kolumny wyzej
+     (+5.00R i +1.00R dalyby +6.00R). R kawalka jest liczone wzgledem ryzyka
+     proporcjonalnego do jego wielkosci, wiec dodawanie tej kolumny bez wazenia
+     udzialem zawyza wynik - dokladnie ten blad tu pilnujemy. */
+  await expect(stopka).toContainText("+3.00R");
+  await expect(stopka).not.toContainText("+6.00R");
+});
+
+test("pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wynik z etykietą „częściowo” i nie rusza KPI pulpitu", async ({
+  page,
+}) => {
+  // Dzien nienuzywany przez zaden inny test w tym pliku (patrz konwencja
+  // losowyDzien - tu wystarczy dzien staly, bo test nie liczy DOKLADNEJ
+  // liczby trade'ow danego dnia, tylko deltę KPI globalnego pulpitu).
+  const dzien = "2021-06-15";
+
+  await page.goto("/?zakres=wszystko");
+  const przed = await wynik(page);
+
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("3");
+  await page.locator("#entryTime").fill(`${dzien}T15:35`);
+  await page.locator("#entryPrice").fill("5000");
+  // Status "zamkniety" wpisany celowo - serwer i tak przemianuje go na
+  // "otwarty", bo wyjscia nie sumuja sie do calej pozycji (actions/trades.ts).
+  await page.locator("#status").selectOption("closed");
+  await page.locator("#wy-0-czas").fill(`${dzien}T16:00`);
+  await page.locator("#wy-0-cena").fill("5010");
+  // Tylko 2 z 3 kontraktow - jawnie, bo puste pole przy jednym wierszu
+  // znaczyloby "cala pozycja", a tu chodzi wlasnie o CZESC pozycji.
+  await page.locator("#wy-0-kontrakty").fill("2");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  // 40 tickow * 2 kontrakty * 12,50 USD (ES) = 1000,00 USD zrealizowane.
+  await expect(podglad.getByText(/\+1\s?000,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText("2 / 3", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  // Karta: wynik zrealizowany widoczny, z etykieta "częściowo" (nie "hipot." -
+  // to zarezerwowane dla statusu "missed").
+  await expect(page.getByText(/\+1\s?000,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText("częściowo").first()).toBeVisible();
+
+  // Status faktycznie wrocil do "otwarty" - dowod wprost z formularza edycji,
+  // nie z domyslu na podstawie samego wygladu karty.
+  const adres = page.url();
+  await page.goto(`${adres}/edit`);
+  await expect(page.locator("#status")).toHaveValue("open");
+
+  // Pulpit: dokladnie ta sama kwota co przed zapisem. Pozycja czesciowo
+  // zamknieta ma status "open", wiec closedOnly (queries/trades.ts) ja
+  // pomija - stan wyjsciowy zmierzony PRZED zapisem, nie zalozony.
+  await page.goto("/?zakres=wszystko");
+  const po = await wynik(page);
+  expect(Number((po - przed).toFixed(2))).toBe(0);
+});
+
+test("puste kontrakty przy jednym wyjściu liczą się jak cała pozycja wpisana wprost", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "ES — E-mini S&P 500" });
+  await page.locator("#contracts").fill("2");
+  await page.locator("#entryTime").fill("2021-06-16T15:35");
+  await page.locator("#entryPrice").fill("5000");
+  await page.locator("#wy-0-czas").fill("2021-06-16T16:00");
+  await page.locator("#wy-0-cena").fill("5020");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  // Kontrakty PUSTE - podpowiedz pola musi mowic wprost, ile to bedzie
+  // (ADR: regula nie dziala po cichu).
+  await expect(page.locator("#wy-0-kontrakty")).toHaveAttribute("placeholder", "2 (cała pozycja)");
+  // 80 tickow * 2 kontrakty * 12,50 USD = 2000,00 USD.
+  await expect(podglad.getByText(/\+2\s?000,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText("2 / 2", { exact: true })).toBeVisible();
+  const pustyWynik = await podglad.getByText(/\+2\s?000,00\s?USD/).innerText();
+
+  // To samo, jawnie wpisane - wynik musi byc identyczny co do centa.
+  await page.locator("#wy-0-kontrakty").fill("2");
+  await expect(podglad.getByText(pustyWynik)).toBeVisible();
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+  await expect(page.getByText(/\+2\s?000,00\s?USD/).first()).toBeVisible();
+});
+
+test("suma kontraktów w dwóch wyjściach przekraczająca pozycję jest odrzucana z komunikatem po polsku", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("3");
+  await page.locator("#entryTime").fill("2021-06-17T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#wy-0-czas").fill("2021-06-17T16:00");
+  await page.locator("#wy-0-cena").fill("20010");
+  await page.locator("#wy-0-kontrakty").fill("2");
+
+  await page.getByRole("button", { name: "Dodaj wyjście" }).click();
+  await page.locator("#wy-1-czas").fill("2021-06-17T16:10");
+  await page.locator("#wy-1-cena").fill("20020");
+  // 2 + 2 = 4 kontrakty na pozycji o wielkosci 3 - suma przekracza pozycje.
+  await page.locator("#wy-1-kontrakty").fill("2");
+
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+
+  await expect(
+    page.getByText("Suma kontraktów w wyjściach (4) przekracza wielkość pozycji (3)."),
+  ).toBeVisible();
+  // Zadnego zapisu - formularz zostaje na /trades/new, nie na karcie trade'a.
+  await expect(page).toHaveURL(/\/trades\/new$/);
+});
+
+test("usunięcie drugiego wyjścia w edycji wraca do wyniku sprzed skalowania, „Wpływ skalowania” znika", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+  await page.locator("#instrumentId").selectOption({ label: "NQ — E-mini Nasdaq 100" });
+  await page.locator("#contracts").fill("2");
+  await page.locator("#entryTime").fill("2026-06-02T15:35");
+  await page.locator("#entryPrice").fill("20000");
+  await page.locator("#stopLoss").fill("19990");
+  await page.locator("#wy-0-czas").fill("2026-06-02T15:45");
+  await page.locator("#wy-0-cena").fill("20010");
+  // Kontrakty puste = cala pozycja (2) - zwykly, jednowyjsciowy trade.
+  await page.getByRole("button", { name: "Zapisz trade" }).click();
+  await expect(page).toHaveURL(/\/trades\/\d+$/);
+
+  const adres = page.url();
+  // 40 tickow * 2 kontrakty * 5,00 USD = 400,00 USD, ryzyko 400 -> +1.00R.
+  await expect(page.getByText(/\+400,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText("+1.00R").first()).toBeVisible();
+
+  // Edycja: rozbij pozycje na dwa kawalki (dopisz drugie wyjscie).
+  await page.goto(`${adres}/edit`);
+  await page.locator("#wy-0-kontrakty").fill("1");
+  await page.getByRole("button", { name: "Dodaj wyjście" }).click();
+  await page.locator("#wy-1-czas").fill("2026-06-02T15:55");
+  await page.locator("#wy-1-cena").fill("20050");
+  await page.locator("#wy-1-kontrakty").fill("1");
+
+  const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
+  await expect(podglad.getByText(/\+1\s?200,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText("−2.00R")).toBeVisible();
+
+  // Cofnij: usun drugi wiersz i wyczysc kontrakty pierwszego, zeby znow
+  // znaczyly "cala pozycja" - tak jak przed rozbiciem.
+  await page.getByRole("button", { name: "Usuń wyjście 2" }).click();
+  await page.locator("#wy-0-kontrakty").fill("");
+
+  // Podglad wraca DOKLADNIE do stanu sprzed skalowania.
+  await expect(podglad.getByText(/\+400,00\s?USD/)).toBeVisible();
+  await expect(podglad.getByText("+1.00R")).toBeVisible();
+  await expect(podglad.getByText(/Wpływ skalowania/)).toHaveCount(0);
+
+  await page.getByRole("button", { name: /zapisz zmiany/i }).click();
+  await page.waitForURL(adres);
+
+  // Karta: z powrotem jeden wpis w wynikach, dawna kwota, bez wplywu skalowania.
+  await expect(page.getByText(/\+400,00\s?USD/).first()).toBeVisible();
+  await expect(page.getByText("+1.00R").first()).toBeVisible();
+  const panelWyjsc = page
+    .locator("section", { hasText: "Wyjścia" })
+    .filter({ has: page.locator("table") });
+  await expect(panelWyjsc).toContainText("Jedno wyjście z pozycji.");
+  await expect(panelWyjsc.locator("tbody tr")).toHaveCount(1);
 });

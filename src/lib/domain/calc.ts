@@ -30,22 +30,41 @@ export type InstrumentSpec = {
   exchangeTimezone: string;
 };
 
+/**
+ * Jeden kawalek wyjscia z pozycji. Czesciowe WEJSCIA sa poza zakresem -
+ * wejscie jest zawsze jedno, na `TradeInput.entryPrice`.
+ */
+export type ExitInput = {
+  price: number;
+  contracts: number;
+  time: Date | null;
+  /**
+   * Kwota z rachunku dla tego kawalka, w centach. Zero jest poprawna
+   * wartoscia, wiec sprawdzamy `null`/`undefined`, nie falsy (ADR-016).
+   */
+  brokerAmount?: number | null;
+};
+
 export type TradeInput = {
   instrument: InstrumentSpec;
   direction: Direction;
   contracts: number;
   entryPrice: number;
-  exitPrice: number | null;
+  /** Pusta tablica = pozycja bez wyjscia (otwarta). Kolejnosc jest kontraktem
+   * wywolujacego - `computeTrade` NIE sortuje po czasie. To wywolujacy (akcja
+   * zapisu) odpowiada za posortowanie kawalkow chronologicznie, bo od tej
+   * kolejnosci zalezy "ostatnie wyjscie" w `scalingR`. */
+  exits: ExitInput[];
   stopLoss: number | null;
   takeProfit: number | null;
   mae: number | null;
   mfe: number | null;
   entryTime: Date;
-  exitTime: Date | null;
   /**
-   * Faktyczny wynik z rachunku brokera, w centach. Gdy podany, jest wynikiem
-   * trade'a zamiast kwoty policzonej z tickow (ADR-016). Zero jest poprawna
-   * wartoscia - break even u brokera - wiec sprawdzamy `null`, nie falsy.
+   * Faktyczny wynik z rachunku brokera dla calego trade'a, w centach. Gdy
+   * podany i sa jakiekolwiek wyjscia, bije wszystko inne - i kwoty per
+   * kawalek, i siatke tickow (ADR-016). Zero jest poprawna wartoscia - break
+   * even u brokera - wiec sprawdzamy `null`, nie falsy.
    */
   brokerAmount?: number | null;
 };
@@ -63,6 +82,19 @@ export type TradeResult = {
   weekday: number;
   entryHour: number;
   tradingDay: string;
+  /** Srednia wazona ceny wyjscia po zamknietych kontraktach, zaokraglona do
+   * sensownej precyzji ceny. `null`, gdy pozycja jest otwarta. */
+  exitPrice: number | null;
+  /** Najpozniejszy niepusty czas wyjscia. `null`, gdy zaden kawalek go nie ma. */
+  exitTime: Date | null;
+  /** Suma kontraktow po wszystkich kawalkach wyjscia. */
+  closedContracts: number;
+  /** Liczba kawalkow wyjscia. */
+  exitCount: number;
+  /** Ile R dala decyzja o skalowaniu wzgledem wyjscia caloscia po cenie
+   * ostatniego kawalka. `null` przy mniej niz dwoch wyjsciach albo bez
+   * ryzyka zdefiniowanego stopem. */
+  scalingR: number | null;
 };
 
 /** Ruch ceny w tickach, ze znakiem zgodnym z kierunkiem pozycji. */
@@ -228,30 +260,97 @@ export function tradingDay(moment: Date, timezone: string): string {
 }
 
 export function computeTrade(t: TradeInput): TradeResult {
-  const { instrument: i, direction, contracts } = t;
+  const { instrument: i, direction, contracts, exits } = t;
 
-  const ticks =
-    t.exitPrice === null ? null : moveInTicks(direction, t.entryPrice, t.exitPrice, i.tickSize);
+  const exitCount = exits.length;
+  const closedContracts = exits.reduce((sum, e) => sum + e.contracts, 0);
 
-  /* Kwota z brokera wygrywa z siatka tickow (ADR-016): tick NQ ma 5 USD, wiec
-     wynik 116 USD nie lezy na siatce, a to on jest prawda o rachunku. Ticki
-     zostaja policzone z ceny - opisuja ruch, nie pieniadze. Brak ceny wyjscia
-     to pozycja otwarta i zaden wynik, nawet z podana kwota. */
-  const brokerAmount = t.brokerAmount ?? null;
-  const pnl =
-    ticks === null
-      ? null
-      : brokerAmount !== null
-        ? brokerAmount
-        : amountFromTicks(ticks, i.tickValue, contracts);
-
-  // Ryzyko: odleglosc do stopa. Stop rowny cenie wejscia nie definiuje ryzyka -
-  // wtedy R po prostu nie istnieje.
+  // Ryzyko: odleglosc do stopa, z PELNEJ pozycji wejsciowej - zdjecie czesci
+  // kontraktow po drodze nie zmienia mianownika R. Stop rowny cenie wejscia
+  // nie definiuje ryzyka - wtedy R po prostu nie istnieje.
   const rawRiskTicks =
     t.stopLoss === null ? null : Math.abs(Math.round((t.entryPrice - t.stopLoss) / i.tickSize));
   const riskTicks = rawRiskTicks && rawRiskTicks > 0 ? rawRiskTicks : null;
   const riskAmount =
     riskTicks === null ? null : amountFromTicks(riskTicks, i.tickValue, Math.abs(contracts));
+
+  let pnl: number | null = null;
+  let ticks: number | null = null;
+  let exitPrice: number | null = null;
+  let exitTime: Date | null = null;
+  let scalingR: number | null = null;
+
+  if (exitCount > 0) {
+    // Ticki per kawalek - potrzebne osobno, zeby je wazyc kontraktami i zeby
+    // "ostatnie wyjscie" (dla scalingR) mialo swoj pojedynczy ruch.
+    const ticksPerExit = exits.map((e) => moveInTicks(direction, t.entryPrice, e.price, i.tickSize));
+
+    /* P&L zaokraglane PER KAWALEK, nie raz na koncu: pnl_i = kwota z brokera
+       dla kawalka (jesli podana) albo amountFromTicks tego kawalka; pnl to
+       suma pnl_i. Dzieki temu trade z jednym wyjsciem daje CO DO CENTA to
+       samo, co dawal stary jednowyjsciowy model - backfill historii jest
+       bezstratny. To jest twarde wymaganie, nie preferencja. */
+    const pnlPerExit = exits.map((e, idx) =>
+      e.brokerAmount != null
+        ? e.brokerAmount
+        : amountFromTicks(ticksPerExit[idx], i.tickValue, e.contracts),
+    );
+    const sumPnlPerExit = pnlPerExit.reduce((sum, p) => sum + p, 0);
+
+    // Kwota z brokera na poziomie trade'a bije wszystko (ADR-016). Pelna
+    // kolejnosc pierwszenstwa: trade -> kawalek -> siatka tickow.
+    const brokerAmount = t.brokerAmount ?? null;
+    pnl = brokerAmount !== null ? brokerAmount : sumPnlPerExit;
+
+    // Srednia wazona ruchu w tickach. NIE wolno tego liczyc z usrednionej
+    // ceny wyjscia - moveInTicks(entry, avgPrice) daje w ogolnosci INNA
+    // liczbe niz srednia wazona pojedynczych ruchow (kazdy kawalek osobno
+    // zaokragla sie do pelnego ticku, a to nie jest operacja liniowa), wiec
+    // ktos kiedys probowalby to "uproscic" i po cichu zepsulby statystyki.
+    ticks =
+      closedContracts !== 0
+        ? Math.round(
+            ticksPerExit.reduce((sum, tk, idx) => sum + tk * exits[idx].contracts, 0) /
+              closedContracts,
+          )
+        : 0;
+
+    // Srednia wazona ceny wyjscia - to podsumowanie dla czlowieka, nie cena
+    // zlecenia, wiec nie musi lezec na siatce tickow.
+    exitPrice =
+      closedContracts !== 0
+        ? roundPrice(
+            exits.reduce((sum, e) => sum + e.price * e.contracts, 0) / closedContracts,
+            priceDecimals(t.entryPrice, i.tickSize),
+          )
+        : null;
+
+    // Najpozniejszy niepusty czas wyjscia; null, gdy zaden kawalek go nie ma.
+    exitTime = exits.reduce<Date | null>((latest, e) => {
+      if (e.time === null) return latest;
+      if (latest === null || e.time.getTime() > latest.getTime()) return e.time;
+      return latest;
+    }, null);
+
+    // scalingR: wynik faktyczny minus wynik, jaki dalaby CALA zamknieta
+    // czesc wyjeta jednorazowo po cenie ostatniego kawalka. "Ostatnie
+    // wyjscie" to ostatni element tablicy `exits` w kolejnosci, w jakiej ja
+    // dostajemy - funkcja jej NIE sortuje, kolejnosc jest kontraktem
+    // wywolujacego (akcja zapisu ma podac ja juz posortowana po czasie).
+    // Liczone WYLACZNIE na siatce tickow, z pominieciem wszystkich kwot
+    // brokera (i tej z trade'a, i tych z kawalkow) - miara ocenia decyzje o
+    // skalowaniu (kiedy i po ile zdejmowac), a kwoty brokera domieszalyby do
+    // niej poslizg i sposob wypelnienia zlecen, ktorych ta miara nie ocenia.
+    if (exitCount >= 2 && riskAmount !== null && riskAmount !== 0) {
+      const sumTickAmounts = ticksPerExit.reduce(
+        (sum, tk, idx) => sum + amountFromTicks(tk, i.tickValue, exits[idx].contracts),
+        0,
+      );
+      const lastTicks = ticksPerExit[ticksPerExit.length - 1];
+      const allAtLast = amountFromTicks(lastTicks, i.tickValue, closedContracts);
+      scalingR = (sumTickAmounts - allAtLast) / riskAmount;
+    }
+  }
 
   const rMultiple =
     pnl === null || riskAmount === null || riskAmount === 0 ? null : pnl / riskAmount;
@@ -267,9 +366,9 @@ export function computeTrade(t: TradeInput): TradeResult {
       : moveInTicks(direction, t.entryPrice, t.mfe, i.tickSize) / riskTicks;
 
   const durationS =
-    t.exitTime === null
+    exitTime === null
       ? null
-      : Math.max(0, Math.round((t.exitTime.getTime() - t.entryTime.getTime()) / 1000));
+      : Math.max(0, Math.round((exitTime.getTime() - t.entryTime.getTime()) / 1000));
 
   const parts = timeParts(t.entryTime, i.exchangeTimezone);
 
@@ -286,6 +385,11 @@ export function computeTrade(t: TradeInput): TradeResult {
     weekday: parts.weekday,
     entryHour: parts.hour,
     tradingDay: tradingDay(t.entryTime, i.exchangeTimezone),
+    exitPrice,
+    exitTime,
+    closedContracts,
+    exitCount,
+    scalingR,
   };
 }
 

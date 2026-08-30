@@ -30,6 +30,8 @@ function sample(): TradeStat[] {
     directionCorrect: null,
     badExecutionReason: null,
     potentialR: null,
+    exitCount: 1,
+    scalingR: null,
   }));
 }
 
@@ -142,6 +144,8 @@ describe("wynik BE (ADR-011)", () => {
       contracts: 1,
       maeR: null,
       mfeR: null,
+      exitCount: 1,
+      scalingR: null,
       ...extra,
     };
   }
@@ -272,6 +276,8 @@ describe("kierunek a egzekucja (ADR-018)", () => {
       directionCorrect: null,
       badExecutionReason: null,
       potentialR: null,
+      exitCount: 1,
+      scalingR: null,
       ...extra,
     };
   }
@@ -367,6 +373,8 @@ describe("sufit systemu nigdy nie jest nizszy niz oczekiwana wartosc", () => {
       directionCorrect: null,
       badExecutionReason: null,
       potentialR: null,
+      exitCount: 1,
+      scalingR: null,
       ...extra,
     };
   }
@@ -386,5 +394,73 @@ describe("sufit systemu nigdy nie jest nizszy niz oczekiwana wartosc", () => {
     expect(s.expectancyR).toBeCloseTo(0, 10);
     expect(s.potentialExpectancyR).toBeCloseTo(2, 10);
     expect(s.potentialExpectancyR!).toBeGreaterThanOrEqual(s.expectancyR!);
+  });
+});
+
+describe("wyjscia czesciowe - agregaty skalowania (2026-08-30)", () => {
+  function t(id: number, pnl: number, extra: Partial<TradeStat> = {}): TradeStat {
+    return {
+      id,
+      pnl,
+      rMultiple: null,
+      riskAmount: 10_000,
+      durationS: null,
+      entryTime: new Date(`2026-03-${String(id).padStart(2, "0")}T14:30:00Z`),
+      tradingDay: `2026-03-${String(id).padStart(2, "0")}`,
+      contracts: 1,
+      maeR: null,
+      mfeR: null,
+      directionCorrect: null,
+      badExecutionReason: null,
+      potentialR: null,
+      exitCount: 1,
+      scalingR: null,
+      ...extra,
+    };
+  }
+
+  it("liczy skalowaneCount jako liczbe trade'ow z wiecej niz jednym wyjsciem", () => {
+    const s = computeStats(
+      [
+        t(1, 20_000, { exitCount: 1, scalingR: null }),
+        t(2, 20_000, { exitCount: 2, scalingR: 0.3 }),
+        t(3, -10_000, { exitCount: 3, scalingR: -0.2 }),
+      ],
+      progi,
+    );
+    expect(s.skalowaneCount).toBe(2);
+  });
+
+  it("liczy skalowanieSumaR jako sume scalingR po skalowanych trade'ach", () => {
+    const s = computeStats(
+      [
+        t(1, 20_000, { exitCount: 2, scalingR: 0.3 }),
+        t(2, -10_000, { exitCount: 3, scalingR: -0.2 }),
+        t(3, 5_000, { exitCount: 1, scalingR: null }),
+      ],
+      progi,
+    );
+    expect(s.skalowanieSumaR).toBeCloseTo(0.1, 10);
+  });
+
+  it("liczy skalowanieSredniaR jako srednia scalingR z trade'ow, ktore je maja", () => {
+    const s = computeStats(
+      [t(1, 20_000, { exitCount: 2, scalingR: 0.3 }), t(2, -10_000, { exitCount: 3, scalingR: -0.1 })],
+      progi,
+    );
+    expect(s.skalowanieSredniaR).toBeCloseTo(0.1, 10);
+  });
+
+  it("skalowanieSredniaR zostaje null, gdy zaden trade nie ma policzonego scalingR", () => {
+    // Zero by klamalo - sugerowaloby neutralny wplyw skalowania, ktorego nikt
+    // nie zmierzyl. Dotyczy tez trade'ow z exitCount > 1, ktorym scalingR
+    // wyszedl null (np. brak ryzyka zdefiniowanego stopem - patrz calc.ts).
+    const s = computeStats(
+      [t(1, 20_000, { exitCount: 2, scalingR: null }), t(2, -10_000, { exitCount: 1, scalingR: null })],
+      progi,
+    );
+    expect(s.skalowaneCount).toBe(1);
+    expect(s.skalowanieSredniaR).toBeNull();
+    expect(s.skalowanieSumaR).toBe(0);
   });
 });

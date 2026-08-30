@@ -8,21 +8,20 @@ Katalog kontraktów, tagi i trzy pola własne są już gotowe. Warto sprawdzić 
 
 1. **Ustawienia → Konta** — saldo startowe. To punkt zerowy krzywej kapitału.
    Ustaw też domyślne ryzyko na trade; formularz będzie z niego podpowiadał wielkość pozycji.
-2. **Ustawienia → Instrumenty** — wielkość i wartość ticku dla kontraktów, którymi grasz,
-   oraz prowizję. Te trzy liczby decydują o każdym wyniku w dzienniku.
+2. **Ustawienia → Instrumenty** — wielkość i wartość ticku dla kontraktów, którymi grasz.
+   Te dwie liczby decydują o każdym wyniku w dzienniku.
 
 ## Wpisywanie trade'a
 
 *Nowy trade* (przycisk jest zawsze pod ręką, także na telefonie).
 
-Formularz pamięta ostatnio użyte konto, instrument i strategię, więc zwykle wystarczy
-wpisać ceny i godziny. Po prawej stronie liczy się **podgląd wyniku** — ticki, wynik brutto
-i netto, ryzyko, R. To ten sam kod, który zapisze trade, więc podgląd nie kłamie.
+Formularz pamięta ostatnio użyte konto i instrument, więc zwykle wystarczy
+wpisać ceny i godziny. Po prawej stronie liczy się **podgląd wyniku** — ticki, wynik,
+ryzyko, R. To ten sam kod, który zapisze trade, więc podgląd nie kłamie.
 
 Kilka rzeczy, które warto wiedzieć:
 
 - **Puste pole ceny wyjścia** oznacza pozycję wciąż otwartą. Status przestawi się sam.
-- **Puste pole prowizji** oznacza „policz z katalogu instrumentu”.
 - **Bez stopa nie ma R.** Statystyki w R pominą taki trade, a miernik dyscypliny go zgłosi.
 - **Zapisz i dodaj kolejny** zostawia Cię w formularzu — wygodne przy wpisywaniu sesji z kartki.
 
@@ -44,17 +43,69 @@ komunikat z liczbą wolnych miejsc.
 ### Nie znasz ceny wyjścia? Wpisz kwotę
 
 Broker pokazuje wynik w dolarach, a nie cenę, po której poszło wypełnienie. Zamiast zgadywać
-z wykresu, wpisz tę kwotę w pole **Kwota z brokera** — wynik netto, po prowizji, dokładnie
-tak, jak masz u siebie. Dziennik doliczy prowizję z powrotem i wstawi cenę wyjścia sam.
-Prowizję bierze z pola obok, a gdy jest puste — ze stawki zapisanej przy instrumencie.
+z wykresu, wpisz tę kwotę — dokładnie to, co masz u siebie na rachunku.
+
+Są na to dwa miejsca i warto je rozróżniać:
+
+- **Kwota z brokera** przy pozycji dotyczy **całego trade'a** i nadpisuje wynik. Wpisujesz ją,
+  gdy znasz tylko końcową liczbę z rachunku.
+- **Kwota z brokera** w wierszu wyjścia (pod przyciskiem **kwota i notatka**) dotyczy
+  **tego jednego kawałka**. Z niej dziennik policzy cenę wyjścia tego wiersza sam.
 
 Ruch ceny musi wypaść na pełnym ticku instrumentu, więc nie każda kwota trafia co do centa.
 Gdy trzeba było zaokrąglić, pod polem pojawia się informacja, ile faktycznie wyszło i o ile
 różni się od wpisanej kwoty.
 
-Kwota jest nakładką na cenę wyjścia, nie zamiast niej. Wpisanie ceny wprost gasi wyliczanie
-i czyści kwotę. W drugą stronę: skasowanie kwoty przywraca ostatnią cenę, którą wpisałeś
-ręcznie — nic nie ginie.
+Kwota w wierszu jest nakładką na cenę, nie zamiast niej. Wpisanie ceny wprost gasi wyliczanie
+i czyści kwotę. Skasowanie kwoty przywraca ostatnią cenę wpisaną ręcznie — nic nie ginie.
+
+### Częściowe wyjścia z pozycji
+
+Wyjście nie musi być jedną operacją. Pozycję można zamykać kawałkami: TP1 na pierwszym
+celu, TP2 na drugim, runner z reszty. Każdy kawałek to osobny wiersz, a przycisk
+**Dodaj wyjście** dokłada kolejny.
+
+Przy jednym wyjściu liczbę kontraktów możesz zostawić pustą — znaczy to całą pozycję.
+Pole pokazuje tę liczbę w podpowiedzi, więc nic nie dzieje się po cichu. Zwykły trade
+wpisuje się przez to dokładnie tak jak dawniej: cena i godzina wyjścia, i tyle.
+
+Przy kilku wierszach każdy musi mieć swoją liczbę kontraktów. Pomaga skrót **reszta**,
+który wstawia tyle, ile zostało do zamknięcia całej pozycji.
+
+Trade można zapisać niedokończony. Jeśli wyjścia nie pokrywają całej pozycji, status
+wraca jako *otwarty*: widać zysk już zrealizowany, ale trade nie wchodzi jeszcze do
+statystyk. Wejdzie, gdy domkniesz resztę.
+
+Kwotę z rachunku możesz podać osobno dla każdego kawałka — pole jest pod przyciskiem
+**kwota i notatka** w wierszu. Kwota wpisana dla całego trade'a nadal bije wszystko.
+
+### Wpływ skalowania
+
+To jest powód, dla którego w ogóle warto rozpisywać wyjścia po kawałku. Dziennik
+porównuje Twój wynik z tym, co dałaby cała pozycja zamknięta po cenie **ostatniego**
+wyjścia, i pokazuje różnicę w R.
+
+Przykład. Dwa kontrakty, wejście po 100, stop na 90 — ryzyko to 10 punktów na kontrakt,
+czyli 1R to 20 punktów na całej pozycji.
+
+- Zdejmujesz jeden kontrakt po 110, drugi wychodzi po 130. Masz 10 + 30 = 40 punktów.
+  Gdybyś trzymał oba do 130, miałbyś 60. Wpływ skalowania: **−1R** — pierwszy kawałek
+  zabrałeś za wcześnie.
+- Odwrotnie: zdejmujesz jeden po 130, a reszta wychodzi po 110. Masz 30 + 10 = 40,
+  a trzymając oba do 110 miałbyś 20. Wpływ skalowania: **+1R** — zdjęcie na szczycie
+  uratowało trade.
+
+Pojedyncze liczby niewiele znaczą, bo raz się trafi, raz nie. Sens ma dopiero suma
+z wielu trade'ów — znajdziesz ją na ekranie *Statystyki* jako **Wpływ częściowych
+realizacji**, razem z liczbą trade'ów, z których została policzona. Jeśli po pięćdziesięciu
+zagraniach wychodzi wyraźnie na minus, to znaczy, że zdejmujesz zbyt wcześnie.
+
+W liczeniu tej miary kwoty z rachunku są pomijane. Ocenia ona decyzję, kiedy i po ile
+zdejmować, a nie poślizg i prowizje.
+
+Na karcie trade'a „Cena wyjścia" jest wtedy średnią ważoną wszystkich kawałków,
+a „Wyjście" to godzina ostatniego z nich. Pełne rozbicie znajdziesz niżej, w panelu
+*Wyjścia*: każdy kawałek z ceną, udziałem w pozycji, wynikiem i własnym R.
 
 ### MAE i MFE
 
@@ -152,13 +203,14 @@ Statystyki dostają z tego panel **„Kierunek a egzekucja"**:
 Zaznaczone niepotrzebne BE i za wczesne wyjście obniżają też miernik dyscypliny.
 Niepotrzebny stop — nie: zbyt ciasny stop to błąd planu, nie ręki.
 
-## Strategie i checklista
+## Strategie
 
-Strategia to nazwa plus lista zasad wejścia. Przy każdym trade'zie odhaczasz, które były
-spełnione. To zasila dwie rzeczy: kartę trade'a (widać, co pominąłeś) i miernik dyscypliny.
+Strategia to nazwa plus lista zasad wejścia, prowadzona na ekranie *Strategie*.
+Formularz trade'a nie pyta już o strategię ani nie każe odhaczać zasad — te pola wyszły
+z niego 29 sierpnia 2026, bo wypełniało się je z rozpędu i nic z nich nie wynikało.
 
-Zasady możesz później edytować — punkty, które zostały bez zmian, zachowują odhaczenia
-przy starych trade'ach.
+Strategie zostają z dwóch powodów: starsze trade'y mają je przypisane i widać je na
+karcie trade'a, a sama lista zasad przydaje się jako ściąga przed wejściem.
 
 ## Czytanie statystyk
 
@@ -202,6 +254,9 @@ Ocenia zachowanie, nie wynik. Sto punktów minus kary za: trade'y bez stopa, nie
 checklisty, powiększanie pozycji po stracie, wejścia w ciągu pięciu minut od straty,
 zepsutą egzekucję przy trafionym kierunku i ryzyko przekraczające półtora raza Twoją
 własną medianę.
+
+Kara za niepełną checklistę dotyczy dziś wyłącznie starszych trade'ów, przy których
+zasady były odhaczane. Nowe wpisy nie mają jak jej dostać.
 
 Uwaga: sygnał „zepsuta egzekucja" doszedł 24 sierpnia 2026 i przesunął skalę.
 Wyniki sprzed tej daty nie porównują się wprost z późniejszymi.

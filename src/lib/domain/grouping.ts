@@ -179,6 +179,17 @@ const BUILTIN: Record<string, Omit<Dimension, "key">> = {
         : [WARIANT_KIERUNKU_NAZWY[t.kierunekTrafiony ? "tak" : "nie"]],
     outcomeDerived: true,
   },
+  /* Czesciowe wyjscia (2026-08-30). MUSI byc outcomeDerived: uzytkownicy
+     skaluja przede wszystkim trade'y, ktore juz sa na plusie (zdejmuja czesc
+     zysku, zostawiaja runnera) - bez tej flagi Edge Finder "odkrylby", ze
+     "skalowane" ma wyzsza oczekiwana wartosc niz "jedno wyjscie", mimo ze to
+     tylko odbicie wyniku, nie przyczyna go. Ta sama pulapka co przy `rrange`
+     i `wynik` wyzej. */
+  skalowanie: {
+    label: "Częściowe wyjścia",
+    values: (t) => [t.exitCount > 1 ? "skalowane" : "jedno wyjście"],
+    outcomeDerived: true,
+  },
 };
 
 function konfluencjeWarstwy(t: TradeForAnalysis, warstwa: Warstwa): string[] {

@@ -231,6 +231,18 @@ export function FilterBar({
           </div>
 
           <div className="space-y-1.5">
+            <Label htmlFor="skalowanie">Częściowe wyjścia</Label>
+            {/* Ten sam wzorzec trojstanowy co "pominiete" wyzej - patrz
+                queries/filters.ts (parseFilters/whereClause), pole juz tam
+                dziala, brakowalo tylko selecta w tym pasku. */}
+            <Select id="skalowanie" name="skalowanie" defaultValue={value("skalowanie")}>
+              <option value="">wszystkie</option>
+              <option value="skalowane">skalowane (2+ wyjścia)</option>
+              <option value="jedno">jedno wyjście</option>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
             <Label htmlFor="rynek">Sesja rynkowa</Label>
             <Select id="rynek" name="rynek" defaultValue={value("rynek")}>
               <option value="">wszystkie</option>
