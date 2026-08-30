@@ -7,6 +7,7 @@ import { TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import type { TradeRecord } from "@/lib/queries/trades";
 import { dateTime, money, pnlClass, price, rValue, wynikClass } from "@/lib/format";
 
+
 /**
  * Zwiezla lista trade'ow do pulpitu i podgladu dnia.
  * Pelna tabela z filtrami i kolumnami zyje w `trades-table.tsx`.
@@ -24,7 +25,14 @@ export function TradeList({
 
   return (
     <ul className="divide-y divide-line">
-      {trades.map((t) => (
+      {trades.map((t) => {
+        /* Pozycja czesciowo zamknieta: "open" z co najmniej jednym wyjsciem ma
+           juz zrealizowany kawalek wyniku. `maWynik` celowo tego nie pokazuje -
+           status "open" nie ma policzalnego KONCOWEGO wyniku - wiec ten
+           przypadek dostaje wlasna galaz, z etykieta mowiaca wprost, ze to nie
+           jest wynik zamknietego trade'a (ta sama logika co karta trade'a). */
+        const czesciowoZamkniete = t.status === "open" && t.exitCount > 0;
+        return (
         <li key={t.id}>
           <Link
             href={`/trades/${t.id}`}
@@ -63,6 +71,17 @@ export function TradeList({
 
             <span className="liczba ml-auto hidden text-xs text-faint md:block">
               {price(t.entryPrice, t.tickSize)} → {price(t.exitPrice, t.tickSize)}
+              {/* Tekstowy znacznik (WCAG 1.4.1) - patrz trades-table.tsx: przy
+                  wiecej niz jednym wyjsciu to srednia, nie pojedyncza cena. */}
+              {t.exitCount > 1 && (
+                <span
+                  className="ml-1 text-[10px] font-semibold uppercase"
+                  title="Średnia z kilku wyjść"
+                  aria-label="średnia z kilku wyjść"
+                >
+                  śr.
+                </span>
+              )}
             </span>
 
             <span className="liczba hidden w-24 shrink-0 text-right text-xs text-faint sm:block">
@@ -84,7 +103,11 @@ export function TradeList({
             <span
               className={cx(
                 "liczba w-24 shrink-0 text-right text-sm font-medium sm:w-28",
-                wynikClass(t.wynik),
+                maWynik(t.status)
+                  ? wynikClass(t.wynik)
+                  : czesciowoZamkniete
+                    ? pnlClass(t.pnl)
+                    : undefined,
               )}
             >
               {/* Prefiks "~" zamiast osobnego znacznika "hipot." (ta sama
@@ -94,14 +117,22 @@ export function TradeList({
               {t.status === "missed" && "~"}
               {maWynik(t.status)
                 ? money(t.pnl, { currency: t.currency, sign: true })
-                : TRADE_STATUS_NAMES[t.status]}
+                : czesciowoZamkniete
+                  ? money(t.pnl, { currency: t.currency, sign: true })
+                  : TRADE_STATUS_NAMES[t.status]}
               {maWynik(t.status) && t.wynik === "be" && (
                 <span className="ml-1 text-xs opacity-70">BE</span>
+              )}
+              {czesciowoZamkniete && (
+                <span className="ml-1 block text-[10px] font-semibold uppercase tracking-wide text-accent">
+                  częściowo
+                </span>
               )}
             </span>
           </Link>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

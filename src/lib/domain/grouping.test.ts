@@ -42,6 +42,8 @@ function trade(n: Partial<TradeForAnalysis> = {}): TradeForAnalysis {
     kierunekTrafiony: null,
     badExecutionReason: null,
     potentialR: null,
+    exitCount: 1,
+    scalingR: null,
     tags: [],
     custom: {},
     ...n,

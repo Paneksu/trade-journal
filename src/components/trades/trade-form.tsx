@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import Link from "next/link";
+import { Plus, Trash2 } from "lucide-react";
 
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import type { Shot } from "@/components/screenshots/typy";
@@ -25,11 +26,26 @@ import {
 import { cx } from "@/lib/classes";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { saveTrade, type FormState } from "@/lib/actions/trades";
-import { computeTrade, exitPriceForAmount, type Direction } from "@/lib/domain/calc";
+import {
+  computeTrade,
+  exitPriceForAmount,
+  type Direction,
+  type ExitForAmount,
+  type ExitInput,
+} from "@/lib/domain/calc";
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { FieldDef } from "@/lib/fields/fields";
-import { money, nazwaStrefy, num, price, rValue, wynikClass, WYNIK_NAZWY } from "@/lib/format";
+import {
+  money,
+  nazwaStrefy,
+  num,
+  plural,
+  price,
+  rValue,
+  wynikClass,
+  WYNIK_NAZWY,
+} from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
 /* Formularz trade'a. Liczy wynik na zywo tym samym modulem, ktory liczy go
@@ -48,6 +64,53 @@ export type FormInstrument = {
 };
 export type FormSession = { id: number; name: string };
 
+/** Ksztalt jednego kawalka wyjscia przyjmowany z formularza edycji. Liczby
+ * jako string, tak samo jak reszta pol formularza (entryPrice, contracts...). */
+export type ExitFormValue = {
+  time?: string | null;
+  price?: string | null;
+  contracts?: string | null;
+  /** W walucie konta (dolary), nie w centach - jak top-poziomowy `brokerAmount`. */
+  brokerAmount?: string | null;
+  note?: string | null;
+};
+
+/** Stan jednego wiersza repeatera wyjsc. Cena i kontrakty sa kontrolowane -
+ * podglad ich potrzebuje na zywo. Czas i notatka NIE - formularz z server
+ * action potrafi wyzerowac kontrolowane pole po rewalidacji, a od tych dwoch
+ * podglad nie zalezy, wiec zostaja niekontrolowane (`defaultTime`/`defaultNote`,
+ * czytane tylko raz przy montowaniu wiersza). */
+type StanWyjscia = {
+  id: string;
+  price: string;
+  contracts: string;
+  kwota: string;
+  defaultTime: string;
+  defaultNote: string;
+};
+
+/** Tolerancja przy porownaniach sum kontraktow - liczby z formularza to
+ * stringi zamieniane na float (0.1 + 0.2 !== 0.3), jak w akcji zapisu. */
+const EPS_KONTRAKTY = 1e-6;
+
+/** Buduje poczatkowy stan wierszy z `values.exits`. Pusta tablica/brak =
+ * jeden pusty wiersz. Id sa deterministyczne (indeks), bo licza sie w
+ * inicjalizatorze `useState` - takie same na serwerze i po hydratacji;
+ * losowe id (np. crypto.randomUUID) tutaj zrobiloby mismatch. */
+function poczatkoweWyjscia(exits: ExitFormValue[] | undefined): StanWyjscia[] {
+  if (!exits || exits.length === 0) {
+    return [{ id: "wy-init-0", price: "", contracts: "", kwota: "", defaultTime: "", defaultNote: "" }];
+  }
+  return exits.map((e, i) => ({
+    id: `wy-init-${i}`,
+    price: e.price ?? "",
+    contracts: e.contracts ?? "",
+    kwota: e.brokerAmount ?? "",
+    defaultTime: e.time ?? "",
+    defaultNote: e.note ?? "",
+  }));
+}
+
 export type TradeFormValues = {
   id?: number;
   accountId?: number | null;
@@ -57,8 +120,12 @@ export type TradeFormValues = {
   status?: string;
   entryTime?: string;
   entryPrice?: string;
-  exitTime?: string;
-  exitPrice?: string;
+  /** Kawalki wyjscia - zastapily pojedyncze `exitTime`/`exitPrice` (ETAP 4a,
+   * czesciowe realizacje zysku). Pusta tablica albo brak = pozycja otwarta,
+   * formularz pokazuje jeden pusty wiersz. `time` jest juz sformatowany pod
+   * `datetime-local` (jak `entryTime`), `brokerAmount` jest w walucie konta,
+   * nie w centach. */
+  exits?: ExitFormValue[];
   contracts?: string;
   stopLoss?: string;
   takeProfit?: string;
@@ -140,7 +207,6 @@ export function TradeForm({
   const [direction, setDirection] = useState<Direction>(values.direction ?? "long");
 
   const [entryPrice, setEntryPrice] = useState(values.entryPrice ?? "");
-  const [exitPrice, setExitPrice] = useState(values.exitPrice ?? "");
   const [contracts, setContracts] = useState(values.contracts ?? "1");
   const [stopLoss, setStopLoss] = useState(values.stopLoss ?? "");
   const [netTarget, setNetTarget] = useState(values.brokerAmount ?? "");
@@ -177,24 +243,76 @@ export function TradeForm({
     };
   }, [instrument]);
 
-  /* Kwota z brokera w centach. Ta sama zamiana co w akcji zapisu
-     (actions/trades.ts) - inaczej podglad klamalby wobec bazy. */
+  /* Kwota z brokera w centach - dla CALEGO trade'a, bije wszystko (ADR-016).
+     Ta sama zamiana co w akcji zapisu (actions/trades.ts) - inaczej podglad
+     klamalby wobec bazy. Osobna sprawa od kwoty per-kawalek nizej. */
   const brokerCents = useMemo(() => {
     const n = parse(netTarget);
     return n === null ? null : Math.round(n * 100);
   }, [netTarget]);
 
-  /* Cena wyjscia wyliczona z wpisanej kwoty. Jednokierunkowe: liczy sie
-     tylko z kwoty w dol do exitPrice, nigdy odwrotnie - inaczej byloby kolo.
-     Kwota zostaje wynikiem trade'a (ADR-016), cena jest tylko jej odwzorowaniem
-     na siatce tickow. */
-  const derivedExit = useMemo(() => {
-    if (!spec || netTarget.trim() === "") return null;
-    const entry = parse(entryPrice);
-    const size = parse(contracts);
-    const target = parse(netTarget);
-    if (entry === null || size === null || size <= 0 || target === null) return null;
+  /* Kawalki wyjscia (ETAP 4a - czesciowe realizacje zysku). Zastapily
+     pojedyncze pola exitTime/exitPrice - repeater wzorowany na
+     `new-trade-shots.tsx`. Wiersze trzymamy po stabilnym `id`, nie po
+     indeksie: aktualizacje i usuniecia dopasowuja sie po referencji obiektu
+     (patrz `zmienWiersz`/`usunWyjscie`) - inaczej usuniecie wiersza w srodku
+     przesunieloby DOM node'y pol niekontrolowanych (czas, notatka) na inne
+     wiersze i pokazalo cudza wartosc. Id generowane deterministycznie w
+     inicjalizatorze stanu (te same na serwerze i kliencie), a dla nowych
+     wierszy - z licznika w refie, ktory rusza sie tylko po interakcji
+     uzytkownika, wiec tez nigdy nie rozjezdza sie z hydratacja. */
+  const [wyjscia, setWyjscia] = useState<StanWyjscia[]>(() => poczatkoweWyjscia(values.exits));
+  const licznikWyjsc = useRef(wyjscia.length);
+  const [rozwinieteWyjscia, setRozwinieteWyjscia] = useState<Set<string>>(() => new Set());
 
+  function dodajWyjscie() {
+    setWyjscia((w) => [
+      ...w,
+      {
+        id: `wy-nowe-${licznikWyjsc.current++}`,
+        price: "",
+        contracts: "",
+        kwota: "",
+        defaultTime: "",
+        defaultNote: "",
+      },
+    ]);
+  }
+
+  function usunWyjscie(wiersz: StanWyjscia) {
+    // Ostatni wiersz zostaje pusty, a nie znika - formularz zawsze ma co
+    // najmniej jedno miejsce na wyjscie.
+    setWyjscia((w) => (w.length <= 1 ? w : w.filter((x) => x !== wiersz)));
+  }
+
+  function zmienWiersz(wiersz: StanWyjscia, patch: Partial<StanWyjscia>) {
+    setWyjscia((w) => w.map((x) => (x === wiersz ? { ...x, ...patch } : x)));
+  }
+
+  function przelaczRozwiniecie(id: string) {
+    setRozwinieteWyjscia((s) => {
+      const kopia = new Set(s);
+      if (kopia.has(id)) kopia.delete(id);
+      else kopia.add(id);
+      return kopia;
+    });
+  }
+
+  /* Cena wyliczona z kwoty brokera TEGO kawalka - jednokierunkowe, jak dawny
+     mechanizm na poziomie calego trade'a (ADR-016), teraz per wiersz. */
+  /** Kontrakty tego wiersza - z uwzglednieniem reguly "jedyny wiersz z pustym
+   * polem znaczy cala pozycje" (ta sama, co w akcji zapisu). */
+  function kontraktyWiersza(wiersz: StanWyjscia): number | null {
+    if (wiersz.contracts.trim() === "" && wyjscia.length === 1) return parse(contracts);
+    return parse(wiersz.contracts);
+  }
+
+  function wyliczCeneWiersza(wiersz: StanWyjscia): ExitForAmount | null {
+    if (!spec || wiersz.kwota.trim() === "") return null;
+    const entry = parse(entryPrice);
+    const size = kontraktyWiersza(wiersz);
+    const target = parse(wiersz.kwota);
+    if (entry === null || size === null || size <= 0 || target === null) return null;
     return exitPriceForAmount({
       instrument: spec,
       direction,
@@ -202,19 +320,85 @@ export function TradeForm({
       entryPrice: entry,
       target: Math.round(target * 100),
     });
-  }, [netTarget, entryPrice, contracts, direction, spec]);
+  }
 
-  /* Do pola ceny wchodzi surowa liczba, nie wersja sformatowana lokalnie.
-     Formatowanie przycielo by miejsca po przecinku, gdy cena wejscia jest
-     dokladniejsza niz tick, a spacja nierozdzielajaca nie ma czego szukac w polu. */
-  const exitText = derivedExit ? String(derivedExit.exitPrice) : null;
+  /* Cena wyliczona z kwoty brokera dla CALEGO trade'a. Dziala tylko przy
+     jednym wyjsciu - przy kilku nie wiadomo, ktoremu kawalkowi przypisac
+     kwote. To jest dawna sciezka "znam tylko kwote z rachunku, nie cene"
+     (ADR-016): bez niej trade wpisany sama kwota nie da sie zapisac, bo
+     serwer wymaga ceny w kazdym wierszu. */
+  function wyliczCeneZKwotyTrade(): ExitForAmount | null {
+    if (!spec || netTarget.trim() === "") return null;
+    const entry = parse(entryPrice);
+    const size = parse(contracts);
+    const target = parse(netTarget);
+    if (entry === null || size === null || size <= 0 || target === null) return null;
+    return exitPriceForAmount({
+      instrument: spec,
+      direction,
+      contracts: size,
+      entryPrice: entry,
+      target: Math.round(target * 100),
+    });
+  }
 
-  /* Podglad liczy sie z ceny, ktora naprawde siedzi w polu - wiec takze z tej
-     wyliczonej z kwoty netto. Inaczej panel obok milczalby przy wpisanej kwocie.
-     Gdy kwota jest wpisana, ale nie da sie z niej policzyc ceny, pole musi zostac
-     puste: cichy powrot do ostatniej recznej ceny zapisalby liczbe, do ktorej
-     uzytkownik nie wracal, i to wbrew komunikatowi pod polem kwoty. */
-  const effectiveExit = netTarget.trim() === "" ? exitPrice : (exitText ?? "");
+  /* Cena, ktora faktycznie siedzi w polu - reczna albo wyliczona z kwoty.
+     Gdy kwota jest wpisana, ale nie da sie z niej policzyc ceny (brak
+     kontraktow w tym wierszu), pole zostaje puste - cichy powrot do
+     ostatniej recznej ceny zapisalby liczbe, do ktorej uzytkownik nie wracal.
+     Kolejnosc zrodel: kwota kawalka -> reczna cena -> kwota calego trade'a. */
+  function efektywnaCenaWiersza(wiersz: StanWyjscia): string {
+    if (wiersz.kwota.trim() !== "") {
+      const wyliczona = wyliczCeneWiersza(wiersz);
+      return wyliczona ? String(wyliczona.exitPrice) : "";
+    }
+    if (wiersz.price.trim() === "" && wyjscia.length === 1) {
+      const zTrade = wyliczCeneZKwotyTrade();
+      if (zTrade) return String(zTrade.exitPrice);
+    }
+    return wiersz.price;
+  }
+
+  /** Reszta kontraktow do zamkniecia pozycji, licza po odjeciu wszystkich
+   * POZOSTALYCH wierszy - skrot na wiersz. */
+  function ustawReszte(wiersz: StanWyjscia) {
+    const total = parse(contracts);
+    if (total === null) return;
+    const sumaInnych = wyjscia.reduce((sum, w) => {
+      if (w === wiersz) return sum;
+      const c = parse(w.contracts);
+      return c !== null && c > 0 ? sum + c : sum;
+    }, 0);
+    const reszta = total - sumaInnych;
+    const wartosc = reszta > 0 ? Math.round(reszta * 1e6) / 1e6 : 0;
+    zmienWiersz(wiersz, { contracts: String(wartosc) });
+  }
+
+  /* Kawalki wyjscia gotowe dla `computeTrade` - podajemy je w kolejnosci
+     wierszy formularza, funkcja sama ich NIE sortuje (kontrakt `calc.ts`).
+     Czas kazdego kawalka jest polem niekontrolowanym (patrz uzasadnienie w
+     JSX), wiec podglad go nie zna - to nie zmienia pnl/R/scalingR, tylko
+     nie liczy tu duration/exitTime, ktorych panel podogladu i tak nie pokazuje. */
+  const previewExits = useMemo(() => {
+    const list: ExitInput[] = [];
+    /* Jedno wyjscie z pusta liczba kontraktow = cala pozycja. Ta sama regula
+       co w akcji zapisu (`czytajWyjscia`) - podglad musi ja powtorzyc, inaczej
+       pokazywalby pusty wynik dla trade'a, ktory zapisze sie poprawnie. */
+    for (const w of wyjscia) {
+      const cena = parse(efektywnaCenaWiersza(w));
+      const kontrakty = kontraktyWiersza(w);
+      if (cena === null || kontrakty === null || kontrakty <= 0) continue;
+      const kwota = parse(w.kwota);
+      list.push({
+        price: cena,
+        contracts: kontrakty,
+        time: null,
+        brokerAmount: kwota === null ? null : Math.round(kwota * 100),
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wyjscia, entryPrice, direction, spec, contracts, netTarget]);
 
   const preview = useMemo(() => {
     if (!spec) return null;
@@ -227,16 +411,15 @@ export function TradeForm({
       direction,
       contracts: size,
       entryPrice: entry,
-      exitPrice: parse(effectiveExit),
+      exits: previewExits,
       stopLoss: parse(stopLoss),
       takeProfit: null,
       mae: null,
       mfe: null,
       entryTime: new Date(),
-      exitTime: parse(effectiveExit) === null ? null : new Date(),
       brokerAmount: brokerCents,
     });
-  }, [spec, direction, entryPrice, effectiveExit, contracts, stopLoss, brokerCents]);
+  }, [spec, direction, entryPrice, contracts, stopLoss, brokerCents, previewExits]);
 
   /* Kategoria (zysk/strata/be) liczona tym samym `wynikTrade`, co statystyki -
      zeby podglad w formularzu nigdy nie klamal wobec tego, co pokaze tabela
@@ -249,23 +432,35 @@ export function TradeForm({
     );
   }, [preview, contracts, progi]);
 
-  /* Komunikat pod polem kwoty - cisza nie jest opcja, uzytkownik ma wiedziec,
-     dlaczego cena sie nie policzyla albo jaka cena wejdzie do zapisu. Powod
-     nazywamy po imieniu: inaczej przy zlej kwocie dostaje instrukcje dotyczaca
-     pol, ktorych nie tknal. O roznicy wobec siatki tickow juz nie mowimy -
-     od ADR-016 to kwota jest wynikiem, a cena tylko jej przyblizeniem. */
-  const netTargetMessage = useMemo(() => {
-    if (netTarget.trim() === "") return null;
-    if (brokerCents === null) return "Nie umiem odczytać tej kwoty.";
-    if (!derivedExit) return "Podaj cenę wejścia i liczbę kontraktów.";
-    // Cena z przecinkiem dziesietnym, ale bez `price` - to obcieloby miejsca
-    // po przecinku, gdy cena wejscia jest dokladniejsza niz tick instrumentu.
-    const cena = String(derivedExit.exitPrice).replace(".", ",");
-    return `Cena wyjścia na siatce ticków: ${cena}. W wyniku i statystykach liczy się wpisane ${money(
-      brokerCents,
-      { currency },
+  /** Liczba kontraktow do widoku - bez sztucznych miejsc po przecinku, gdy
+   * wartosc jest calkowita. */
+  const formatQty = (n: number) => (Number.isInteger(n) ? String(n) : num(n, 2));
+
+  /* Licznik pod repeaterem: "zrealizowane X z Y kontraktow - Z zostaje
+     otwarty/otwarte" albo "cala pozycja zamknieta". Odmiana przez `plural`
+     (genetiv liczby mnogiej "kontraktow" jest ten sam dla "kilku" i "wielu" -
+     rozni sie tylko forma pojedyncza po "z 1"). */
+  const podsumowanieWyjsc = useMemo(() => {
+    const total = parse(contracts);
+    if (total === null || total <= 0) return null;
+    const filled = wyjscia.reduce((sum, w) => {
+      const c = parse(w.contracts);
+      return c !== null && c > 0 ? sum + c : sum;
+    }, 0);
+    const remaining = total - filled;
+    if (remaining <= EPS_KONTRAKTY) return "Cała pozycja zamknięta.";
+    return `Zrealizowane ${formatQty(filled)} z ${formatQty(total)} ${plural(
+      Math.round(total) === 1 ? 1 : 2,
+      "kontraktu",
+      "kontraktów",
+      "kontraktów",
+    )} — ${formatQty(remaining)} ${plural(
+      Math.round(remaining),
+      "zostaje otwarty",
+      "zostają otwarte",
+      "zostają otwarte",
     )}.`;
-  }, [netTarget, brokerCents, derivedExit, currency]);
+  }, [wyjscia, contracts]);
 
   /** Ile kontraktow zmiesci sie w domyslnym ryzyku konta. */
   const suggestedSize = useMemo(() => {
@@ -424,34 +619,6 @@ export function TradeForm({
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="exitTime" hint={podpisStrefy}>
-                  Wyjście — data i godzina
-                </Label>
-                <Input
-                  id="exitTime"
-                  name="exitTime"
-                  type="datetime-local"
-                  defaultValue={values.exitTime ?? ""}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="exitPrice" hint="Puste = pozycja wciąż otwarta">
-                  Cena wyjścia
-                </Label>
-                <Input
-                  id="exitPrice"
-                  name="exitPrice"
-                  inputMode="decimal"
-                  value={effectiveExit}
-                  onChange={(e) => {
-                    // Reczna edycja ceny zawsze wygrywa - gasi wyliczenie z kwoty netto.
-                    setExitPrice(e.target.value);
-                    setNetTarget("");
-                  }}
-                />
-              </div>
-
-              <div className="space-y-1.5">
                 <Label htmlFor="stopLoss" hint="Bez stopa nie policzymy R">
                   Stop loss
                 </Label>
@@ -472,27 +639,21 @@ export function TradeForm({
                   defaultValue={values.takeProfit ?? ""}
                 />
               </div>
-              {/* Kwota z rachunku brokera idzie do zapisu i to ona jest wynikiem
-                  trade'a (ADR-016). Cena wyjscia liczy sie z niej, nie odwrotnie,
-                  wiec pole stoi tuz pod cena. */}
+              {/* Kwota z rachunku brokera dla CALEGO trade'a - bije wszystko,
+                  i ceny kawalkow, i ich kwoty (ADR-016). Osobna sprawa od
+                  kwoty per-kawalek w repeaterze wyjsc nizej. */}
               <div className="space-y-1.5">
-                <Label htmlFor="brokerAmount" hint="Ta kwota jest wynikiem">
+                <Label htmlFor="brokerAmount" hint="Nadpisuje wynik całego trade'a">
                   Kwota z brokera ({currency})
                 </Label>
                 <Input
                   id="brokerAmount"
                   name="brokerAmount"
                   inputMode="decimal"
-                  placeholder="policzy cenę wyjścia"
+                  placeholder="suma z rachunku"
                   value={netTarget}
                   onChange={(e) => setNetTarget(e.target.value)}
-                  aria-describedby={netTargetMessage ? "brokerAmount-hint" : undefined}
                 />
-                {netTargetMessage && (
-                  <p id="brokerAmount-hint" className="text-xs text-faint">
-                    {netTargetMessage}
-                  </p>
-                )}
               </div>
 
               <div className="space-y-1.5">
@@ -513,6 +674,134 @@ export function TradeForm({
                   <p className="text-xs text-faint">
                     Setup był, ale go nie wziąłeś — wynik hipotetyczny się liczy, ale trade nie
                     liczy się do statystyk.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Repeater czesciowych wyjsc (ETAP 4a). Domyslnie jeden pusty
+                wiersz - najczestszy przypadek (jedno wyjscie) ma wygladac i
+                klikac sie tak samo jak dawne pojedyncze pola. */}
+            <div className="space-y-2.5 border-t border-line px-4 py-3">
+              <Label hint="Puste = pozycja wciąż otwarta">Wyjścia</Label>
+              <div className="space-y-2">
+                {wyjscia.map((w, i) => {
+                  const rozwiniety = rozwinieteWyjscia.has(w.id);
+                  return (
+                    <fieldset
+                      key={w.id}
+                      className="space-y-2 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 p-2.5"
+                    >
+                      <legend className="sr-only">Wyjście {i + 1}</legend>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="min-w-[9.5rem] flex-1 space-y-1">
+                          <Label htmlFor={`wy-${i}-czas`} hint={i === 0 ? podpisStrefy : undefined}>
+                            Czas
+                          </Label>
+                          <Input
+                            id={`wy-${i}-czas`}
+                            name="wy_czas"
+                            type="datetime-local"
+                            defaultValue={w.defaultTime}
+                          />
+                        </div>
+                        <div className="min-w-[6.5rem] flex-1 space-y-1">
+                          <Label htmlFor={`wy-${i}-cena`}>Cena</Label>
+                          <Input
+                            id={`wy-${i}-cena`}
+                            name="wy_cena"
+                            inputMode="decimal"
+                            value={efektywnaCenaWiersza(w)}
+                            onChange={(e) =>
+                              // Reczna edycja ceny zawsze wygrywa - gasi wyliczenie z kwoty.
+                              zmienWiersz(w, { price: e.target.value, kwota: "" })
+                            }
+                          />
+                        </div>
+                        <div className="min-w-[6rem] flex-1 space-y-1">
+                          <Label htmlFor={`wy-${i}-kontrakty`}>Kontrakty</Label>
+                          <Input
+                            id={`wy-${i}-kontrakty`}
+                            name="wy_kontrakty"
+                            inputMode="decimal"
+                            value={w.contracts}
+                            /* Przy jednym wyjsciu puste pole znaczy "cala pozycja" -
+                               podpowiedz pokazuje ta liczbe, zeby regula nie dzialala
+                               po cichu. Przy kilku wierszach nie ma czego domyslac. */
+                            placeholder={
+                              wyjscia.length === 1 && contracts.trim() !== ""
+                                ? `${contracts} (cała pozycja)`
+                                : undefined
+                            }
+                            onChange={(e) => zmienWiersz(w, { contracts: e.target.value })}
+                          />
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 pb-1.5">
+                          <button
+                            type="button"
+                            onClick={() => ustawReszte(w)}
+                            className="text-xs text-accent hover:underline"
+                          >
+                            reszta
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => przelaczRozwiniecie(w.id)}
+                            aria-expanded={rozwiniety}
+                            className="text-xs text-muted hover:text-text hover:underline"
+                          >
+                            {rozwiniety ? "ukryj szczegóły" : "kwota i notatka"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => usunWyjscie(w)}
+                            disabled={wyjscia.length <= 1}
+                            aria-label={`Usuń wyjście ${i + 1}`}
+                            className="rounded-[var(--radius-control)] border border-line-strong p-1.5 text-faint transition-colors duration-150 hover:text-loss disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Trash2 size={13} aria-hidden />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* `hidden` (nie warunkowe odmontowanie) - pola musza
+                          zostac w DOM nawet zwiniete, akcja zapisu paruje
+                          wiersze po indeksie i oczekuje wszystkich pieciu pol
+                          z kazdego wiersza, takze pustych. */}
+                      <div hidden={!rozwiniety} className="grid gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label
+                            htmlFor={`wy-${i}-kwota`}
+                            hint="Nadpisuje cenę tego kawałka"
+                          >
+                            Kwota z brokera ({currency})
+                          </Label>
+                          <Input
+                            id={`wy-${i}-kwota`}
+                            name="wy_kwota"
+                            inputMode="decimal"
+                            value={w.kwota}
+                            onChange={(e) => zmienWiersz(w, { kwota: e.target.value })}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor={`wy-${i}-notatka`}>Notatka</Label>
+                          <Input id={`wy-${i}-notatka`} name="wy_notatka" defaultValue={w.defaultNote} />
+                        </div>
+                      </div>
+                    </fieldset>
+                  );
+                })}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Button type="button" size="s" onClick={dodajWyjscie}>
+                  <Plus size={14} aria-hidden />
+                  Dodaj wyjście
+                </Button>
+                {podsumowanieWyjsc && (
+                  <p className="text-xs text-faint" aria-live="polite">
+                    {podsumowanieWyjsc}
                   </p>
                 )}
               </div>
@@ -669,6 +958,33 @@ export function TradeForm({
               {wynik && (
                 <DataPoint label="Kategoria" valueClassName={wynikClass(wynik)}>
                   {WYNIK_NAZWY[wynik]}
+                </DataPoint>
+              )}
+              {/* Srednia cena ma sens do pokazania dopiero przy wiecej niz
+                  jednym wyjsciu - przy jednym byloby to po prostu ta sama
+                  cena co w wierszu, zbedny szum. */}
+              {preview && preview.exitCount > 1 && (
+                <DataPoint label="Średnia cena wyjścia">
+                  {price(preview.exitPrice, instrument?.tickSize)}
+                </DataPoint>
+              )}
+              {preview && preview.exitCount > 0 && (
+                <DataPoint label="Zrealizowana pozycja">
+                  {formatQty(preview.closedContracts)} / {formatQty(parse(contracts) ?? 0)}
+                </DataPoint>
+              )}
+              {preview?.scalingR !== null && preview?.scalingR !== undefined && (
+                <DataPoint
+                  label="Wpływ skalowania"
+                  valueClassName={
+                    preview.scalingR > 0
+                      ? "text-profit"
+                      : preview.scalingR < 0
+                        ? "text-loss"
+                        : undefined
+                  }
+                >
+                  {rValue(preview.scalingR)}
                 </DataPoint>
               )}
             </div>

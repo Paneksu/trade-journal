@@ -55,6 +55,8 @@ const STORAGE_KEY = "tj-kolumny";
 const DOMYSLNA_WIDOCZNOSC: VisibilityState = {
   badExecutionReason: false,
   potentialR: false,
+  exitCount: false,
+  scalingR: false,
 };
 
 export function TradesTable({ trades, fields, tags, currency }: Props) {
@@ -156,7 +158,21 @@ export function TradesTable({ trades, fields, tags, currency }: Props) {
         accessorFn: (t) => (t.exitPrice === null ? null : Number(t.exitPrice)),
         header: "Wyjście",
         cell: ({ row }) => (
-          <span className="text-muted">{price(row.original.exitPrice, row.original.tickSize)}</span>
+          <span className="text-muted">
+            {price(row.original.exitPrice, row.original.tickSize)}
+            {/* Znacznik TEKSTOWY, nie sam kolor (WCAG 1.4.1) - przy wiecej niz
+                jednym wyjsciu cena w tej kolumnie jest srednia wazona, nie
+                cena pojedynczego wyjscia. */}
+            {row.original.exitCount > 1 && (
+              <span
+                className="ml-1 text-[10px] font-semibold uppercase text-faint"
+                title="Średnia z kilku wyjść"
+                aria-label="średnia z kilku wyjść"
+              >
+                śr.
+              </span>
+            )}
+          </span>
         ),
       },
       {
@@ -295,6 +311,24 @@ export function TradesTable({ trades, fields, tags, currency }: Props) {
         cell: ({ getValue }) => {
           const w = getValue() as number | null;
           return <span className="liczba text-muted">{rValue(w)}</span>;
+        },
+      },
+      {
+        id: "exitCount",
+        accessorKey: "exitCount",
+        header: "Wyjścia",
+        cell: ({ getValue }) => {
+          const w = getValue() as number;
+          return <span className="text-muted">{w === 0 ? "—" : num(w, 0)}</span>;
+        },
+      },
+      {
+        id: "scalingR",
+        accessorKey: "scalingR",
+        header: "Wpływ skalowania",
+        cell: ({ getValue }) => {
+          const w = getValue() as number | null;
+          return <span className={pnlClass(w)}>{rValue(w)}</span>;
         },
       },
       {

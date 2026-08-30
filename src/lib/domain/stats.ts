@@ -37,6 +37,15 @@ export type TradeStat = {
   directionCorrect: boolean | null;
   badExecutionReason: PowodZlejEgzekucji | null;
   potentialR: number | null;
+  /* Wyjscia czesciowe (2026-08-30). Pola WYMAGANE, nie opcjonalne - z tego
+     samego powodu co przy ADR-018: kompilator ma wskazac kazda fabryke
+     testowa, ktora ich nie ma, zamiast po cichu liczyc agregaty skalowania
+     z danych, ktorych po prostu nie ma. */
+  /** Liczba wyjsc czastkowych. 1 = pojedyncze wyjscie, >1 = skalowanie. */
+  exitCount: number;
+  /** Wplyw skalowania na wynik w R. `null`, gdy `exitCount < 2` albo brak
+      ryzyka zdefiniowanego stopem - patrz `computeTrade`. */
+  scalingR: number | null;
 };
 
 export type Stats = {
@@ -96,6 +105,18 @@ export type Stats = {
   potentialExpectancyR: number | null;
   /** Zamkniete trade'y bez oceny kierunku - kontekst dla trafnosci, nie ozdoba. */
   directionUnassessed: number;
+
+  /* --- Wyjscia czesciowe (2026-08-30) --------------------------------------
+     Skaluje sie glownie to, co jest na plusie - stad wymiar w `grouping.ts`
+     ma `outcomeDerived: true` (patrz komentarz tam). Te trzy pola sa
+     policzone z tego samego przejscia po liscie, co reszta agregatow. */
+  /** Ile trade'ow ma wiecej niz jedno wyjscie. */
+  skalowaneCount: number;
+  /** Suma `scalingR` po trade'ach ze skalowaniem (pomija `null`). */
+  skalowanieSumaR: number;
+  /** Srednia `scalingR` po trade'ach ze skalowaniem. `null`, gdy zaden trade
+      go nie ma - zero by klamalo, sugerujac neutralny wplyw skalowania. */
+  skalowanieSredniaR: number | null;
 };
 
 export function emptyStats(): Stats {
@@ -139,6 +160,9 @@ export function emptyStats(): Stats {
     lostRCount: 0,
     potentialExpectancyR: null,
     directionUnassessed: 0,
+    skalowaneCount: 0,
+    skalowanieSumaR: 0,
+    skalowanieSredniaR: null,
   };
 }
 
@@ -174,6 +198,7 @@ export function computeStats(list: TradeStat[], progi: Progi): Stats {
   const durations: number[] = [];
   const maeValues: number[] = [];
   const mfeValues: number[] = [];
+  const scalingValues: number[] = [];
 
   let winStreak = 0;
   let lossStreak = 0;
@@ -242,6 +267,16 @@ export function computeStats(list: TradeStat[], progi: Progi): Stats {
       s.lostR += stracone;
       s.lostRCount += 1;
     }
+
+    // Wyjscia czesciowe (2026-08-30) - w tym samym przejsciu, tak jak reszta.
+    // `scalingR` z kontraktu `computeTrade` jest `null` juz przy mniej niz
+    // dwoch wyjsciach, wiec `skalowaneCount` (samo `exitCount > 1`) bywa
+    // WIEKSZE niz liczba trade'ow z policzonym `scalingR` (brak ryzyka -
+    // stopa - tez daje `null`). Srednia liczymy tylko z tych drugich, tak
+    // jak `avgMaeR`/`avgMfeR` ponizej - `mean()` na zebranej liscie, nie na
+    // szerszym liczniku.
+    if (t.exitCount > 1) s.skalowaneCount += 1;
+    if (t.scalingR !== null) scalingValues.push(t.scalingR);
   }
 
   s.currentStreak = winStreak > 0 ? winStreak : -lossStreak;
@@ -280,6 +315,9 @@ export function computeStats(list: TradeStat[], progi: Progi): Stats {
   s.avgDurationS = avgDuration === null ? null : Math.round(avgDuration);
   s.avgMaeR = mean(maeValues);
   s.avgMfeR = mean(mfeValues);
+
+  s.skalowanieSumaR = scalingValues.reduce((a, b) => a + b, 0);
+  s.skalowanieSredniaR = mean(scalingValues);
 
   return s;
 }

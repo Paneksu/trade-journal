@@ -10,15 +10,17 @@ import {
   strategies,
   tagCategories,
   tags,
+  tradeExits,
   tradeTags,
   trades,
 } from "@/lib/db/schema";
+import { computeTrade } from "@/lib/domain/calc";
 import { czyInterwal, porzadekInterwalu } from "@/lib/domain/interwaly";
 import { czyPowod, kierunekTrafiony } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
 import type { StatusTrade } from "@/lib/domain/status";
 import type { TradeForAnalysis } from "@/lib/domain/types";
-import { getProgi } from "./dictionaries";
+import { getProgi, instrumentSpec } from "./dictionaries";
 import { whereClause, type Filters } from "./filters";
 
 /**
@@ -75,6 +77,12 @@ const columns = {
   badExecutionReason: trades.badExecutionReason,
   potentialR: trades.potentialR,
   createdAt: trades.createdAt,
+  // Wyjscia czesciowe (2026-08-30) - liczniki denormalizowane w trades,
+  // patrz komentarz w schema.ts. Same wiersze trade_exits dociaga tylko
+  // getTrade - lista i tabela potrzebuja wylacznie tych liczb.
+  closedContracts: trades.closedContracts,
+  exitCount: trades.exitCount,
+  scalingR: trades.scalingR,
 };
 
 export type TradeRecord = TradeForAnalysis & {
@@ -99,7 +107,35 @@ export type TradeRecord = TradeForAnalysis & {
   screenshotCount: number;
   /** Pierwszy zrzut w kolejnosci wyswietlania - kafel galerii. `null`, gdy brak. */
   firstShot: { file: string; width: number | null; height: number | null } | null;
+  /** Suma kontraktow zamknietych wyjsciami czastkowymi (trade_exits). */
+  closedContracts: number;
+  /** Liczba wyjsc czastkowych. */
+  exitCount: number;
+  /** Wplyw skalowania na wynik w R - patrz komentarz przy kolumnie w schema.ts. */
+  scalingR: number | null;
 };
+
+/** Jeden kawalek wyjscia z pozycji, z policzonym wynikiem - dolaczany tylko
+    przy `getTrade`, nigdy przy liscie (patrz `getTrades`). */
+export type TradeExitRecord = {
+  id: number;
+  sortOrder: number;
+  exitTime: Date | null;
+  exitPrice: number;
+  contracts: number;
+  brokerAmount: number | null;
+  note: string | null;
+  /** Ruch w tickach TEGO kawalka - liczony `computeTrade`, nie wlasnym wzorem. */
+  ticks: number | null;
+  /** Wynik TEGO kawalka w centach. */
+  pnl: number | null;
+  /** R TEGO kawalka - liczone wzgledem ryzyka proporcjonalnego do jego wielkosci,
+      tak zeby suma R kawalkow wazona ich udzialem w pozycji dala R calego trade'a. */
+  rMultiple: number | null;
+};
+
+/** `TradeRecord` z lista wyjsc czastkowych - zwraca wylacznie `getTrade`. */
+export type TradeDetail = TradeRecord & { exits: TradeExitRecord[] };
 
 type ShotSummary = { count: number; first: TradeRecord["firstShot"] };
 const PUSTE_ZRZUTY: ShotSummary = { count: 0, first: null };
@@ -196,6 +232,9 @@ function build(row: Row, rowTags: TagRow[], zrzuty: ShotSummary, progi: Progi): 
     rulesMetIds: met,
     screenshotCount: zrzuty.count,
     firstShot: zrzuty.first,
+    closedContracts: Number(row.closedContracts),
+    exitCount: row.exitCount,
+    scalingR: row.scalingR === null ? null : Number(row.scalingR),
   };
 }
 
@@ -347,15 +386,72 @@ export function closedOnly(list: TradeRecord[]): TradeRecord[] {
   return list.filter((t) => t.status === "closed");
 }
 
-export async function getTrade(id: number): Promise<TradeRecord | null> {
+/**
+ * Wyjscia czastkowe jednego trade'a, posortowane `sort_order, id` (wzorzec
+ * ze `screenshots`), kazde z policzonym wynikiem TEGO kawalka. Liczymy przez
+ * `computeTrade` z kontraktami zawezonymi do wielkosci kawalka - dzieki temu
+ * ryzyko (a wiec i R) skaluje sie proporcjonalnie, bez wlasnego wzoru obok
+ * modulu domeny (patrz komentarz przy `TradeExitRecord`).
+ */
+async function exitsForTrade(row: Row): Promise<TradeExitRecord[]> {
+  const wiersze = await db
+    .select()
+    .from(tradeExits)
+    .where(eq(tradeExits.tradeId, row.id))
+    .orderBy(asc(tradeExits.sortOrder), asc(tradeExits.id));
+  if (wiersze.length === 0) return [];
+
+  const [instrument] = await db
+    .select()
+    .from(instruments)
+    .where(eq(instruments.id, row.instrumentId))
+    .limit(1);
+  if (!instrument) return [];
+
+  const spec = instrumentSpec(instrument);
+  const stopLoss = row.stopLoss === null ? null : Number(row.stopLoss);
+  const entryPrice = Number(row.entryPrice);
+
+  return wiersze.map((w) => {
+    const contracts = Number(w.contracts);
+    const exitPrice = Number(w.exitPrice);
+    const wynik = computeTrade({
+      instrument: spec,
+      direction: row.direction,
+      contracts,
+      entryPrice,
+      exits: [{ price: exitPrice, contracts, time: w.exitTime, brokerAmount: w.brokerAmount }],
+      stopLoss,
+      takeProfit: null,
+      mae: null,
+      mfe: null,
+      entryTime: row.entryTime,
+    });
+    return {
+      id: w.id,
+      sortOrder: w.sortOrder,
+      exitTime: w.exitTime,
+      exitPrice,
+      contracts,
+      brokerAmount: w.brokerAmount,
+      note: w.note,
+      ticks: wynik.ticks,
+      pnl: wynik.pnl,
+      rMultiple: wynik.rMultiple,
+    };
+  });
+}
+
+export async function getTrade(id: number): Promise<TradeDetail | null> {
   const rows = await baseQuery().where(eq(trades.id, id)).limit(1);
   if (rows.length === 0) return null;
-  const [tagMap, shotMap, progi] = await Promise.all([
+  const [tagMap, shotMap, progi, exits] = await Promise.all([
     tagsForTrades([id]),
     screenshotSummary([id]),
     getProgi(),
+    exitsForTrade(rows[0]),
   ]);
-  return build(rows[0], tagMap.get(id) ?? [], shotMap.get(id) ?? PUSTE_ZRZUTY, progi);
+  return { ...build(rows[0], tagMap.get(id) ?? [], shotMap.get(id) ?? PUSTE_ZRZUTY, progi), exits };
 }
 
 export async function getScreenshots(tradeId: number) {

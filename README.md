@@ -117,9 +117,9 @@ Mierzone na obrazie produkcyjnym, nie na serwerze deweloperskim:
 
 | Sprawdzenie | Wynik |
 |---|---|
-| Testy jednostkowe | 110 zielonych |
-| Testy E2E | 7 scenariuszy |
-| Dostępność (axe, WCAG 2.2 AA) | 11 ekranów bez naruszeń |
+| Testy jednostkowe | 255 zielonych |
+| Testy E2E | 27 scenariuszy |
+| Dostępność (axe, WCAG 2.2 AA) | 11 ekranów w pętli + 6 stanów szczegółowych, bez naruszeń |
 | Lighthouse desktop | wydajność 100, dostępność 100, dobre praktyki 100 |
 | Lighthouse mobile | wydajność 92, dostępność 100, dobre praktyki 100 |
 | Lighthouse SEO | 60 — celowo, aplikacja jest `noindex` (patrz `docs/decyzje.md`) |

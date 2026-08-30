@@ -35,7 +35,7 @@ import {
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
-import { duration, int, money, num, percent, rValue, tradesCount } from "@/lib/format";
+import { duration, int, money, num, percent, pnlClass, rValue, tradesCount } from "@/lib/format";
 
 export const metadata = { title: "Statystyki — Dziennik tradingowy" };
 
@@ -269,6 +269,26 @@ export default async function StatsPage({
                 {`${int(stats.be)} (${percent(stats.beRate)})`}
               </DataPoint>
               <DataPoint label="Suma kontraktów">{int(stats.totalContracts)}</DataPoint>
+
+              {/* Suma R bez licznika trade'ow jest bezwartosciowa (ten sam
+                  wzorzec co "Utracone R" w kierunek-panel.tsx, ADR-018) - bez
+                  niego nie widac, czy +3R to jeden szczesliwy trade, czy dziesiec
+                  konsekwentnych. Gdy nikt nie skalowal, kafel ma powiedziec
+                  wprost "nie dotyczy" - zero sugerowaloby neutralny wplyw,
+                  ktorego tu po prostu nie ma co mierzyc. */}
+              <DataPoint
+                label="Wpływ częściowych realizacji"
+                valueClassName={stats.skalowaneCount > 0 ? pnlClass(stats.skalowanieSumaR) : "text-faint"}
+              >
+                {stats.skalowaneCount === 0 ? (
+                  "nie dotyczy"
+                ) : (
+                  <>
+                    {rValue(stats.skalowanieSumaR)}
+                    <span className="ml-1 text-xs text-faint">· {tradesCount(stats.skalowaneCount)}</span>
+                  </>
+                )}
+              </DataPoint>
             </div>
           </Panel>
         </>

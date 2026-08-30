@@ -212,7 +212,9 @@ Uzgodnione przed budową, wypisane, żeby nie wracało jako brak:
 - **import CSV z brokera** — dziennik jest ręczny; model danych niczego tu nie blokuje,
 - **automatyczne MAE/MFE** — wpisywane ręcznie, opcjonalnie,
 - **wiele wejść i wyjść w jednym trade'zie** — jedno wejście, jedno wyjście; częściowe
-  realizacje wpisuje się jako cenę uśrednioną,
+  realizacje wpisuje się jako cenę uśrednioną
+  *(połowa dotycząca wyjść uchylona — ADR-025, 2026-08-30: częściowe realizacje mają własne
+  wiersze; częściowe wejścia zostają poza zakresem)*,
 - **odtwarzacz wykresów, asystent AI, aplikacja mobilna, synchronizacja z brokerami**.
 
 ---
@@ -935,3 +937,105 @@ skąd jej odtworzyć, trzeba wpisać ją ponownie ręcznie. To świadome
 zachowanie (kierunek dobry/zły zakłada egzekucję, a „missed" jej nie ma —
 patrz akapit o bloku kierunku wyżej), nie błąd, ale nieodwracalność bez
 ostrzeżenia w UI jest warta świadomości przy kolejnym audycie interfejsu.
+
+---
+
+## ADR-025 — częściowe realizacje zysku (2026-08-30)
+
+**Kontekst.** Dziennik od początku zakładał jedno wejście i jedno wyjście, a częściowe
+realizacje kazał wpisywać jako cenę uśrednioną — patrz „Odstępstwo — świadomie poza
+zakresem" wyżej. To obejście trzyma się, dopóki pytamy o pieniądze: uśredniona cena plus
+kwota z rachunku (ADR-016) dają poprawny `pnl`. Rozsypuje się, gdy pytamy o **decyzję**.
+Trade, w którym jeden kontrakt wyszedł na +1R, a drugi na +3R, po uśrednieniu wygląda
+identycznie jak trade, w którym oba wyszły na +2R. A różnica między nimi jest dokładnie
+tym, o co dziennik ma pytać: czy branie zysku po kawałku pomaga, czy szkodzi.
+
+**Wyjście przestaje być polem trade'a, a staje się wierszem w `trade_exits`.** Jedno wejście,
+wiele wyjść. Każdy kawałek ma własną cenę, liczbę kontraktów, czas, opcjonalną kwotę
+z rachunku i notatkę. Odrzucona alternatywa: trzymanie kawałków w `trades.custom` (JSONB).
+Poszłaby szybciej, ale te liczby wchodzą do statystyk, do filtrów SQL i do wymiarów Edge
+Findera, a JSONB nie da się na to sensownie zaindeksować ani porównać liczbowo — to samo
+rozumowanie, które w ADR-018 wypchnęło kierunek do prawdziwych kolumn.
+
+**Ten wpis uchyla punkt „wiele wejść i wyjść w jednym trade'zie" z sekcji „świadomie poza
+zakresem" (2026-08-21).** Uchylona jest tylko połowa dotycząca wyjść. **Częściowe wejścia
+zostają poza zakresem** — i to nie jest odkładanie na potem, tylko decyzja. Dokładanie do
+pozycji rozmywa cenę wejścia w średnią ważoną, a wtedy przestaje być oczywiste, czym jest
+1R: ryzykiem pierwszej transzy, ostatniej, czy całości po uśrednieniu. Dopóki nie ma na to
+odpowiedzi, której da się bronić w statystykach, wejście zostaje jedno. Precedens na
+uchylenie zapisu z tej sekcji: ADR-017 wobec ADR-014.
+
+**1R to ryzyko pozycji, którą otworzyłeś, i nie zmienia się przy zdejmowaniu kawałków.**
+`riskAmount` liczy się dalej z pełnej liczby kontraktów z `trades.contracts`.
+Odrzucona alternatywa: przeliczanie ryzyka po każdym częściowym wyjściu, proporcjonalnie do
+tego, co zostało. Brzmi precyzyjniej, a jest gorsze — R przestałoby być porównywalne między
+trade'ami, bo ten sam ruch ceny dawałby inne R w zależności od tego, ile kawałków zdążyłeś
+zdjąć wcześniej. Mianownik ma opisywać decyzję o wielkości pozycji, podjętą raz, przy wejściu.
+
+**P&L zaokrągla się raz na kawałek, nie raz na końcu.** `pnl_i` liczy się osobno dla każdego
+wyjścia i dopiero potem sumuje. Dzięki temu trade z jednym wyjściem daje co do centa tę samą
+liczbę, co dawał stary model jednowyjściowy — backfill całej historii jest bezstratny,
+co sprawdza test regresyjny na siatce przypadków w `calc.test.ts`. Instrumentem, który to
+łapie, jest ZN: tick 15,625 USD nie jest całkowity w centach, więc kolejność zaokrągleń
+faktycznie zmienia wynik.
+
+**`trades.exit_price` i `trades.exit_time` zostają, ale jako pola pochodne.** Cena wyjścia to
+odtąd średnia ważona kontraktami, czas wyjścia to czas ostatniego kawałka. Nie są już
+niezależnym źródłem prawdy — wylicza je `computeTrade`, tak jak resztę kolumn wyliczanych
+(ADR-003). Kasowanie ich byłoby dużo szerszą zmianą bez zysku: czyta je warstwa zapytań,
+`whereClause`, tabela i lista.
+
+**`ticks` też jest średnią ważoną — i nie wolno jej liczyć z uśrednionej ceny.**
+`moveInTicks(entry, cena_srednia)` daje w ogólności inną liczbę niż średnia ważona
+pojedynczych ruchów, bo każdy kawałek zaokrągla się do pełnego ticka osobno, a to nie jest
+operacja liniowa. Zapisane wprost w komentarzu w `calc.ts`, bo to jest dokładnie ten rodzaj
+„uproszczenia", które ktoś kiedyś wprowadzi w dobrej wierze i po cichu rozjedzie statystyki.
+
+**Nowa miara: `scaling_r` — ile R dała sama decyzja o skalowaniu.** Wynik faktyczny minus
+wynik, jaki dałaby cała zamknięta część wyjęta jednorazowo po cenie ostatniego kawałka,
+podzielone przez ryzyko. Dodatnia znaczy, że branie zysku po drodze pomogło; ujemna, że
+zostawiłeś pieniądze na stole. `null` przy jednym wyjściu i przy braku stopa — zero
+kłamałoby, że skalowania nie było albo że nic nie dało.
+
+**`scaling_r` liczy się wyłącznie na siatce ticków, z pominięciem wszystkich kwot z rachunku** —
+i tej z trade'a, i tych z kawałków. Ta miara ocenia decyzję: kiedy i po ile zdejmować.
+Kwoty brokera niosą poślizg, prowizję i sposób wypełnienia zleceń, czyli rzeczy, których ta
+miara nie ocenia, a które zaszumiłyby porównanie z wariantem kontrfaktycznym — bo dla
+„gdyby wszystko wyszło na ostatniej cenie" żadnej kwoty z rachunku po prostu nie ma.
+To świadome odstępstwo od ADR-016: tam kwota z rachunku jest prawdą o pieniądzach,
+tutaj pytamy nie o pieniądze, tylko o jakość decyzji.
+
+**Kolejność pierwszeństwa kwot, jako rozwinięcie ADR-016: trade → kawałek → siatka ticków.**
+Kwota wpisana dla całego trade'a nadal bije wszystko. Poniżej niej kawałek może mieć własną
+kwotę z rachunku, gdy broker rozliczył wypełnienia osobno. Dopiero bez obu liczy się z ticków.
+
+**Pozycja częściowo zamknięta jest otwarta.** Gdy suma kontraktów z wyjść jest mniejsza niż
+wielkość pozycji, status wraca jako `open` — nawet jeśli użytkownik wybrał „zamknięty".
+Zysk zrealizowany jest policzony i pokazany, ale trade **nie wchodzi do statystyk**: bariera
+to dalej dosłownie `closedOnly` (`status === "closed"`), nietknięta od ADR-024. Alternatywa
+„niech `closed` znaczy tyle, ile wpisano" byłaby prostsza i cicho psułaby każdą miarę,
+bo połowa pozycji liczyłaby się jako cały trade. Statusy `closed` i `missed` wymagają, żeby
+wyjścia sumowały się do całości.
+
+**Bez CHECK-a pilnującego sumy kontraktów.** Postgres nie wyrazi ograniczenia sięgającego do
+drugiej tabeli, a walidacja i tak musi siedzieć w akcji zapisu, żeby użytkownik dostał zdanie
+po polsku, a nie surowy komunikat bazy — ta sama zasada, co przy `normalizujKierunek`
+(ADR-018). W zamian zapis idzie w transakcji: rozjazd między `trades.pnl` a zawartością
+`trade_exits` byłby kłamstwem, którego nikt by nie zauważył.
+
+**Wymiar „częściowe wyjścia" w Edge Finderze jest oznaczony jako `outcomeDerived`.** Skaluje
+się prawie wyłącznie trade'y, które są na plusie, więc bez tej flagi Edge Finder ogłaszałby
+przewagę, która jest tylko odbiciem wyniku — dokładnie ten sam błąd, przed którym broni się
+`badreason` i `directionHit` w ADR-018.
+
+**Koszt / znany brzeg, zaakceptowany świadomie:** `pnl` nie da się odtworzyć z `ticks`, gdy
+trade był skalowany — średnia ważona ruchu przemnożona przez wszystkie kontrakty da inną
+liczbę niż suma kawałków. To nie jest nowy brzeg: ADR-016 rozerwał ten związek już wcześniej,
+dopuszczając kwotę z rachunku. Zapisane, żeby nikt nie próbował używać `ticks` jako skrótu
+do pieniędzy.
+
+Migracja `drizzle/0014_czesciowe_wyjscia.sql` — zakłada `trade_exits`, dokłada
+`closed_contracts`, `exit_count` i `scaling_r` do `trades`, a każdemu istniejącemu trade'owi
+z wypełnioną ceną wyjścia daje dokładnie jeden wiersz-potomek. Kwota z rachunku nie schodzi
+do kawałka, bo przy sumowaniu podwoiłaby wynik. `scaling_r` zostaje NULL dla całej historii:
+każdy stary trade ma jedno wyjście, więc miara nie ma tam sensu — to poprawny stan, nie brak danych.

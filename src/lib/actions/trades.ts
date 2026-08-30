@@ -6,8 +6,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { instruments, screenshots, tradeTags, trades } from "@/lib/db/schema";
-import { computeTrade, fromLocalInput, type Direction } from "@/lib/domain/calc";
+import { instruments, screenshots, tradeExits, tradeTags, trades } from "@/lib/db/schema";
+import { computeTrade, fromLocalInput, type Direction, type ExitInput } from "@/lib/domain/calc";
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import { czyPowod, normalizujKierunek } from "@/lib/domain/kierunek";
 import { wynikTrade } from "@/lib/domain/outcome";
@@ -32,11 +32,136 @@ function text(data: FormData, key: string): string | null {
   return s === "" ? null : s;
 }
 
-function number(data: FormData, key: string): number | null {
-  const s = text(data, key);
-  if (s === null) return null;
+function parseNumber(s: string): number | null {
   const n = Number(s.replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
+}
+
+function number(data: FormData, key: string): number | null {
+  const s = text(data, key);
+  return s === null ? null : parseNumber(s);
+}
+
+/** Tolerancja przy porownaniach sum kontraktow - liczby przychodza z formularza
+    jako stringi zamieniane na float, wiec 0.1 + 0.2 nie da w JS dokladnie 0.3. */
+const EPS_KONTRAKTY = 1e-6;
+
+type WierszWyjscia = {
+  time: Date | null;
+  price: number;
+  contracts: number;
+  brokerAmount: number | null;
+  note: string | null;
+};
+
+/**
+ * Czyta wiersze czesciowych wyjsc z FormData - wzorzec `getAll(...)` + parowanie
+ * po indeksie, jak przy zrzutach i interwalach (`sparujZInterwalami`). Wiersz
+ * calkiem pusty jest pomijany, nie blokuje zapisu.
+ *
+ * Sortuje wynik po czasie rosnaco - `computeTrade` NIE sortuje wyjsc samo
+ * (kontrakt funkcji, patrz `domain/calc.ts`: kolejnosc odpowiada za `scalingR`),
+ * wiec to jest jedyne miejsce, w ktorym kolejnosc kawalkow zostaje ustalona.
+ * Wiersze bez czasu ida PO wierszach z czasem, w kolejnosci wpisania - nie da
+ * sie ich uszeregowac chronologicznie, wiec nie udajemy, ze sie da.
+ *
+ * JEDEN wiersz z pusta liczba kontraktow znaczy "cala pozycja". Bez tej reguly
+ * najczestszy przypadek - jedno wyjscie, cala pozycja - kazalby wpisywac te sama
+ * liczbe dwa razy, raz przy pozycji i raz przy wyjsciu. Formularz pokazuje ta
+ * wartosc w podpowiedzi pola, wiec nic sie nie dzieje po cichu. Przy dwoch i
+ * wiecej wierszach pusta liczba jest bledem: tam nie ma czego domyslac.
+ */
+function czytajWyjscia(
+  data: FormData,
+  strefaGieldy: string,
+  entryTime: Date,
+  pozycja: number,
+): { ok: true; rows: WierszWyjscia[] } | { ok: false; error: string } {
+  const czasy = data.getAll("wy_czas").map(String);
+  const ceny = data.getAll("wy_cena").map(String);
+  const kontrakty = data.getAll("wy_kontrakty").map(String);
+  const kwoty = data.getAll("wy_kwota").map(String);
+  const notatki = data.getAll("wy_notatka").map(String);
+
+  const n = Math.max(czasy.length, ceny.length, kontrakty.length, kwoty.length, notatki.length);
+  /* `contracts` moze tu byc jeszcze `null` - domykamy je dopiero po petli,
+     gdy wiadomo, ile wierszy w ogole przyszlo. */
+  const surowe: (Omit<WierszWyjscia, "contracts"> & { idx: number; contracts: number | null })[] =
+    [];
+
+  for (let i = 0; i < n; i += 1) {
+    const czasRaw = (czasy[i] ?? "").trim();
+    const cenaRaw = (ceny[i] ?? "").trim();
+    const kontraktyRaw = (kontrakty[i] ?? "").trim();
+    const kwotaRaw = (kwoty[i] ?? "").trim();
+    const notatkaRaw = (notatki[i] ?? "").trim();
+
+    if (!czasRaw && !cenaRaw && !kontraktyRaw && !kwotaRaw && !notatkaRaw) continue;
+
+    const price = cenaRaw === "" ? null : parseNumber(cenaRaw);
+    const contracts = kontraktyRaw === "" ? null : parseNumber(kontraktyRaw);
+    if (price === null) {
+      return { ok: false, error: `Wyjście #${i + 1}: podaj cenę wyjścia.` };
+    }
+    if (contracts !== null && contracts <= 0) {
+      return {
+        ok: false,
+        error: `Wyjście #${i + 1}: liczba kontraktów musi być większa od zera.`,
+      };
+    }
+
+    let time: Date | null = null;
+    if (czasRaw) {
+      time = fromLocalInput(czasRaw, strefaGieldy);
+      if (!time) {
+        return { ok: false, error: `Wyjście #${i + 1}: nie rozpoznaję podanej daty i godziny.` };
+      }
+      if (time.getTime() < entryTime.getTime()) {
+        return { ok: false, error: "Wyjście nie może być wcześniej niż wejście." };
+      }
+    }
+
+    const kwota = kwotaRaw === "" ? null : parseNumber(kwotaRaw);
+    const brokerAmount = kwota === null ? null : Math.round(kwota * 100);
+
+    surowe.push({
+      idx: i,
+      time,
+      price,
+      contracts,
+      brokerAmount,
+      note: notatkaRaw === "" ? null : notatkaRaw,
+    });
+  }
+
+  /* Jedno wyjscie bez podanej liczby kontraktow = cala pozycja (patrz opis
+     funkcji). Przy kilku wierszach nie ma czego domyslac - wtedy blad. */
+  if (surowe.length === 1 && surowe[0].contracts === null) {
+    surowe[0].contracts = pozycja;
+  }
+  const brakujacy = surowe.find((w) => w.contracts === null);
+  if (brakujacy) {
+    return {
+      ok: false,
+      error: `Wyjście #${brakujacy.idx + 1}: podaj liczbę kontraktów. Przy kilku wyjściach trzeba ją wpisać przy każdym.`,
+    };
+  }
+
+  const zCzasem = surowe
+    .filter((w) => w.time !== null)
+    .sort((a, b) => a.time!.getTime() - b.time!.getTime() || a.idx - b.idx);
+  const bezCzasu = surowe.filter((w) => w.time === null);
+
+  const posortowane = [...zCzasem, ...bezCzasu].map(
+    (w): WierszWyjscia => ({
+      time: w.time,
+      price: w.price,
+      contracts: w.contracts as number,
+      brokerAmount: w.brokerAmount,
+      note: w.note,
+    }),
+  );
+  return { ok: true, rows: posortowane };
 }
 
 function integer(data: FormData, key: string): number | null {
@@ -111,9 +236,18 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     return { ok: false, error: "Podaj liczbę kontraktów większą od zera." };
   }
 
-  const exitTimeRaw = text(data, "exitTime");
-  const exitTime = exitTimeRaw ? fromLocalInput(exitTimeRaw, strefaGieldy) : null;
-  const exitPrice = number(data, "exitPrice");
+  // --- wyjscia czesciowe ---
+  const wyjsciaResult = czytajWyjscia(data, strefaGieldy, entryTime, contracts);
+  if (!wyjsciaResult.ok) return { ok: false, error: wyjsciaResult.error };
+  const wszystkieWyjscia = wyjsciaResult.rows;
+  const closedContracts = wszystkieWyjscia.reduce((sum, w) => sum + w.contracts, 0);
+
+  if (closedContracts > contracts + EPS_KONTRAKTY) {
+    return {
+      ok: false,
+      error: `Suma kontraktów w wyjściach (${closedContracts}) przekracza wielkość pozycji (${contracts}).`,
+    };
+  }
 
   // Najpierw walidacja, dopiero potem korekta. Odwrotna kolejnosc miala cicha
   // dziure: status spoza enuma omijal gałąź "closed" i ladowal na "closed"
@@ -124,23 +258,20 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     return { ok: false, error: "Nieznany status trade'a." };
   }
 
-  // Brak ceny wyjscia oznacza, ze pozycja jest wciaz otwarta - nie zmuszamy
-  // uzytkownika do przelaczania statusu recznie.
-  const status = statusRaw === "closed" && exitPrice === null ? "open" : statusRaw;
+  // Pozycja czesciowo zamknieta jest OTWARTA - nie zmuszamy uzytkownika do
+  // przelaczania statusu recznie, gdy wyjscia nie pokrywaja calej wielkosci.
+  const status = statusRaw === "closed" && closedContracts < contracts - EPS_KONTRAKTY ? "open" : statusRaw;
 
-  // "closed" i "missed" maja policzalny wynik (maWynik, domain/status.ts) -
-  // oba wymagaja daty wyjscia, inaczej nie ma z czego liczyc R/PnL.
-  if (maWynik(status) && !exitTime) {
-    return { ok: false, error: "Trade zamknięty musi mieć datę wyjścia." };
-  }
-  // Nie wzieta pozycja MUSI miec tez cene wyjscia - bez niej nie ma czego
-  // liczyc, a puste R/PnL zgubiloby sie po cichu w statystykach "Pominietych"
-  // (dla "closed" to samo pilnuje juz auto-korekta closed->open wyzej).
-  if (status === "missed" && exitPrice === null) {
-    return { ok: false, error: "Trade nie wzięty musi mieć cenę wyjścia — bez niej nie ma czego liczyć." };
-  }
-  if (exitTime && exitTime.getTime() < entryTime.getTime()) {
-    return { ok: false, error: "Wyjście nie może być wcześniej niż wejście." };
+  // "closed" i "missed" wymagaja, zeby wyjscia pokrywaly CALA pozycje - bez
+  // tego nie ma z czego policzyc ostatecznego R/PnL. Dla "closed" to w
+  // praktyce sama siebie spelnia (niedopelniona suma juz zamienila status na
+  // "open" wyzej) - realnie pilnuje "missed", ktore takiej auto-korekty nie ma.
+  if ((status === "closed" || status === "missed") && Math.abs(closedContracts - contracts) > EPS_KONTRAKTY) {
+    const brakuje = Math.round((contracts - closedContracts) * 10_000) / 10_000;
+    return {
+      ok: false,
+      error: `Brakuje ${brakuje} kontraktów, żeby zamknąć całą pozycję (masz ${closedContracts} z ${contracts}).`,
+    };
   }
 
   const stopLoss = number(data, "stopLoss");
@@ -148,13 +279,27 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   const mae = number(data, "mae");
   const mfe = number(data, "mfe");
 
+  // Statusy bez policzalnego wyniku (planned, cancelled) nie maja wyjsc -
+  // nawet gdyby cos zostalo wpisane w formularzu, nie zapisujemy tego ani nie
+  // wliczamy do computeTrade (ADR - patrz komentarz w domain/calc.ts).
+  const wyjsciaDoZapisu = status === "planned" || status === "cancelled" ? [] : wszystkieWyjscia;
+  const exitsForCompute: ExitInput[] = wyjsciaDoZapisu.map((w) => ({
+    price: w.price,
+    contracts: w.contracts,
+    time: w.time,
+    brokerAmount: w.brokerAmount,
+  }));
+
   /* Kwota z rachunku brokera - gdy podana, jest wynikiem trade'a zamiast
      kwoty z siatki tickow (ADR-016). Zamiana na centy taka sama jak w
-     podgladzie formularza, inaczej panel klamalby wobec bazy. Otwarta
-     pozycja wyniku nie ma, wiec kwota jej nie dotyczy. */
+     podgladzie formularza, inaczej panel klamalby wobec bazy. Warunek byl
+     `exitPrice !== null`; po wyjsciach czastkowych to "sa jakiekolwiek
+     wyjscia" (`exitsForCompute.length > 0`) - `maWynik(status)` zostaje bez
+     zmian, wiec otwarta pozycja (nawet z czesciowym wyjsciem) nadal nie ma
+     tu wlasnego pola: jej wynik jest tymczasowy, nie "wynik z rachunku". */
   const brokerRaw = number(data, "brokerAmount");
   const brokerAmount =
-    maWynik(status) && exitPrice !== null && brokerRaw !== null
+    maWynik(status) && exitsForCompute.length > 0 && brokerRaw !== null
       ? Math.round(brokerRaw * 100)
       : null;
 
@@ -163,13 +308,12 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     direction,
     contracts,
     entryPrice,
-    exitPrice: maWynik(status) ? exitPrice : null,
+    exits: exitsForCompute,
     stopLoss,
     takeProfit,
     mae,
     mfe,
     entryTime,
-    exitTime: maWynik(status) ? exitTime : null,
     brokerAmount,
   });
 
@@ -231,8 +375,10 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     status,
     entryTime,
     entryPrice: String(entryPrice),
-    exitTime: maWynik(status) ? exitTime : null,
-    exitPrice: maWynik(status) && exitPrice !== null ? String(exitPrice) : null,
+    // Pola pochodne z wierszy trade_exits (2026-08-30) - zrodlem prawdy jest
+    // teraz wynik computeTrade, nie to, co uzytkownik wpisal wprost w te pola.
+    exitTime: result.exitTime,
+    exitPrice: result.exitPrice === null ? null : String(result.exitPrice),
     contracts: String(contracts),
     stopLoss: stopLoss === null ? null : String(stopLoss),
     takeProfit: takeProfit === null ? null : String(takeProfit),
@@ -260,17 +406,13 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     // Zawsze jawnie, takze jako null: pominiecie klucza zostawiloby w edycji
     // stara kwote i wynik rozjechalby sie z wyczyszczonym polem.
     brokerAmount,
+    // Wyjscia czesciowe (2026-08-30) - denormalizacja z trade_exits, patrz
+    // komentarz w schema.ts. Zawsze jawnie, z tego samego powodu co brokerAmount.
+    closedContracts: String(result.closedContracts),
+    exitCount: result.exitCount,
+    scalingR: result.scalingR === null ? null : result.scalingR.toFixed(4),
     updatedAt: new Date(),
   };
-
-  let savedId: number;
-  if (id) {
-    await db.update(trades).set(row).where(eq(trades.id, id));
-    savedId = id;
-  } else {
-    const [created] = await db.insert(trades).values(row).returning({ id: trades.id });
-    savedId = created.id;
-  }
 
   // --- tagi ---
   // Interwaly siedza w osobnych polach "tagint:<id>" obok checkboxa "tag" - nie
@@ -285,24 +427,63 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
     .getAll("tag")
     .map((w) => Number(w))
     .filter((n) => Number.isInteger(n) && n > 0);
-  await db.delete(tradeTags).where(eq(tradeTags.tradeId, savedId));
-  if (selectedTags.length > 0) {
-    type Przypisanie = { tradeId: number; tagId: number; interval: string | null };
-    const przypisania = selectedTags.flatMap<Przypisanie>((tagId) => {
-      const interwaly = [
-        ...new Set(
-          data
-            .getAll(`tagint:${tagId}`)
-            .filter((w): w is string => typeof w === "string" && czyInterwal(w)),
-        ),
-      ];
-      // Brak wskazanego interwalu to jedno przypisanie bez skali czasu -
-      // tak dziala Setup, Blad i konfluencja, ktorej uzytkownik nie doprecyzowal.
-      if (interwaly.length === 0) return [{ tradeId: savedId, tagId, interval: null }];
-      return interwaly.map((interval) => ({ tradeId: savedId, tagId, interval }));
-    });
-    await db.insert(tradeTags).values(przypisania).onConflictDoNothing();
-  }
+
+  /* Zapis calego trade'a - wiersz, tagi i wyjscia czastkowe - w jednej
+     transakcji. `trades.pnl` i zawartosc `trade_exits` musza sie zgadzac
+     zawsze; rozjazd miedzy nimi byłby cichym klamstwem w statystykach.
+     `redirect()` (rzuca wyjatek sterujacy Nexta) i zapis zrzutow (I/O na
+     dysku) zostaja POZA transakcja - inaczej redirect wycofalby zapis, a
+     plik na dysku i wiersz w bazie moglyby sie rozjechac w inny sposob. */
+  const savedId = await db.transaction(async (tx) => {
+    let sid: number;
+    if (id) {
+      await tx.update(trades).set(row).where(eq(trades.id, id));
+      sid = id;
+    } else {
+      const [created] = await tx.insert(trades).values(row).returning({ id: trades.id });
+      sid = created.id;
+    }
+
+    await tx.delete(tradeTags).where(eq(tradeTags.tradeId, sid));
+    if (selectedTags.length > 0) {
+      type Przypisanie = { tradeId: number; tagId: number; interval: string | null };
+      const przypisania = selectedTags.flatMap<Przypisanie>((tagId) => {
+        const interwaly = [
+          ...new Set(
+            data
+              .getAll(`tagint:${tagId}`)
+              .filter((w): w is string => typeof w === "string" && czyInterwal(w)),
+          ),
+        ];
+        // Brak wskazanego interwalu to jedno przypisanie bez skali czasu -
+        // tak dziala Setup, Blad i konfluencja, ktorej uzytkownik nie doprecyzowal.
+        if (interwaly.length === 0) return [{ tradeId: sid, tagId, interval: null }];
+        return interwaly.map((interval) => ({ tradeId: sid, tagId, interval }));
+      });
+      await tx.insert(tradeTags).values(przypisania).onConflictDoNothing();
+    }
+
+    // --- wyjscia czesciowe ---
+    // Wzorzec "skasuj wszystkie i wstaw od nowa", ten sam co przy tagach -
+    // prostszy i bezpieczniejszy niz roznicowe UPDATE/DELETE/INSERT przy
+    // liscie, ktora edycja moze dowolnie skracac, wydluzac i przestawiac.
+    await tx.delete(tradeExits).where(eq(tradeExits.tradeId, sid));
+    if (wyjsciaDoZapisu.length > 0) {
+      await tx.insert(tradeExits).values(
+        wyjsciaDoZapisu.map((w, idx) => ({
+          tradeId: sid,
+          sortOrder: idx,
+          exitTime: w.time,
+          exitPrice: String(w.price),
+          contracts: String(w.contracts),
+          brokerAmount: w.brokerAmount,
+          note: w.note,
+        })),
+      );
+    }
+
+    return sid;
+  });
 
   // --- zrzuty ---
   // Formularz przysyla pliki tylko przy nowym trade'cie; w edycji zrzuty leca
