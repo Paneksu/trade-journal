@@ -14,6 +14,7 @@ import { TagManager } from "./tag-manager";
 import { TagPicker } from "./tag-picker";
 import {
   Button,
+  Checkbox,
   DataPoint,
   ErrorMessage,
   Input,
@@ -99,6 +100,16 @@ type StanWyjscia = {
  * stringi zamieniane na float (0.1 + 0.2 !== 0.3), jak w akcji zapisu. */
 const EPS_KONTRAKTY = 1e-6;
 
+/** Czyta liczbe tak samo jak akcja zapisu (actions/trades.ts): przecinek
+ * dziesietny i spacje w tysiacach. Modulowa wersja `parse` z komponentu -
+ * potrzebna tez poza nim, do wyliczenia poczatkowego stanu przelacznika
+ * "czesciowe wyjscia" (patrz `poczatkoweCzesciowe`). */
+function parseNum(w: string): number | null {
+  if (w.trim() === "") return null;
+  const n = Number(w.replace(/\s/g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
 /** Buduje poczatkowy stan wierszy z `values.exits`. Pusta tablica/brak =
  * jeden pusty wiersz. Id sa deterministyczne (indeks), bo licza sie w
  * inicjalizatorze `useState` - takie same na serwerze i po hydratacji;
@@ -152,6 +163,31 @@ export type TradeFormValues = {
   custom?: Record<string, unknown>;
   shots?: Shot[];
 };
+
+/** Rozpoznaje, czy trade byl faktycznie skalowany - od tego zalezy poczatkowy
+ * stan checkboxa "Czesciowe wyjscia" przy edycji: ukrycie repeatera nie moze
+ * schowac danych, ktore juz tam sa. Zaznaczone, gdy zachodzi ktorykolwiek z
+ * trzech warunkow z zadania: wiecej niz jedno wyjscie; jedyne wyjscie ma
+ * wlasna liczbe kontraktow rozna od calosci pozycji (czesciowe zamkniecie);
+ * albo jedyne wyjscie ma wlasna kwote z brokera lub notatke. */
+function poczatkoweCzesciowe(values: TradeFormValues): boolean {
+  const exits = values.exits;
+  if (!exits || exits.length === 0) return false;
+  if (exits.length > 1) return true;
+
+  const jedyne = exits[0];
+  const kontraktyWiersza = parseNum(jedyne.contracts ?? "");
+  const kontraktyCalosci = parseNum(values.contracts ?? "");
+  if (
+    kontraktyWiersza !== null &&
+    kontraktyCalosci !== null &&
+    Math.abs(kontraktyWiersza - kontraktyCalosci) > EPS_KONTRAKTY
+  ) {
+    return true;
+  }
+  if ((jedyne.brokerAmount ?? "").trim() !== "" || (jedyne.note ?? "").trim() !== "") return true;
+  return false;
+}
 
 function SubmitRow({ isEdit, onStay }: { isEdit: boolean; onStay: (v: boolean) => void }) {
   const { pending } = useFormStatus();
@@ -271,6 +307,18 @@ export function TradeForm({
   const licznikWyjsc = useRef(wyjscia.length);
   const [rozwinieteWyjscia, setRozwinieteWyjscia] = useState<Set<string>>(() => new Set());
 
+  /* Przelacznik trybu prostego/czesciowego (zadanie uzytkownika, 2026-08-31):
+     domyslnie formularz ma wygladac jak przed dodaniem czesciowych wyjsc -
+     repeater sie chowa, w siatce zostaja dwa zwykle pola "wy-0-czas"/"wy-0-cena".
+     Zaznaczony pokazuje repeater bez zadnych zmian w jego dzialaniu. Startowy
+     stan liczy `poczatkoweCzesciowe`, zeby edycja skalowanego trade'a nigdy nie
+     chowala danych. */
+  const [czesciowe, setCzesciowe] = useState(() => poczatkoweCzesciowe(values));
+  /* Komunikat "najpierw usun dodatkowe wyjscia" - pokazuje sie tylko po
+     probie odznaczenia, ktora zostala zablokowana (patrz `przelaczCzesciowe`),
+     i znika sam, gdy wypelnionych wierszy zrobi sie <= 1 (warunek w JSX). */
+  const [pokazBlokade, setPokazBlokade] = useState(false);
+
   function dodajWyjscie() {
     /* Zanim dolozymy wiersz, utrwalamy cene, ktora do tej pory byla WYLICZANA
        z kwoty brokera dla calego trade'a. Ta podpowiedz dziala tylko przy
@@ -336,6 +384,30 @@ export function TradeForm({
   /** Czy obowiazuje regula "puste kontrakty znacza cala pozycje" - tylko przy
    * dokladnie jednym wypelnionym wierszu. */
   const jedenWiersz = niepustychWierszy <= 1;
+
+  /** Przelacza tryb prosty/czesciowy. Wlaczenie zawsze dziala. Wylaczenie przy
+   * wiecej niz jednym WYPELNIONYM wierszu skasowaloby dane uzytkownika po
+   * cichu - wiec zamiast chowac repeater, checkbox zostaje zaznaczony i obok
+   * pokazuje sie komunikat (kosz przy wierszu jest juz gotowym wyjsciem z
+   * sytuacji). Przy najwyzej jednym wypelnionym wierszu wylaczenie dziala
+   * normalnie i przycina nadmiarowe puste wiersze do jednego. */
+  function przelaczCzesciowe(chce: boolean) {
+    if (chce) {
+      setCzesciowe(true);
+      setPokazBlokade(false);
+      return;
+    }
+    if (niepustychWierszy > 1) {
+      setPokazBlokade(true);
+      return;
+    }
+    setPokazBlokade(false);
+    setCzesciowe(false);
+    setWyjscia((w) => {
+      const wypelniony = w.find(niepustyWiersz);
+      return [wypelniony ?? w[0] ?? poczatkoweWyjscia(undefined)[0]];
+    });
+  }
 
   /** Kontrakty tego wiersza - z uwzglednieniem reguly "jedyny wiersz z pustym
    * polem znaczy cala pozycje" (ta sama, co w akcji zapisu). */
@@ -668,6 +740,47 @@ export function TradeForm({
                   required
                 />
               </div>
+              {/* Tryb prosty (checkbox "Czesciowe wyjscia" ponizej odznaczony):
+                  zamiast obramowanego repeatera - dwa zwykle pola w tej samej
+                  siatce, jak przed dodaniem czesciowych wyjsc. Zawsze mapuja
+                  sie na wiersz 0 (`wyjscia[0]`), ktory w tym trybie jest
+                  jedynym wierszem. Pozostale trzy pola wiersza (kontrakty,
+                  kwota, notatka) i tak musza trafic do FormData jako puste -
+                  akcja zapisu paruje wiersze po indeksie i liczy Math.max po
+                  pieciu tablicach; puste kontrakty przy jednym wierszu znacza
+                  "cala pozycja", dokladnie to, co ma sie dziac tutaj. */}
+              {!czesciowe && wyjscia[0] && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="wy-0-czas" hint={podpisStrefy}>
+                      Wyjście — data i godzina
+                    </Label>
+                    <Input
+                      id="wy-0-czas"
+                      name="wy_czas"
+                      type="datetime-local"
+                      value={wyjscia[0].time}
+                      onChange={(e) => zmienWiersz(wyjscia[0], { time: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="wy-0-cena">Cena wyjścia</Label>
+                    <Input
+                      id="wy-0-cena"
+                      name="wy_cena"
+                      inputMode="decimal"
+                      value={efektywnaCenaWiersza(wyjscia[0])}
+                      onChange={(e) =>
+                        // Reczna edycja ceny zawsze wygrywa - gasi wyliczenie z kwoty.
+                        zmienWiersz(wyjscia[0], { price: e.target.value, kwota: "" })
+                      }
+                    />
+                  </div>
+                  <input type="hidden" name="wy_kontrakty" value={wyjscia[0].contracts} />
+                  <input type="hidden" name="wy_kwota" value={wyjscia[0].kwota} />
+                  <input type="hidden" name="wy_notatka" value={wyjscia[0].note} />
+                </>
+              )}
               <div className="space-y-1.5">
                 <Label htmlFor="stopLoss" hint="Bez stopa nie policzymy R">
                   Stop loss
@@ -729,10 +842,29 @@ export function TradeForm({
               </div>
             </div>
 
-            {/* Repeater czesciowych wyjsc (ETAP 4a). Domyslnie jeden pusty
-                wiersz - najczestszy przypadek (jedno wyjscie) ma wygladac i
-                klikac sie tak samo jak dawne pojedyncze pola. */}
+            {/* Przelacznik trybu prostego/czesciowego + repeater czesciowych
+                wyjsc (ETAP 4a, ukryty w trybie prostym na prosbe uzytkownika
+                2026-08-31 - patrz `przelaczCzesciowe`). Domyslnie tryb prosty:
+                repeater znika, jeden wiersz zyje w dwoch zwyklych polach
+                siatki wyzej. */}
             <div className="space-y-2.5 border-t border-line px-4 py-3">
+              <div className="space-y-1">
+                <Checkbox
+                  id="czesciowe-wyjscia"
+                  label="Częściowe wyjścia"
+                  hint="Zamykałem pozycję po kawałku — TP1, TP2, runner"
+                  checked={czesciowe}
+                  onChange={(e) => przelaczCzesciowe(e.target.checked)}
+                />
+                {pokazBlokade && niepustychWierszy > 1 && (
+                  <p className="text-xs text-loss" role="alert">
+                    Najpierw usuń dodatkowe wyjścia.
+                  </p>
+                )}
+              </div>
+
+              {czesciowe && (
+              <>
               <Label hint="Puste = pozycja wciąż otwarta">Wyjścia</Label>
               <div className="space-y-2">
                 {wyjscia.map((w, i) => {
@@ -861,6 +993,8 @@ export function TradeForm({
                   </p>
                 )}
               </div>
+              </>
+              )}
             </div>
 
             <div className="border-t border-line px-4 py-3">

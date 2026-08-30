@@ -143,6 +143,7 @@ test("dostępność: /trades/new z rozwiniętym drugim wyjściem i sekcją kwoty
   await page.locator("#entryTime").fill("2026-06-05T15:35");
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#wy-0-czas").fill("2026-06-05T15:45");
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("20010");
   await page.locator("#wy-0-kontrakty").fill("1");
 
@@ -178,6 +179,7 @@ test("dostępność: widok trade'a z tabelą wyjść (dwa kawałki)", async ({ p
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#stopLoss").fill("19990");
   await page.locator("#wy-0-czas").fill("2026-06-06T15:45");
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("20010");
   await page.locator("#wy-0-kontrakty").fill("1");
 

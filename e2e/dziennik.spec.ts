@@ -271,6 +271,7 @@ test("kwota z brokera na kawałku liczy cenę wyjścia zgodnie z siatką tickow�
   await page.locator("#entryTime").fill("2026-05-12T15:35");
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#wy-0-czas").fill("2026-05-12T16:17");
+  await page.getByLabel("Częściowe wyjścia").check();
 
   const exit = page.locator("#wy-0-cena");
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
@@ -936,6 +937,7 @@ test("trade z dwoma wyjściami liczy sumę, średnią cenę i wpływ skalowania"
   // skalowania (ten sam uklad co test jednostkowy calc.test.ts "scalingR
   // dodatnie"), wiec liczby da sie zweryfikowac co do centa niezaleznie.
   await page.locator("#wy-0-czas").fill("2026-06-01T15:40");
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("20050");
   await page.locator("#wy-0-kontrakty").fill("1");
 
@@ -1009,6 +1011,7 @@ test("pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wyn
   // "otwarty", bo wyjscia nie sumuja sie do calej pozycji (actions/trades.ts).
   await page.locator("#status").selectOption("closed");
   await page.locator("#wy-0-czas").fill(`${dzien}T16:00`);
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("5010");
   // Tylko 2 z 3 kontraktow - jawnie, bo puste pole przy jednym wierszu
   // znaczyloby "cala pozycja", a tu chodzi wlasnie o CZESC pozycji.
@@ -1053,13 +1056,22 @@ test("puste kontrakty przy jednym wyjściu liczą się jak cała pozycja wpisana
   await page.locator("#wy-0-cena").fill("5020");
 
   const podglad = page.locator("section", { hasText: "Podgląd wyniku" });
-  // Kontrakty PUSTE - podpowiedz pola musi mowic wprost, ile to bedzie
-  // (ADR: regula nie dziala po cichu).
-  await expect(page.locator("#wy-0-kontrakty")).toHaveAttribute("placeholder", "2 (cała pozycja)");
-  // 80 tickow * 2 kontrakty * 12,50 USD = 2000,00 USD.
+
+  /* Tryb PROSTY - domyslny, bez zaznaczonego przelacznika. Nie ma tu w ogole
+     pola kontraktow wyjscia i to jest cala sol tej reguly: zwykly trade
+     wpisuje sie sama cena i godzina, a kawalek znaczy cala pozycje.
+     80 tickow * 2 kontrakty * 12,50 USD = 2000,00 USD. */
+  await expect(page.getByLabel("Częściowe wyjścia")).not.toBeChecked();
+  await expect(page.locator("#wy-0-kontrakty")).toBeHidden();
   await expect(podglad.getByText(/\+2\s?000,00\s?USD/)).toBeVisible();
-  await expect(podglad.getByText("2 / 2", { exact: true })).toBeVisible();
   const pustyWynik = await podglad.getByText(/\+2\s?000,00\s?USD/).innerText();
+
+  /* Po przelaczeniu na czesciowe pole juz jest, dalej puste, a jego podpowiedz
+     mowi wprost, ile to bedzie - regula nie ma dzialac po cichu. */
+  await page.getByLabel("Częściowe wyjścia").check();
+  await expect(page.locator("#wy-0-kontrakty")).toHaveAttribute("placeholder", "2 (cała pozycja)");
+  await expect(podglad.getByText("2 / 2", { exact: true })).toBeVisible();
+  await expect(podglad.getByText(pustyWynik)).toBeVisible();
 
   // To samo, jawnie wpisane - wynik musi byc identyczny co do centa.
   await page.locator("#wy-0-kontrakty").fill("2");
@@ -1068,6 +1080,51 @@ test("puste kontrakty przy jednym wyjściu liczą się jak cała pozycja wpisana
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
   await expect(page.getByText(/\+2\s?000,00\s?USD/).first()).toBeVisible();
+});
+
+test("formularz domyślnie pokazuje jedno wyjście, a lista kawałków dopiero po zaznaczeniu", async ({
+  page,
+}) => {
+  await page.goto("/trades/new");
+
+  /* Domyslnie formularz ma wygladac tak, jak przed dodaniem czesciowych
+     realizacji: dwa zwykle pola wyjscia i zadnych narzedzi repeatera. */
+  const przelacznik = page.getByLabel("Częściowe wyjścia");
+  await expect(przelacznik).not.toBeChecked();
+  await expect(page.locator("#wy-0-czas")).toBeVisible();
+  await expect(page.locator("#wy-0-cena")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dodaj wyjście" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "reszta" })).toBeHidden();
+  await expect(page.locator("#wy-0-kontrakty")).toBeHidden();
+
+  await przelacznik.check();
+  await expect(page.getByRole("button", { name: "Dodaj wyjście" })).toBeVisible();
+  await expect(page.locator("#wy-0-kontrakty")).toBeVisible();
+
+  // Odznaczenie przy jednym pustym wierszu po prostu dziala.
+  await przelacznik.uncheck();
+  await expect(page.getByRole("button", { name: "Dodaj wyjście" })).toBeHidden();
+
+  /* Odznaczenie przy dwoch WYPELNIONYCH wierszach nie moze po cichu skasowac
+     tego, co uzytkownik wpisal - przelacznik zostaje, a obok pojawia sie
+     zdanie mowiace, co zrobic. */
+  await przelacznik.check();
+  await page.locator("#wy-0-cena").fill("20010");
+  await page.locator("#wy-0-kontrakty").fill("1");
+  await page.getByRole("button", { name: "Dodaj wyjście" }).click();
+  await page.locator("#wy-1-cena").fill("20020");
+  await page.locator("#wy-1-kontrakty").fill("1");
+
+  /* Zwykle kliniecie, nie `uncheck()` - Playwright rzuca wyjatkiem, gdy stan
+     pola sie nie zmienia, a tu wlasnie o to chodzi: blokada ma nie puscic. */
+  await przelacznik.click();
+  await expect(przelacznik).toBeChecked();
+  await expect(page.getByText("Najpierw usuń dodatkowe wyjścia.")).toBeVisible();
+
+  // Po usunieciu nadmiarowego wiersza odznaczenie znowu przechodzi.
+  await page.getByRole("button", { name: "Usuń wyjście 2" }).click();
+  await przelacznik.uncheck();
+  await expect(przelacznik).not.toBeChecked();
 });
 
 test("suma kontraktów w dwóch wyjściach przekraczająca pozycję jest odrzucana z komunikatem po polsku", async ({
@@ -1079,6 +1136,7 @@ test("suma kontraktów w dwóch wyjściach przekraczająca pozycję jest odrzuca
   await page.locator("#entryTime").fill("2021-06-17T15:35");
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#wy-0-czas").fill("2021-06-17T16:00");
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("20010");
   await page.locator("#wy-0-kontrakty").fill("2");
 
@@ -1107,6 +1165,7 @@ test("usunięcie drugiego wyjścia w edycji wraca do wyniku sprzed skalowania, �
   await page.locator("#entryPrice").fill("20000");
   await page.locator("#stopLoss").fill("19990");
   await page.locator("#wy-0-czas").fill("2026-06-02T15:45");
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-cena").fill("20010");
   // Kontrakty puste = cala pozycja (2) - zwykly, jednowyjsciowy trade.
   await page.getByRole("button", { name: "Zapisz trade" }).click();
@@ -1117,8 +1176,12 @@ test("usunięcie drugiego wyjścia w edycji wraca do wyniku sprzed skalowania, �
   await expect(page.getByText(/\+400,00\s?USD/).first()).toBeVisible();
   await expect(page.getByText("+1.00R").first()).toBeVisible();
 
-  // Edycja: rozbij pozycje na dwa kawalki (dopisz drugie wyjscie).
+  // Edycja: rozbij pozycje na dwa kawalki (dopisz drugie wyjscie). Trade byl
+  // zapisany z jednym wyjsciem na cala pozycje, wiec formularz otwiera sie
+  // w trybie prostym - przelacznik trzeba zaznaczyc.
   await page.goto(`${adres}/edit`);
+  await expect(page.getByLabel("Częściowe wyjścia")).not.toBeChecked();
+  await page.getByLabel("Częściowe wyjścia").check();
   await page.locator("#wy-0-kontrakty").fill("1");
   await page.getByRole("button", { name: "Dodaj wyjście" }).click();
   await page.locator("#wy-1-czas").fill("2026-06-02T15:55");
