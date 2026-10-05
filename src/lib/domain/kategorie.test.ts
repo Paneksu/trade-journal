@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { czyKategoria, kategoriaKonta } from "./kategorie";
+import { czyKategoria, kategoriaKonta, walidujFazeProp } from "./kategorie";
 
 describe("kategoriaKonta", () => {
   it("live to realne, demo i paper to demo", () => {
@@ -19,5 +19,19 @@ describe("kategoriaKonta", () => {
     for (const k of ["realne", "prop_eval", "prop_funded", "demo"]) expect(czyKategoria(k)).toBe(true);
     expect(czyKategoria("backtest")).toBe(false);
     expect(czyKategoria(null)).toBe(false);
+  });
+});
+
+describe("walidujFazeProp", () => {
+  it("faza tylko przy koncie prop; dla innych typow zawsze null", () => {
+    expect(walidujFazeProp("prop", "eval")).toEqual({ ok: true, faza: "eval" });
+    expect(walidujFazeProp("prop", "funded")).toEqual({ ok: true, faza: "funded" });
+    expect(walidujFazeProp("live", "eval")).toEqual({ ok: true, faza: null });
+    expect(walidujFazeProp("demo", "funded")).toEqual({ ok: true, faza: null });
+  });
+  it("prop bez fazy jest dozwolony, nieznana faza nie", () => {
+    expect(walidujFazeProp("prop", null)).toEqual({ ok: true, faza: null });
+    expect(walidujFazeProp("prop", "")).toEqual({ ok: true, faza: null });
+    expect(walidujFazeProp("prop", "live").ok).toBe(false);
   });
 });

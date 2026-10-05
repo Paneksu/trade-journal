@@ -55,6 +55,14 @@ export type StatyTradow = {
   /** Trady bez zadnej ocenionej reguly: bez oceny AI albo z samymi na/unclear. */
   nieocenione: number;
   zgodnoscPct: number | null;
+  /**
+   * Srednie R (oczekiwana wartosc) trade'ow zgodnych i niezgodnych z regulami;
+   * `null` bez prob z R. Proba to tylko trady, ktore maja R.
+   */
+  sredniaRZgodnych: number | null;
+  sredniaRNiezgodnych: number | null;
+  probaRZgodnych: number;
+  probaRNiezgodnych: number;
 };
 
 export type StatyZgodnosci = {
@@ -118,6 +126,16 @@ export function statyZgodnosci(
   }
   const tradyZgodne = tradyOcenione - tradyNiezgodne;
 
+  // R trade'a jest jedno, wiec bierzemy je z pierwszego wiersza trade'a.
+  const rZgodnych: number[] = [];
+  const rNiezgodnych: number[] = [];
+  for (const lista of poTradzie.values()) {
+    const ocenione = lista.filter((s) => s.verdict === "pass" || s.verdict === "fail");
+    const r = lista[0].rMultiple;
+    if (ocenione.length === 0 || r === null) continue;
+    (ocenione.some((s) => s.verdict === "fail") ? rNiezgodnych : rZgodnych).push(r);
+  }
+
   const statyRegul: StatyReguly[] = [...poRegule.entries()].map(([ruleId, lista]) => {
     const rPass = lista.filter((s) => s.verdict === "pass" && s.rMultiple !== null).map((s) => s.rMultiple as number);
     const rFail = lista.filter((s) => s.verdict === "fail" && s.rMultiple !== null).map((s) => s.rMultiple as number);
@@ -145,6 +163,10 @@ export function statyZgodnosci(
       niezgodne: tradyNiezgodne,
       nieocenione: tradyNieocenione,
       zgodnoscPct: procent(tradyZgodne, tradyOcenione),
+      sredniaRZgodnych: srednia(rZgodnych),
+      sredniaRNiezgodnych: srednia(rNiezgodnych),
+      probaRZgodnych: rZgodnych.length,
+      probaRNiezgodnych: rNiezgodnych.length,
     },
     poRegule: statyRegul,
     zgodaUzytkownika: {

@@ -44,3 +44,26 @@ export function kategoriaKonta(konto: KontoDoKategorii): Kategoria | null {
       return konto.propPhase === "eval" ? "prop_eval" : konto.propPhase === "funded" ? "prop_funded" : null;
   }
 }
+
+export const FAZY_PROP = ["eval", "funded"] as const;
+export type FazaProp = (typeof FAZY_PROP)[number];
+
+export const FAZA_PROP_NAZWY: Record<FazaProp, string> = {
+  eval: "ocena (challenge)",
+  funded: "funded",
+};
+
+export type WynikFazyProp = { ok: true; faza: FazaProp | null } | { ok: false; error: string };
+
+/**
+ * Faza z formularza konta. Baza (CHECK) trzyma faze wylacznie przy koncie typu
+ * `prop`, wiec dla innych typow zawsze `null` - nawet gdy ukryte pole wciaz
+ * niesie starą wartosc po zmianie typu. Konto prop bez fazy jest dozwolone
+ * (stare konta), ale nie nalezy do zadnej kategorii.
+ */
+export function walidujFazeProp(typ: string, surowa: string | null): WynikFazyProp {
+  if (typ !== "prop") return { ok: true, faza: null };
+  if (surowa === null || surowa === "") return { ok: true, faza: null };
+  if ((FAZY_PROP as readonly string[]).includes(surowa)) return { ok: true, faza: surowa as FazaProp };
+  return { ok: false, error: "Nieznana faza konta prop. Wybierz „ocena” albo „funded”." };
+}

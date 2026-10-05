@@ -44,7 +44,30 @@ describe("statyZgodnosci", () => {
       ],
       2,
     );
-    expect(w.trady).toEqual({ ocenione: 2, zgodne: 1, niezgodne: 1, nieocenione: 3, zgodnoscPct: 50 });
+    expect(w.trady).toMatchObject({ ocenione: 2, zgodne: 1, niezgodne: 1, nieocenione: 3, zgodnoscPct: 50 });
+  });
+
+  it("srednie R trade'ow zgodnych i niezgodnych, bez trade'ow bez R i bez nieocenionych", () => {
+    const w = statyZgodnosci([
+      s(1, "R-1", "pass", 2),
+      s(1, "R-2", "pass", 2),
+      s(2, "R-1", "pass", 1),
+      s(3, "R-1", "fail", -1),
+      s(3, "R-2", "pass", -1),
+      s(4, "R-1", "fail", -1),
+      s(5, "R-1", "fail", null),
+      s(6, "R-1", "na", 9),
+    ]);
+    expect(w.trady.sredniaRZgodnych).toBe(1.5);
+    expect(w.trady.probaRZgodnych).toBe(2);
+    expect(w.trady.sredniaRNiezgodnych).toBe(-1);
+    expect(w.trady.probaRNiezgodnych).toBe(2);
+  });
+
+  it("bez prob z R srednie to null, nie zero", () => {
+    const w = statyZgodnosci([s(1, "R-1", "pass", null)]);
+    expect(w.trady.sredniaRZgodnych).toBeNull();
+    expect(w.trady.sredniaRNiezgodnych).toBeNull();
   });
 
   it("statystyki regul: licznik per regula, srednie R przy dotrzymaniu i zlamaniu, sort po zlamaniach", () => {
