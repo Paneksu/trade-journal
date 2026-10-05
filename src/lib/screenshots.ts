@@ -24,6 +24,17 @@ export type SavedScreenshot = {
   height: number;
 };
 
+/** Czy plik przejdzie przez `saveScreenshot`? Pozwala odrzucic cala paczke PRZED zapisem pierwszego pliku. */
+export function bladPliku(upload: File): string | null {
+  if (!ALLOWED.has(upload.type)) {
+    return `Plik »${upload.name}« ma typ »${upload.type || "brak"}«. Obsługiwane formaty to PNG, JPEG, WEBP i AVIF.`;
+  }
+  if (upload.size > MAX_BYTES) {
+    return `Plik »${upload.name}« ma ${upload.size} B, a limit to ${MAX_BYTES} B (10 MB).`;
+  }
+  return null;
+}
+
 export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<SavedScreenshot> {
   if (!ALLOWED.has(upload.type)) {
     throw new Error("Obsługiwane formaty to PNG, JPEG, WEBP i AVIF.");

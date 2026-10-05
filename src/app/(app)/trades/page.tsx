@@ -7,6 +7,7 @@ import { KpiRow } from "@/components/stats/kpi-row";
 import { SourceSwitch } from "@/components/layout/toolbar";
 import { requireSession } from "@/lib/auth/guard";
 import { computeStats } from "@/lib/domain/stats";
+import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
 import {
   getAccounts,
   getFields,
@@ -16,6 +17,7 @@ import {
   getTags,
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
+import { getRegulyOcen } from "@/lib/queries/oceny";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 
 export const metadata = { title: "Trade'y — Dziennik tradingowy" };
@@ -29,13 +31,14 @@ export default async function TradesPage({
   const params = await searchParams;
   const filters = parseFilters(params);
 
-  const [accounts, instruments, tags, fields, views, trades] = await Promise.all([
+  const [accounts, instruments, tags, fields, views, trades, reguly] = await Promise.all([
     getAccounts(),
     getInstruments(),
     getTags(),
     getFields(),
     getSavedViews(),
     getTrades(filters),
+    getRegulyOcen(),
   ]);
 
   const progi = await getProgi();
@@ -50,7 +53,7 @@ export default async function TradesPage({
           <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Trade&apos;y</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <SourceSwitch active={params.zrodlo === "backtest" ? "backtest" : params.zrodlo === "wszystko" ? "wszystko" : "live"} />
+          <SourceSwitch active={zrodloPrzelacznika(filters.source)} />
           <Link
             href="/trades/new"
             className="inline-flex h-9 items-center rounded-[var(--radius-control)] bg-accent px-3.5 text-sm font-semibold text-bg transition-colors duration-150 hover:bg-accent-strong"
@@ -66,6 +69,7 @@ export default async function TradesPage({
           instruments={instruments}
           tags={tags}
           fields={fields}
+          reguly={reguly}
           activeCount={activeFilterCount(filters)}
           embedded
         />

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { accounts, instruments, settings } from "@/lib/db/schema";
+import { walidujFazeProp } from "@/lib/domain/kategorie";
 
 export type ActionState = { ok?: boolean; error?: string };
 
@@ -40,11 +41,17 @@ export async function saveAccount(_p: ActionState, d: FormData): Promise<ActionS
   const name = text(d, "name");
   if (!name) return { error: "Podaj nazwę konta." };
 
+  // Faza prop (ADR-027): tylko przy koncie typu prop, reszta zawsze null (CHECK w bazie).
+  const typ = text(d, "type") ?? "live";
+  const faza = walidujFazeProp(typ, text(d, "propPhase"));
+  if (!faza.ok) return { error: faza.error };
+
   const row = {
     name,
+    propPhase: faza.faza,
     currency: text(d, "currency") ?? "USD",
     startingBalance: cents(d, "startingBalance") ?? 0,
-    type: (text(d, "type") ?? "live") as "live" | "demo" | "prop" | "paper",
+    type: typ as "live" | "demo" | "prop" | "paper",
     defaultRiskAmount: cents(d, "defaultRiskAmount"),
     defaultRiskPct: text(d, "defaultRiskPct"),
     description: text(d, "description"),

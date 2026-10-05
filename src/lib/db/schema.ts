@@ -70,7 +70,9 @@ export const noTradeReasonEnum = pgEnum("no_trade_reason", [
 
 /* --- Konta ---------------------------------------------------------------- */
 
-export const accounts = pgTable("accounts", {
+export const accounts = pgTable(
+  "accounts",
+  {
   id: serial().primaryKey(),
   name: text().notNull(),
   currency: text().notNull().default("USD"),
@@ -79,10 +81,22 @@ export const accounts = pgTable("accounts", {
   defaultRiskPct: numeric({ precision: 6, scale: 3 }),
   defaultRiskAmount: bigint({ mode: "number" }),
   description: text(),
+  /* Faza konta prop: "eval" (challenge) albo "funded". NULL dla kont innych niz prop
+     i dla prop, ktorego fazy jeszcze nie podano. CHECK w migracji 0015 pilnuje, zeby
+     faza nie wisiala przy koncie innym niz prop (ADR-027). */
+  propPhase: text().$type<"eval" | "funded">(),
   archived: boolean().notNull().default(false),
   sortOrder: integer().notNull().default(0),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+  },
+  (t) => [
+    // Lustro CHECK-a z migracji 0015: faza tylko przy koncie prop.
+    check(
+      "accounts_prop_phase",
+      sql`${t.propPhase} is null or (${t.propPhase} in ('eval', 'funded') and ${t.type}::text = 'prop')`,
+    ),
+  ],
+);
 
 /* --- Instrumenty ---------------------------------------------------------- */
 
@@ -125,22 +139,36 @@ export const strategies = pgTable("strategies", {
 
 /* --- Sesje backtestu ------------------------------------------------------ */
 
-export const backtestSessions = pgTable("backtest_sessions", {
-  id: serial().primaryKey(),
-  name: text().notNull(),
-  strategyId: integer().references(() => strategies.id, { onDelete: "set null" }),
-  instrumentId: integer().references(() => instruments.id, { onDelete: "set null" }),
-  interval: text(),
-  dataFrom: date(),
-  dataTo: date(),
-  startingBalance: bigint({ mode: "number" }).notNull().default(0),
-  riskPerTrade: bigint({ mode: "number" }),
-  targetTrades: integer().notNull().default(100),
-  status: sessionStatusEnum().notNull().default("running"),
-  assumptions: text(),
-  conclusions: text(),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+export const backtestSessions = pgTable(
+  "backtest_sessions",
+  {
+    id: serial().primaryKey(),
+    name: text().notNull(),
+    strategyId: integer().references(() => strategies.id, { onDelete: "set null" }),
+    instrumentId: integer().references(() => instruments.id, { onDelete: "set null" }),
+    interval: text(),
+    dataFrom: date(),
+    dataTo: date(),
+    startingBalance: bigint({ mode: "number" }).notNull().default(0),
+    riskPerTrade: bigint({ mode: "number" }),
+    targetTrades: integer().notNull().default(100),
+    status: sessionStatusEnum().notNull().default("running"),
+    assumptions: text(),
+    conclusions: text(),
+    /* "backtest" (historyczny replay) albo "forward" (test na biezacych danych).
+       Oba siedza w tej samej tabeli i rozni je ta kolumna (ADR-027). */
+    kind: text().$type<"backtest" | "forward">().notNull().default("backtest"),
+    /* Klucz sesji FX Replay ("fxr:<id>") - API zaklada albo odnajduje sesje po nim. */
+    externalRef: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("backtest_sessions_kind", sql`${t.kind} in ('backtest', 'forward')`),
+    uniqueIndex("backtest_sessions_external_ref_idx")
+      .on(t.externalRef)
+      .where(sql`${t.externalRef} is not null`),
+  ],
+);
 
 /* --- Tagi ----------------------------------------------------------------- */
 
@@ -313,10 +341,25 @@ export const trades = pgTable(
        znaczenia - to poprawny stan, nie brak danych. */
     scalingR: numeric({ precision: 12, scale: 4 }),
 
+    /* --- Synchronizacja przez API (2026-10-05, ADR-026) --------------------
+       `source` mowi, skad wpis przyszedl; `externalRef` ("tv:<id>", "fxr:<id>")
+       jest kluczem idempotencji. `ingestedAt` to chwila ostatniego zapisu przez
+       API: gdy `updatedAt` jest pozniejszy, uzytkownik poprawial wpis w
+       aplikacji i API nie ma prawa go nadpisac (wynik "conflict"). Edycja przez
+       formularz NIE dotyka tych czterech kolumn. */
+    source: text().$type<"form" | "tradingview" | "fxreplay">().notNull().default("form"),
+    externalRef: text(),
+    ingestedAt: timestamp({ withTimezone: true }),
+    sourceSnapshot: jsonb().$type<Record<string, unknown>>(),
+
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    uniqueIndex("trades_external_ref_idx")
+      .on(t.externalRef)
+      .where(sql`${t.externalRef} is not null`),
+    check("trades_source", sql`${t.source} in ('form', 'tradingview', 'fxreplay')`),
     /* Powod i potencjal maja sens wylacznie przy trafionym kierunku. Formularz
        normalizuje to wczesniej (normalizujKierunek), wiec ten warunek jest
        siatka bezpieczenstwa, a nie sciezka, ktora uzytkownik ma zobaczyc. */
@@ -403,8 +446,13 @@ export const screenshots = pgTable(
     // dadza sie utozsamic (ADR-015). `text`, nie enum, z tego samego powodu
     // co przy tagach: lista zyje w lib/domain/interwaly.ts.
     interval: text(),
+    /* Kto wgral zrzut: "manual" (uzytkownik) albo klient API. API zastepuje przy
+       ponownym wyslaniu wylacznie zrzuty swojego pochodzenia i nigdy nie rusza
+       recznych (ADR-026). */
+    origin: text().$type<"manual" | "tradingview" | "fxreplay">().notNull().default("manual"),
   },
   (t) => [
+    check("screenshots_origin", sql`${t.origin} in ('manual', 'tradingview', 'fxreplay')`),
     index("screenshots_trade_idx").on(t.tradeId),
     index("screenshots_day_note_idx").on(t.dayNoteId),
     check(
@@ -448,6 +496,96 @@ export const tradeExits = pgTable(
   (t) => [
     index("trade_exits_trade_idx").on(t.tradeId),
     check("trade_exits_kontrakty", sql`${t.contracts} > 0`),
+  ],
+);
+
+/* --- Ocena trade'a przez AI (ADR-026, ADR-028) ----------------------------- */
+
+export type PlanMozgu = {
+  entry?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  interwalWejscia?: string;
+  interwalyKontekstu?: string[];
+  [klucz: string]: unknown;
+};
+
+export const tradeReviews = pgTable(
+  "trade_reviews",
+  {
+    id: serial().primaryKey(),
+    tradeId: integer()
+      .notNull()
+      .references(() => trades.id, { onDelete: "cascade" }),
+    setupType: text(),
+    summaryMd: text(),
+    lesson: text(),
+    /* "chart" - ocena z wykresu na moment decyzji (bez wiedzy o wyniku);
+       "history" - ocena po fakcie. Jedna ocena na podstawe: ponowne wyslanie
+       podmienia zamiast mnozyc wiersze. */
+    basis: text().$type<"chart" | "history">().notNull(),
+    brainVerdict: text().$type<"wejdz" | "czekaj" | "odpusc">(),
+    brainPlan: jsonb().$type<PlanMozgu>(),
+    /* Wersja mozgu (hash commita w repo mozgu), nie wersja aplikacji. */
+    brainVersion: text(),
+    /* Ostatnia swieca, jaka ocena mogla widziec. Wszystko po tej chwili jest
+       dla niej przyszloscia - ten znacznik czyni "zero zagladania" sprawdzalnym. */
+    evidenceCutoff: timestamp({ withTimezone: true }),
+    model: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("trade_reviews_trade_basis_uq").on(t.tradeId, t.basis),
+    check("trade_reviews_basis", sql`${t.basis} in ('chart', 'history')`),
+    check(
+      "trade_reviews_verdict",
+      sql`${t.brainVerdict} is null or ${t.brainVerdict} in ('wejdz', 'czekaj', 'odpusc')`,
+    ),
+  ],
+);
+
+export const tradeRuleChecks = pgTable(
+  "trade_rule_checks",
+  {
+    id: serial().primaryKey(),
+    reviewId: integer()
+      .notNull()
+      .references(() => tradeReviews.id, { onDelete: "cascade" }),
+    ruleId: text().notNull(),
+    /* Kopia tresci reguly z chwili oceny - regula w mozgu moze sie zmienic,
+       a ocena ma dalej mowic o tym, co faktycznie sprawdzono. */
+    ruleText: text().notNull(),
+    verdict: text().$type<"pass" | "fail" | "na" | "unclear">().notNull(),
+    evidence: text(),
+    /* Zdanie uzytkownika o ocenie AI. NULL = jeszcze sie nie wypowiedzial. */
+    userVerdict: text().$type<"agree" | "disagree">(),
+  },
+  (t) => [
+    unique("trade_rule_checks_review_rule_uq").on(t.reviewId, t.ruleId),
+    index("trade_rule_checks_rule_idx").on(t.ruleId),
+    check("trade_rule_checks_verdict", sql`${t.verdict} in ('pass', 'fail', 'na', 'unclear')`),
+    check(
+      "trade_rule_checks_user_verdict",
+      sql`${t.userVerdict} is null or ${t.userVerdict} in ('agree', 'disagree')`,
+    ),
+  ],
+);
+
+/* Czego klient ma nie wysylac ponownie: wpisy swiadomie pominiete przez klienta
+   i nagrobki trade'ow skasowanych w aplikacji. Bez nagrobka kolejna synchronizacja
+   wskrzesilaby kazdy trade, ktory uzytkownik usunal. */
+export const ingestSkips = pgTable(
+  "ingest_skips",
+  {
+    id: serial().primaryKey(),
+    externalRef: text().notNull(),
+    reason: text().$type<"client" | "deleted">().notNull().default("client"),
+    note: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("ingest_skips_ref_uq").on(t.externalRef),
+    check("ingest_skips_reason", sql`${t.reason} in ('client', 'deleted')`),
   ],
 );
 
@@ -538,3 +676,6 @@ export type TradeExit = typeof tradeExits.$inferSelect;
 export type DayNote = typeof dayNotes.$inferSelect;
 export type SavedView = typeof savedViews.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
+export type TradeReview = typeof tradeReviews.$inferSelect;
+export type TradeRuleCheck = typeof tradeRuleChecks.$inferSelect;
+export type IngestSkip = typeof ingestSkips.$inferSelect;

@@ -31,8 +31,9 @@ pierwszy prawdziwy trade.
 | `SESSION_SECRET` | `openssl rand -base64 48` — minimum 32 znaki |
 | `OWNER_PASSWORD` | hasło do pierwszego logowania |
 | `UPLOADS_DIR` | `/data/zrzuty` (już ustawione w obrazie, ale niech będzie jawnie) |
+| `INGEST_TOKEN_SHA256` | **opcjonalna**: skrót SHA-256 tokenu API synchronizacji, 64 znaki hex (patrz sekcja 8). Bez niej `/api/ingest/*` odpowiada 404 |
 
-`SESSION_SECRET` i `OWNER_PASSWORD` oznacz w Coolify jako **secret**.
+`SESSION_SECRET`, `OWNER_PASSWORD` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.
 Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Hasło* i usuń `OWNER_PASSWORD`
 ze zmiennych — nie jest już potrzebne.
 
@@ -98,6 +99,7 @@ Wykonaj za każdym razem, nie tylko przy pierwszym wdrożeniu:
 - [ ] wgranie zrzutu ekranu działa, a zrzut jest widoczny po restarcie kontenera
 - [ ] kalendarz i statystyki pokazują dane
 - [ ] na telefonie nie ma poziomego przewijania
+- [ ] jeśli włączone jest API synchronizacji: `GET /api/ingest/meta` bez tokenu zwraca 401, z tokenem 200; gdy zmiennej nie ma — 404 (sekcja 8)
 
 ## 6. Kopie zapasowe
 
@@ -118,3 +120,39 @@ a produkcja potrafi cicho stać na starym buildzie.
 
 Migracje idą razem z obrazem i wykonują się przy starcie. Przed wdrożeniem, które zmienia
 strukturę danych, zrób kopię bazy.
+
+## 8. API synchronizacji (TradingView i FX Replay)
+
+Wdrożenie kodu **niczego nie włącza**: dopóki `INGEST_TOKEN_SHA256` nie jest ustawiona,
+każda trasa `/api/ingest/*` odpowiada 404. Kontrakt API: `docs/api-ingest.md`, decyzje: ADR-026 do 028.
+
+**Kolejność przy pierwszym włączeniu (kopię bazy robi właściciel, nie klient API):**
+
+1. **Kopia bazy w Coolify** (zakładka Backups → ręczny backup) **przed** wdrożeniem commita z migracją
+   `0015_tradingview.sql`. Migracja tylko dokłada kolumny i tabele, ale to zmiana struktury danych.
+2. Wygeneruj token i jego skrót **na komputerze z repo mózgu**, nie na serwerze:
+   ```
+   node -e "console.log('tj_' + require('crypto').randomBytes(32).toString('base64url'))"
+   node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" <token>
+   ```
+   Token zapisz w pliku poza gitem (`C:\Users\ahaah\.claude\sekrety\trade-journal-ingest.env`).
+   **Do Coolify trafia wyłącznie skrót.**
+3. W Coolify dodaj zmienną `INGEST_TOKEN_SHA256` (secret) i wdróż. Zmienna zmienia zachowanie
+   dopiero po restarcie kontenera.
+4. Smoke test przez HTTPS (nie po adresie `http` z Coolify — w produkcji API odrzuca takie
+   zapytania 403, bo token nie może iść otwartym tekstem):
+   - `curl -i https://<domena>/api/ingest/meta` → **401** (a nie 404: 404 znaczy, że zmienna nie weszła)
+   - `curl -H "Authorization: Bearer <token>" https://<domena>/api/ingest/meta` → **200**
+   - pierwsza wysyłka zawsze z `"dryRun": true`; dopiero po obejrzeniu wyniku właściwy zapis
+5. **Zrzuty ekranu z API leżą w tym samym wolumenie `/data`** co ręczne — kopia bazy ich nie obejmuje
+   (sekcja 6).
+
+**Rotacja tokenu:** nowy token i skrót, podmiana zmiennej, restart. Stary przestaje działać natychmiast;
+nie ma okresu przejściowego.
+
+**Awaria klienta (429):** po 8 błędnych tokenach z jednego adresu blokada trwa 10 minut. Liczniki są
+w pamięci kontenera, więc restart je zeruje.
+
+**Proxy przed aplikacją:** adres klienta do blokad to ostatni wpis `X-Forwarded-For`, a HTTPS wynika
+z `X-Forwarded-Proto`. Traefik z Coolify ustawia oba. Dodanie kolejnego proxy (CDN) przed Traefikiem
+sprawi, że wszyscy klienci zlecą się pod jeden adres — wtedy trzeba zmienić `adresKlienta` w `lib/ingest/http.ts`.

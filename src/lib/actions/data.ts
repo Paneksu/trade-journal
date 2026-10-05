@@ -7,12 +7,15 @@ import {
   backtestSessions,
   customFields,
   dayNotes,
+  ingestSkips,
   instruments,
   savedViews,
   strategies,
   tagCategories,
   tags,
   tradeExits,
+  tradeReviews,
+  tradeRuleChecks,
   tradeTags,
   trades,
 } from "@/lib/db/schema";
@@ -38,6 +41,9 @@ export async function exportAll(): Promise<string> {
     tradeExitRows,
     noteRows,
     viewRows,
+    reviewRows,
+    ruleCheckRows,
+    skipRows,
   ] = await Promise.all([
     db.select().from(accounts),
     db.select().from(instruments),
@@ -54,6 +60,12 @@ export async function exportAll(): Promise<string> {
     db.select().from(tradeExits),
     db.select().from(dayNotes),
     db.select().from(savedViews),
+    // Synchronizacja przez API (2026-10-05): oceny AI z regulami i nagrobki.
+    // Bez nich kopia zapasowa po cichu gubi ocene, zdanie uzytkownika o niej
+    // i liste tradow, ktorych klient nie ma wysylac ponownie.
+    db.select().from(tradeReviews),
+    db.select().from(tradeRuleChecks),
+    db.select().from(ingestSkips),
   ]);
 
   return JSON.stringify(
@@ -72,6 +84,9 @@ export async function exportAll(): Promise<string> {
       tradeExits: tradeExitRows,
       dayNotes: noteRows,
       savedViews: viewRows,
+      tradeReviews: reviewRows,
+      tradeRuleChecks: ruleCheckRows,
+      ingestSkips: skipRows,
     },
     null,
     2,
@@ -81,7 +96,7 @@ export async function exportAll(): Promise<string> {
 /** Liczniki do ekranu ustawien - ile czego siedzi w bazie. */
 export async function counts(): Promise<Record<string, number>> {
   await requireSession();
-  const [t, a, i, s, tg, f, n, e] = await Promise.all([
+  const [t, a, i, s, tg, f, n, e, rv, rc, sk] = await Promise.all([
     db.$count(trades),
     db.$count(accounts),
     db.$count(instruments),
@@ -90,6 +105,9 @@ export async function counts(): Promise<Record<string, number>> {
     db.$count(customFields),
     db.$count(dayNotes),
     db.$count(tradeExits),
+    db.$count(tradeReviews),
+    db.$count(tradeRuleChecks),
+    db.$count(ingestSkips),
   ]);
   return {
     trades: t,
@@ -100,5 +118,8 @@ export async function counts(): Promise<Record<string, number>> {
     fields: f,
     notes: n,
     tradeExits: e,
+    tradeReviews: rv,
+    tradeRuleChecks: rc,
+    ingestSkips: sk,
   };
 }

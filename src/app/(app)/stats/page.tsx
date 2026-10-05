@@ -2,6 +2,7 @@ import { DailyBars, EquityChart, MaeMfeScatter, GroupBars, RHistogram } from "@/
 import { UnitSwitch, SourceSwitch } from "@/components/layout/toolbar";
 import { DimensionPicker } from "@/components/stats/dimension-picker";
 import { DisciplinePanel } from "@/components/stats/discipline-panel";
+import { ZgodnoscPanel } from "@/components/stats/zgodnosc-panel";
 import { KierunekPanel } from "@/components/stats/kierunek-panel";
 import { EdgeFinderPanel } from "@/components/stats/edge-finder-panel";
 import { GroupTable } from "@/components/stats/group-table";
@@ -15,6 +16,7 @@ import { localDate } from "@/lib/domain/calc";
 import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
 import { czyPominiety } from "@/lib/domain/status";
+import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
 import { statystykiPominietych } from "@/lib/domain/pominiete";
 import {
   builtinDimensions,
@@ -34,6 +36,7 @@ import {
   getTags,
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
+import { getRegulyOcen, getZgodnosc, type PodstawaZgodnosci } from "@/lib/queries/oceny";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { duration, int, money, num, percent, pnlClass, rValue, tradesCount } from "@/lib/format";
 
@@ -50,7 +53,10 @@ export default async function StatsPage({
   const unit = params.jednostka === "r" ? "r" : "cash";
   const dimensionKey = typeof params.wymiar === "string" ? params.wymiar : "instrument";
 
-  const [accounts, instruments, tags, tagCategories, fields, trades] =
+  const podstawa: PodstawaZgodnosci =
+    params.podstawa === "chart" || params.podstawa === "history" ? params.podstawa : "kazda";
+
+  const [accounts, instruments, tags, tagCategories, fields, trades, zgodnosc, reguly] =
     await Promise.all([
       getAccounts(),
       getInstruments(),
@@ -58,6 +64,8 @@ export default async function StatsPage({
       getTagCategories(),
       getFields(),
       getTrades(filters),
+      getZgodnosc(filters, podstawa),
+      getRegulyOcen(),
     ]);
 
   const progi = await getProgi();
@@ -108,13 +116,7 @@ export default async function StatsPage({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SourceSwitch
-            active={
-              params.zrodlo === "backtest"
-                ? "backtest"
-                : params.zrodlo === "wszystko"
-                  ? "wszystko"
-                  : "live"
-            }
+            active={zrodloPrzelacznika(filters.source)}
           />
           <UnitSwitch active={unit} />
         </div>
@@ -125,6 +127,7 @@ export default async function StatsPage({
         instruments={instruments}
         tags={tags}
         fields={fields}
+        reguly={reguly}
         activeCount={activeFilterCount(filters)}
       />
 
@@ -240,9 +243,11 @@ export default async function StatsPage({
               )}
             </Panel>
 
+            <KierunekPanel stats={stats} trades={closed} currency={currency} />
+
             <DisciplinePanel result={discipline} />
 
-            <KierunekPanel stats={stats} trades={closed} currency={currency} />
+            <ZgodnoscPanel stats={zgodnosc} filters={filters} podstawa={podstawa} />
           </div>
 
           <Panel title="Pozostałe liczby">

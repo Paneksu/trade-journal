@@ -103,6 +103,7 @@ export type AccountValues = {
   currency?: string;
   startingBalance?: number;
   type?: string;
+  propPhase?: "eval" | "funded" | null;
   defaultRiskAmount?: number | null;
   description?: string | null;
   archived?: boolean;
@@ -112,6 +113,7 @@ export type AccountValues = {
 export function AccountForm({ values = {}, onDone }: { values?: AccountValues; onDone?: () => void }) {
   const [state, formAction] = useActionState<ActionState, FormData>(saveAccount, {});
   const key = values.id ?? "new";
+  const [typ, setTyp] = useState(values.type ?? "live");
 
   return (
     <form action={formAction} className="space-y-3 p-4">
@@ -144,13 +146,39 @@ export function AccountForm({ values = {}, onDone }: { values?: AccountValues; o
         </div>
         <div className="space-y-1.5">
           <Label htmlFor={`acc-type-${key}`}>Typ</Label>
-          <Select id={`acc-type-${key}`} name="type" defaultValue={values.type ?? "live"}>
+          <Select
+            id={`acc-type-${key}`}
+            name="type"
+            value={typ}
+            onChange={(e) => setTyp(e.target.value)}
+          >
             <option value="live">realne</option>
             <option value="demo">demo</option>
             <option value="prop">prop firm</option>
             <option value="paper">papierowe</option>
           </Select>
         </div>
+        {/* Faza istnieje tylko przy koncie prop (ADR-027). Bez niej konto nie nalezy do zadnej
+            kategorii statystyk, wiec pole prosi o wybor, ale nie blokuje zapisu starych kont. */}
+        {typ === "prop" && (
+          <div className="space-y-1.5">
+            <Label
+              htmlFor={`acc-phase-${key}`}
+              hint="Zdany challenge: zmień na funded, cała historia konta przejdzie razem z nim."
+            >
+              Faza konta prop
+            </Label>
+            <Select
+              id={`acc-phase-${key}`}
+              name="propPhase"
+              defaultValue={values.propPhase ?? ""}
+            >
+              <option value="">nieznana (poza kategoriami)</option>
+              <option value="eval">ocena (challenge)</option>
+              <option value="funded">funded</option>
+            </Select>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor={`acc-risk-${key}`} hint="Podpowiada wielkość pozycji w formularzu">
             Domyślne ryzyko na trade

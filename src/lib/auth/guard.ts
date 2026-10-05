@@ -66,7 +66,22 @@ export function checkRateLimit(key: string): { allowed: boolean; retryInS: numbe
   return { allowed: false, retryInS: Math.ceil((entry.until - Date.now()) / 1000) };
 }
 
+/** Gorny limit wpisow: licznik jest w pamieci, a klucze pochodza z adresow klientow. */
+const MAX_WPISOW = 5000;
+
+function sprzatnijWygasle(): void {
+  const teraz = Date.now();
+  for (const [k, v] of attempts) if (teraz > v.until) attempts.delete(k);
+  // Gdy nadal za duzo (atak z wielu adresow): zostaja najswiezsze, najstarsze wypadaja.
+  while (attempts.size > MAX_WPISOW) {
+    const najstarszy = attempts.keys().next().value;
+    if (najstarszy === undefined) break;
+    attempts.delete(najstarszy);
+  }
+}
+
 export function recordFailedAttempt(key: string): void {
+  if (attempts.size >= MAX_WPISOW) sprzatnijWygasle();
   const entry = attempts.get(key);
   if (entry && Date.now() <= entry.until) {
     entry.count += 1;

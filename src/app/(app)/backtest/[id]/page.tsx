@@ -135,7 +135,7 @@ export default async function BacktestSessionPage({
             {session.name}
           </h1>
           <p className="mt-1 text-sm text-muted">
-            {[strategy?.name, instrument?.symbol, session.interval, session.dataFrom && `${session.dataFrom} → ${session.dataTo ?? "…"}`]
+            {[session.kind === "forward" ? "forward" : null, strategy?.name, instrument?.symbol, session.interval, session.dataFrom && `${session.dataFrom} → ${session.dataTo ?? "…"}`]
               .filter(Boolean)
               .join(" · ")}
           </p>
@@ -408,6 +408,7 @@ export default async function BacktestSessionPage({
             riskPerTrade: session.riskPerTrade,
             targetTrades: session.targetTrades,
             status: session.status,
+            kind: session.kind,
             assumptions: session.assumptions,
             conclusions: session.conclusions,
           }}

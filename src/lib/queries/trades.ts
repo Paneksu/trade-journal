@@ -18,6 +18,7 @@ import { computeTrade } from "@/lib/domain/calc";
 import { czyInterwal, porzadekInterwalu } from "@/lib/domain/interwaly";
 import { czyPowod, kierunekTrafiony } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
+import { kategoriaKonta, type Kategoria } from "@/lib/domain/kategorie";
 import type { StatusTrade } from "@/lib/domain/status";
 import type { TradeForAnalysis } from "@/lib/domain/types";
 import { getProgi, instrumentSpec } from "./dictionaries";
@@ -83,6 +84,14 @@ const columns = {
   closedContracts: trades.closedContracts,
   exitCount: trades.exitCount,
   scalingR: trades.scalingR,
+  // Synchronizacja przez API (2026-10-05, ADR-026) i kategoria konta (ADR-027).
+  source: trades.source,
+  externalRef: trades.externalRef,
+  ingestedAt: trades.ingestedAt,
+  updatedAt: trades.updatedAt,
+  accountType: accounts.type,
+  accountPropPhase: accounts.propPhase,
+  sessionKind: backtestSessions.kind,
 };
 
 export type TradeRecord = TradeForAnalysis & {
@@ -113,6 +122,17 @@ export type TradeRecord = TradeForAnalysis & {
   exitCount: number;
   /** Wplyw skalowania na wynik w R - patrz komentarz przy kolumnie w schema.ts. */
   scalingR: number | null;
+  /** Skad wpis przyszedl: formularz albo klient API (ADR-026). */
+  source: "form" | "tradingview" | "fxreplay";
+  /** Klucz idempotencji z API ("tv:<id>", "fxr:<id>"); `null` dla wpisow z formularza. */
+  externalRef: string | null;
+  ingestedAt: Date | null;
+  /** Wpis z API poprawiony w aplikacji po ostatnim zapisie API - kolejny zapis API da `conflict`. */
+  editedInApp: boolean;
+  /** Kategoria wynikajaca z konta (ADR-027); `null` dla konta prop bez podanej fazy. */
+  kategoria: Kategoria | null;
+  /** Rodzaj sesji dla trade'a z sesji (backtest/forward); `null` dla dziennika. */
+  sessionKind: "backtest" | "forward" | null;
 };
 
 /** Jeden kawalek wyjscia z pozycji, z policzonym wynikiem - dolaczany tylko
@@ -235,6 +255,12 @@ function build(row: Row, rowTags: TagRow[], zrzuty: ShotSummary, progi: Progi): 
     closedContracts: Number(row.closedContracts),
     exitCount: row.exitCount,
     scalingR: row.scalingR === null ? null : Number(row.scalingR),
+    source: row.source,
+    externalRef: row.externalRef,
+    ingestedAt: row.ingestedAt,
+    editedInApp: row.ingestedAt !== null && row.updatedAt.getTime() > row.ingestedAt.getTime(),
+    kategoria: kategoriaKonta({ type: row.accountType, propPhase: row.accountPropPhase }),
+    sessionKind: row.sessionKind,
   };
 }
 

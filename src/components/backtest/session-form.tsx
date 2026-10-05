@@ -21,6 +21,7 @@ export type SessionValues = {
   riskPerTrade?: number | null;
   targetTrades?: number;
   status?: string;
+  kind?: "backtest" | "forward";
   assumptions?: string | null;
   conclusions?: string | null;
 };
@@ -144,6 +145,19 @@ export function SessionForm({
             min={1}
             defaultValue={values.targetTrades ?? 100}
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label
+            htmlFor="kind"
+            hint="Backtest to replay historii, forward to test na bieżących danych. Statystyki trzymają je osobno."
+          >
+            Rodzaj sesji
+          </Label>
+          <Select id="kind" name="kind" defaultValue={values.kind ?? "backtest"}>
+            <option value="backtest">backtest (replay historii)</option>
+            <option value="forward">forward (bieżące dane)</option>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
