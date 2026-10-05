@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { backtestSessions, strategies } from "@/lib/db/schema";
+import { rodzajSesjiZFormularza } from "@/lib/domain/zrodla";
 import { nagrobkiTradeowSesji } from "@/lib/trades/tombstones";
 import type { ActionState } from "./settings";
 
@@ -99,6 +100,9 @@ export async function saveBacktestSession(_p: ActionState, d: FormData): Promise
     status: (text(d, "status") ?? "running") as "running" | "finished" | "abandoned",
     assumptions: text(d, "assumptions"),
     conclusions: text(d, "conclusions"),
+    // Rodzaj sesji (ADR-027). Brak pola w formularzu nie zmienia istniejacej wartosci;
+    // nieznana wartosc nie przechodzi, zeby nie wpadla do bazy (CHECK) jako blad 500.
+    ...(d.has("kind") ? { kind: rodzajSesjiZFormularza(text(d, "kind")) } : {}),
   };
 
   let savedId: number;

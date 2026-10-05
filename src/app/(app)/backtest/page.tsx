@@ -1,9 +1,10 @@
 import Link from "next/link";
 
 import { SessionForm } from "@/components/backtest/session-form";
-import { EmptyState, Panel } from "@/components/ui/base";
+import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
+import { RODZAJ_SESJI_NAZWY } from "@/lib/domain/zrodla";
 import { assessSample } from "@/lib/domain/sample-size";
 import { computeStats } from "@/lib/domain/stats";
 import {
@@ -33,7 +34,7 @@ export default async function BacktestPage() {
     getStrategies(),
     getInstruments(),
     getAccounts(),
-    getTrades({ ...EMPTY_FILTERS, source: "backtest" }),
+    getTrades({ ...EMPTY_FILTERS, source: "all" }),
   ]);
 
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
@@ -74,7 +75,12 @@ export default async function BacktestPage() {
               <Link key={s.id} href={`/backtest/${s.id}`} className="block">
                 <Panel
                   className="h-full transition-colors duration-150 hover:border-line-strong"
-                  title={s.name}
+                  title={
+                    <span className="flex flex-wrap items-center gap-2">
+                      {s.name}
+                      <Badge title="Rodzaj sesji">{RODZAJ_SESJI_NAZWY[s.kind]}</Badge>
+                    </span>
+                  }
                   description={[
                     strategies.find((x) => x.id === s.strategyId)?.name,
                     instruments.find((x) => x.id === s.instrumentId)?.symbol,
