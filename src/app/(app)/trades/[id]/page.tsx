@@ -3,14 +3,18 @@ import { notFound } from "next/navigation";
 
 import { DeleteTradeButton } from "@/components/trades/trade-actions";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
+import { OcenaAiPanel } from "@/components/trades/ocena-ai-panel";
 import { Badge, DataPoint, Panel } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { maWynik } from "@/lib/domain/status";
+import { KATEGORIA_NAZWY } from "@/lib/domain/kategorie";
+import { nazwaZrodla } from "@/lib/domain/zrodla";
 import { SESSION_NAMES, TRADE_STATUS_NAMES, WEEKDAY_NAMES } from "@/lib/domain/types";
 import { formatValue } from "@/lib/fields/fields";
 import { getFields } from "@/lib/queries/dictionaries";
+import { getOceny } from "@/lib/queries/oceny";
 import { getScreenshots, getTrade } from "@/lib/queries/trades";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import {
@@ -38,7 +42,12 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
 
-  const [shots, fields] = await Promise.all([getScreenshots(tradeId), getFields()]);
+  const [shots, fields, oceny] = await Promise.all([
+    getScreenshots(tradeId),
+    getFields(),
+    getOceny(tradeId),
+  ]);
+  const zrodlo = nazwaZrodla(trade.source);
 
   /* Pola wlasne pokazujemy tylko te, ktore ten trade ma wypelnione. Definicje
      "nastroj", "jakosc_wejscia" i "plan_zrealizowany" zniknely 2026-08-29,
@@ -134,9 +143,19 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
               {rValue(trade.rMultiple)}
             </span>
           </h1>
+          {/* Plakietka zrodla stoi przy statusie: trade z API to inny rodzaj wpisu niz reczny. */}
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span>Status: {TRADE_STATUS_NAMES[trade.status]}</span>
+            {zrodlo && (
+              <Badge title={trade.externalRef ? `Klucz zewnętrzny: ${trade.externalRef}` : undefined}>
+                {zrodlo}
+              </Badge>
+            )}
+            {trade.kategoria && !trade.backtestSessionId && <Badge title="Kategoria wynika z konta">{KATEGORIA_NAZWY[trade.kategoria]}</Badge>}
+          </p>
           {trade.backtestSessionName && (
             <p className="mt-1 text-xs text-accent">
-              Trade z sesji backtestu: {trade.backtestSessionName}
+              Trade z sesji {trade.sessionKind === "forward" ? "forward testu" : "backtestu"}: {trade.backtestSessionName}
             </p>
           )}
         </div>
@@ -308,6 +327,9 @@ export default async function TradePage({ params }: { params: Promise<{ id: stri
           </div>
         </Panel>
       </div>
+
+      {/* Ocena AI: trade z API zawsze dostaje panel (z pustym stanem), reczny tylko gdy ocena istnieje. */}
+      {(oceny.length > 0 || trade.source !== "form") && <OcenaAiPanel trade={trade} oceny={oceny} />}
 
       <Panel title="Notatka">
         {trade.note ? (
