@@ -216,6 +216,9 @@ Uzgodnione przed budową, wypisane, żeby nie wracało jako brak:
   *(połowa dotycząca wyjść uchylona — ADR-025, 2026-08-30: częściowe realizacje mają własne
   wiersze; częściowe wejścia zostają poza zakresem)*,
 - **odtwarzacz wykresów, asystent AI, aplikacja mobilna, synchronizacja z brokerami**.
+  *(częściowo uchylone — ADR-026, 2026-10-05: wchodzi API, do którego klient wysyła trade'y
+  z TradingView i FX Replay oraz oceny AI; synchronizacja z **brokerami** i asystent AI wewnątrz
+  aplikacji zostają poza zakresem)*
 
 ---
 
@@ -1047,3 +1050,193 @@ Migracja `drizzle/0014_czesciowe_wyjscia.sql` — zakłada `trade_exits`, dokła
 z wypełnioną ceną wyjścia daje dokładnie jeden wiersz-potomek. Kwota z rachunku nie schodzi
 do kawałka, bo przy sumowaniu podwoiłaby wynik. `scaling_r` zostaje NULL dla całej historii:
 każdy stary trade ma jedno wyjście, więc miara nie ma tam sensu — to poprawny stan, nie brak danych.
+
+---
+
+## ADR-026 — synchronizacja z TradingView i FX Replay przez API z tokenem (2026-10-05)
+
+**Kontekst.** Dziennik był od początku ręczny, a „synchronizacja z brokerami" i „asystent AI"
+stały na liście rzeczy świadomie poza zakresem. Użytkownik prowadzi teraz osobne repozytorium
+(„mózg tradingowy" w Obsidianie), które widzi wykres w TradingView Desktop i w FX Replay,
+zapisuje trade'y, robi zrzuty i ocenia je względem reguł. Dziennik ma dostać stamtąd gotowe
+dane, zamiast przepisywać je ręcznie. Zakres: sekcja 4 zatwierdzonego planu (v2, 2026-10-05).
+
+**Co z listy „poza zakresem" zostaje, a co się zmienia.** Synchronizacja z **brokerami** zostaje
+poza zakresem: aplikacja nie zna żadnego brokera ani rachunku. Wchodzi **API, do którego klient
+wysyła dane** (push). Aplikacja niczego nie pobiera i niczego nie wie o TradingView ani FX Replay
+poza kształtem payloadu i prefiksem klucza (`tv:`, `fxr:`). „Asystent AI" też nie wchodzi do
+aplikacji: AI mieszka w repozytorium mózgu, a aplikacja przechowuje wyłącznie jego **oceny** (ADR-028).
+
+**Push, nie pull.** Pull wymagałby od aplikacji na Hetznerze dostępu do wykresu użytkownika
+i jego sesji w FX Replay. Push odwraca zależność: klient ma dostęp do wszystkiego, aplikacja ma
+jeden zamknięty endpoint i nic więcej.
+
+**Brama (`withIngest`, `lib/ingest/with-ingest.ts`) — kolejność ma znaczenie:**
+
+1. Brak (albo zepsuta) zmienna `INGEST_TOKEN_SHA256` → **404**. API nie istnieje, dopóki
+   właściciel go świadomie nie włączy; po wdrożeniu kodu bez zmiennej nie ma żadnej nowej powierzchni.
+2. Produkcja bez HTTPS → 403 (wg ostatniego `X-Forwarded-Proto`, jak ciasteczko sesji).
+3. Blokada po **8 błędnych tokenach** → 429, **przed** porównaniem, żeby zablokowany klient nie mógł
+   dalej zgadywać. Używa istniejącego `checkRateLimit`/`recordFailedAttempt` z `auth/guard.ts` pod
+   kluczem `ingest:<adres>`, więc nie ma drugiego mechanizmu blokad.
+4. Token → 401. Na serwerze leży **tylko skrót SHA-256**; porównanie `timingSafeEqual` na 32 bajtach.
+   Szybki SHA-256 wystarcza, bo token to długi losowy ciąg, a nie hasło (w odróżnieniu od scrypta
+   przy haśle z ADR-005).
+5. Limit **120 zapytań na minutę** na adres → 429 z `Retry-After`.
+6. Wyjątek w handlerze → 500 bez szczegółów technicznych dla klienta; identyfikator zapytania
+   (`x-request-id`) wiąże odpowiedź z wpisem w logu.
+
+Adres klienta to **ostatni** wpis `X-Forwarded-For`: dopisuje go zaufane proxy, a wpisy z lewej
+może podstawić sam klient — przy pierwszym wpisie wystarczyłby losowy nagłówek, żeby każda próba
+miała świeży licznik. Znany koszt: gdyby przed Traefikiem stało jeszcze jedno proxy (CDN), ostatnim
+wpisem byłby jego adres i blokada objęłaby wszystkich za nim.
+
+**Trasy nie przechodzą przez `proxy.ts`** (wykluczone w matcherze) z dwóch powodów: proxy buforuje
+i obcina ciało powyżej 10 MB, a multipart ze zrzutami ma limit 11 MB; i te trasy nie mają
+ciasteczka, więc proxy przekierowałoby każde zapytanie klienta na `/login`. Skoro cała autoryzacja
+siedzi w opakowaniu, `guard.test.ts` czyta źródła tras i **pada, gdy jakakolwiek eksportuje handler
+bez `withIngest`** (albo coś poza handlerami i konfiguracją Next). Sprawdzone mutacją: dopisana
+trasa z gołym `export async function GET` łamie test.
+
+**Limity ciała liczone na strumieniu**: JSON 1 MB, multipart 11 MB. Nagłówek `Content-Length`
+można pominąć albo skłamać, więc bajty liczy się w trakcie czytania i przerywa po przekroczeniu.
+
+**Idempotencja po `external_ref`** (`tv:<id>` / `fxr:<id>`, unikalny indeks częściowy). Wynik każdej
+pozycji paczki osobno (jedna zła nie blokuje reszty):
+
+| Wynik | Znaczenie |
+|---|---|
+| `created` | nowy wiersz |
+| `updated` | `mode=update`, treść się zmieniła |
+| `unchanged` | ta sama treść (skrót), albo `mode=create` na istniejącym |
+| `conflict` | wpis edytowano w aplikacji po ostatnim zapisie API |
+| `skipped` | klucz w `ingest_skips` (pominięty przez klienta albo skasowany w aplikacji) |
+| `error` | walidacja albo zapis; komunikat mówi co, dlaczego i jak poprawić |
+
+**Konflikt = `updated_at > ingested_at`.** `persistTrade` ustawia oba pola **jedną** chwilą, więc
+zapis przez API nigdy nie kwalifikuje sam siebie jako edycji użytkownika, a każda edycja w formularzu
+(który nie dotyka kolumn synchronizacji) podbija `updated_at` ponad `ingested_at`. Zmiany użytkownika
+wygrywają i nic nie jest nadpisywane. **Znany brzeg:** konflikt nie ma ścieżki rozwiązania z poziomu
+API — trade edytowany ręcznie jest od tej pory „własnością użytkownika", a jedyne wyjście to jego
+skasowanie w aplikacji (powstaje nagrobek, trade się już nie wróci). To świadome: ścieżka „wymuś"
+dałaby klientowi narzędzie do kasowania ręcznych poprawek.
+
+**Skrót treści** (`source_snapshot->>'hash'`, sha256 ze stabilnie posortowanego JSON-a payloadu bez
+pola `snapshot`) pozwala rozpoznać `unchanged` bez porównywania pól. W `source_snapshot` leży
+też sam payload i `snapshot` klienta — do diagnozy rozjazdów, nigdy do statystyk.
+
+**Nagrobki.** Skasowanie trade'a z `external_ref` zapisuje wiersz `ingest_skips(reason='deleted')`
+**w tej samej transakcji**. Trzy miejsca kasują trade'y: `deleteTrade`, `deleteMany` i
+`deleteBacktestSession` (kaskada) — wszystkie trzy poprawione (grep `delete(trades)` i kaskad
+po `backtest_session_id`; to ta sama klasa błędu). Bez nagrobka następna synchronizacja
+wskrzesiłaby wszystko, co użytkownik usunął. Skasowanie samej sesji nie zostawia nagrobka sesji:
+`POST /backtest-sessions` założy ją od nowa, a jej trady i tak są zablokowane własnymi nagrobkami.
+
+**`dryRun`.** `persistTrade(…, {dryRun})` przechodzi całą walidację i `computeTrade`, zwraca
+policzony podgląd (`pnl`, R, sesja rynkowa) i **nie otwiera transakcji**. Test E2E porównuje
+liczby wierszy w `trades`, `backtest_sessions` i `ingest_skips` przed i po.
+
+**Czasy tylko ISO 8601 z offsetem lub `Z`.** Czas bez strefy jest niejednoznaczny (ADR-022: 09:35
+warszawskie i 09:35 nowojorskie to dwa różne trade'y), więc jest błędem, a nie domysłem.
+Formularz dalej czyta czas lokalny w strefie giełdy; API przekazuje gotową `Date`.
+
+**Symbole (`mapujSymbol`, `domain/tradingview.ts`).** `NQ`, `NQ1!`, `MNQ1!`, `CME_MINI:NQZ2026`,
+`NQZ26`, `ESH6` → symbol z katalogu. **CFD (`US100`, `NAS100`, `USTEC`) nie jest mapowane po
+cichu**: to inny produkt niż kontrakt futures (inna wielkość punktu), więc zamiana dałaby wynik
+w pieniądzach zły o czynnik, którego nikt by nie zauważył. Nieznany symbol to błąd z listą znanych.
+Jeśli FX Replay okaże się nazywać kontrakt „US100", dopisuje się alias w `ALIASY` świadomą decyzją.
+
+**Zrzuty z API zastępują zrzuty tego samego pochodzenia** (`screenshots.origin`:
+`manual|tradingview|fxreplay`) i **nie ruszają ręcznych**. Najpierw zapis nowych, potem skasowanie
+starych (wiersze i pliki): przerwanie w połowie zostawia nadmiar, a nie pustkę, a ponowienie
+zapytania to naprawia. Limit 8 liczy się od tego, co zostaje.
+
+**Tagi nie są zakładane automatycznie.** API przyjmuje `tagId` albo parę `category`+`name`;
+nieznany tag to błąd z odesłaniem do `GET /meta`. Zakładanie słownika przez nienadzorowanego
+klienta zaśmiecałoby go literówkami.
+
+**Migracja `0015_tradingview.sql`** (ręczna, bez snapshotu — dług z ADR-017 trwa): nowe dziedziny
+wartości jako `text` + `CHECK`, nigdy `ALTER TYPE … ADD VALUE` (migrator drizzle owija jedną
+transakcją całą serię zaległych plików). Sprawdzona oboma migratorami (drizzle lokalnie i
+`scripts/migrate.mjs` z obrazu) na świeżej bazie.
+
+**Koszt i ograniczenia.** Liczniki blokady i limitu są w pamięci procesu: restart kontenera je
+zeruje, a dwa kontenery miałyby osobne liczniki — przy jednym kontenerze i jednym kliencie to
+wystarcza (ta sama decyzja co przy logowaniu). Token to jedna wartość: rotacja = zmiana zmiennej
+i restart, bez okresu przejściowego.
+
+---
+
+## ADR-027 — kategorie trade'ów wynikają z konta, a backtest i forward są rodzajem sesji (2026-10-05)
+
+**Kontekst.** Wynik na koncie prop w fazie oceny (challenge) nie znaczy tego samego co wynik na
+koncie z prawdziwymi pieniędzmi, a test na bieżących danych (forward) to inna próba niż replay
+historii. Statystyki mieszające je w jedną liczbę kłamią o jednym albo o drugim.
+
+**Kategoria (`realne | prop_eval | prop_funded | demo`) jest wyliczana z konta**
+(`accounts.type` + nowa `accounts.prop_phase`), a nie zapisana na trade'u. Odrzucona alternatywa:
+kolumna `category` w `trades`. Zmiana fazy konta z `eval` na `funded` (zdany challenge) musi
+przesunąć całą jego historię, a przy kolumnie na trade'u wymagałaby masowego `UPDATE` i istniałaby
+chwila, w której konto i jego trady się nie zgadzają. Mapowanie jest w jednym czystym
+module (`domain/kategorie.ts`), filtr SQL w `filters.ts` (`kategoria=`, lista).
+
+**Konto prop bez podanej fazy nie należy do żadnej kategorii.** Zgadywanie (`eval`) fałszowałoby
+obie grupy; interfejs ma o fazę prosić. `CHECK` w bazie pilnuje, żeby faza wisiała wyłącznie przy
+koncie typu `prop` (sprawdzone na prawdziwej bazie: wstawienie `live` + `eval` jest odrzucane).
+`demo` obejmuje też `paper`.
+
+**Backtest i forward to `backtest_sessions.kind`**, nie kategoria konta: dotyczą sesji, a trade
+w sesji ma konto tylko dlatego, że `account_id` jest `NOT NULL`. Filtr `zrodlo=` zyskuje wartość
+`forward`.
+
+**Zmiana znaczenia `zrodlo=backtest`:** do tej pory oznaczał „każdy trade z sesji", teraz „trade
+z sesji rodzaju backtest". Nie psuje to danych (wszystkie istniejące sesje mają `kind='backtest'`
+z wartości domyślnej), ale po założeniu pierwszej sesji forward przestaje ona wpadać do
+`zrodlo=backtest`. Konkretna sesja (`?sesja=`) bije rodzaj. Widok „wszystko" bez zmian.
+
+**Zostaje dla interfejsu:** przełącznik źródła w galerii zna jeszcze trzy wartości; `forward` na
+nim nie ma przycisku, a wybrany w adresie podświetli „dziennik".
+
+---
+
+## ADR-028 — ocena AI zamiast odrzuconej samooceny; plan gry w mózgu, nie w aplikacji (2026-10-05)
+
+**Kontekst.** ADR-020 usunął z formularza „Jakość wejścia", „Ocenę wykonania" i „Trade zgodny
+z planem": wypełniane **po** wyniku mierzyły głównie nastrój po zamknięciu pozycji. Ocena AI
+względem reguł wygląda na tę samą rzecz, więc potrzebuje uzasadnienia, dlaczego nią nie jest.
+
+**Czym ocena różni się od odrzuconej samooceny:**
+
+- **Podstawa jest jawna i rozdzielona** (`trade_reviews.basis`). `chart` to ocena z wykresu na moment
+  decyzji, bez wiedzy o wyniku; `history` to ocena po fakcie. Są **dwoma osobnymi wierszami**
+  (unikat `trade_id + basis`): ponowne wysłanie podmienia, nie mnoży.
+- **`evidence_cutoff`** zapisuje ostatnią świecę, jaką ocena mogła widzieć. „Zero zaglądania
+  w przyszłość" przestaje być obietnicą, a staje się czymś, co da się sprawdzić po fakcie.
+- **Każde sprawdzenie reguły ma dowód** (`evidence`) i **kopię treści reguły z chwili oceny**
+  (`rule_text`). Regułę w mózgu można zmienić; ocena dalej mówi o tym, co faktycznie sprawdzono.
+- **Użytkownik się wypowiada** (`user_verdict`: zgadzam się / nie zgadzam się z oceną reguły).
+  To miara wiarygodności samej oceny, której samoocena nie miała. Przy ponownym wysłaniu jego zdanie
+  **zostaje tylko przy regule, której werdykt AI się nie zmienił**; gdy AI zmieniło zdanie,
+  stara odpowiedź dotyczyłaby czegoś innego i jest zerowana.
+- **Zestawienie ma uczciwy mianownik** (`domain/zgodnosc.ts`): tylko `pass` i `fail`. `na` i `unclear`
+  nie są ani zgodnością, ani złamaniem — idą do osobnego licznika „nieocenione", tak jak
+  przy trafności kierunku (ADR-018). Trady bez żadnej oceny też są liczone osobno.
+- **Rozstrzyganie przy dwóch ocenach tej samej reguły:** liczy się raz, wygrywa ocena, która coś
+  rozstrzygnęła (`pass`/`fail`), a przy remisie ta z wykresu (nie znała wyniku). Ocena po fakcie
+  wchodzi tam, gdzie wykres nie rozstrzygnął — typowo przy regułach zarządzania pozycją.
+  Ta sama reguła rozstrzygania stoi w SQL filtra i w zestawieniu, żeby lista i liczby obok niej
+  nie pokazywały różnych trade'ów (złapane testem na prawdziwej bazie).
+
+**Ryzyko, które zostaje:** ocena `history` jest po fakcie, więc może być pod wpływem wyniku
+(efekt aureoli). Dlatego nigdy nie nadpisuje rozstrzygającej oceny z wykresu i da się ją wyłączyć
+ze zestawienia (`getZgodnosc(…, "chart")`). Interfejs powinien pokazywać podstawę przy każdej ocenie.
+
+**Plan gry mieszka w mózgu (Obsidian), nie w aplikacji.** Nie ma tabeli `playbook_versions` ani
+strony `/playbook`. Aplikacja trzyma wyłącznie to, co jest potrzebne do statystyk i do pokazania
+oceny: `rule_id` + kopię treści + `brain_version` (hash commita w repo mózgu, więc ocenę da się
+odnieść do wersji reguł, według których powstała). Powód: dwie kopie planu (w mózgu i w aplikacji)
+rozjechałyby się przy pierwszej zmianie reguły, a mózg jest źródłem prawdy o wiedzy, aplikacja
+— o liczbach.
+
+**Reguły zmienia wyłącznie użytkownik.** API nie ma operacji, która zakłada, zmienia ani zatwierdza
+regułę; może tylko ocenić trade względem reguł, które klient przysłał razem z oceną.
