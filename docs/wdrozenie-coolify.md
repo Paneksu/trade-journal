@@ -31,7 +31,6 @@ pierwszy prawdziwy trade.
 | `SESSION_SECRET` | `openssl rand -base64 48` — minimum 32 znaki |
 | `OWNER_PASSWORD` | hasło do pierwszego logowania |
 | `UPLOADS_DIR` | `/data/zrzuty` (już ustawione w obrazie, ale niech będzie jawnie) |
-
 | `INGEST_TOKEN_SHA256` | **opcjonalna**: skrót SHA-256 tokenu API synchronizacji, 64 znaki hex (patrz sekcja 8). Bez niej `/api/ingest/*` odpowiada 404 |
 
 `SESSION_SECRET`, `OWNER_PASSWORD` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.

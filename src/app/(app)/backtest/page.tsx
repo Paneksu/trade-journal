@@ -34,7 +34,7 @@ export default async function BacktestPage() {
     getStrategies(),
     getInstruments(),
     getAccounts(),
-    getTrades({ ...EMPTY_FILTERS, source: "all" }),
+    getTrades({ ...EMPTY_FILTERS, source: "sessions" }),
   ]);
 
   const currency = accounts[0]?.currency ?? settings.baseCurrency;

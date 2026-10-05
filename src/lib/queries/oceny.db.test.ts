@@ -81,7 +81,7 @@ describe.skipIf(!lokalna(URL_BAZY))("zgodnosc z regulami na prawdziwej bazie", (
     // reguly: R-1: t1 pass, t2 fail, t3 pass(chart); R-2: t1 pass, t2 pass; R-3: t2 na
     expect(w.reguly).toEqual({ ocenione: 5, zgodne: 4, niezgodne: 1, nieocenione: 1, zgodnoscPct: 80 });
     // trady: t1 zgodny, t2 niezgodny (R-1 fail), t3 zgodny; czwarty bez oceny
-    expect(w.trady).toEqual({ ocenione: 3, zgodne: 2, niezgodne: 1, nieocenione: 1, zgodnoscPct: 66.7 });
+    expect(w.trady).toMatchObject({ ocenione: 3, zgodne: 2, niezgodne: 1, nieocenione: 1, zgodnoscPct: 66.7 });
 
     const r1 = w.poRegule.find((r) => r.ruleId === "R-1")!;
     expect(r1).toMatchObject({ ocenione: 3, zgodne: 2, niezgodne: 1, nieocenione: 0 });

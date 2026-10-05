@@ -97,3 +97,22 @@ describe("filtry: zgodnosc z regulami (ADR-028)", () => {
     expect(activeFilterCount(EMPTY_FILTERS)).toBe(0);
   });
 });
+
+describe("filtry: zrodlo=sesje i podstawa", () => {
+  it("sesje = dowolna sesja, bez dziennika; konkretna sesja bije", () => {
+    expect(sqlDla("zrodlo=sesje").sql).toContain("\"backtestSessionId\" is not null");
+    expect(sqlDla("zrodlo=sesje").sql).not.toContain("kind =");
+    expect(toSearchParams(parseFilters({ zrodlo: "sesje" })).get("zrodlo")).toBe("sesje");
+    expect(sqlDla("zrodlo=sesje&sesja=7").params).toContain(7);
+  });
+
+  it("podstawa zaweza ocene w filtrze zgodnosci i wraca do adresu", () => {
+    const q = sqlDla("zgodnosc=niezgodne&podstawa=history");
+    expect(q.params).toContain("history");
+    const bez = sqlDla("zgodnosc=niezgodne");
+    expect(bez.params).not.toContain("history");
+    expect(bez.params).not.toContain("chart");
+    expect(parseFilters({ podstawa: "x" }).basis).toBeNull();
+    expect(toSearchParams(parseFilters({ podstawa: "chart" })).get("podstawa")).toBe("chart");
+  });
+});

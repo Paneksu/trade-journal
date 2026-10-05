@@ -88,8 +88,11 @@ export function stabilnyJson(w: unknown): string {
 
 /** Skrot tresci trade'a (bez `snapshot`, ktory jest tylko diagnostyka klienta). */
 export function skrotTrade(t: IngestTrade): string {
-  const { snapshot: _pomijamy, ...reszta } = t;
-  void _pomijamy;
+  // `snapshot` to diagnostyka klienta, a `source` wynika z prefiksu externalRef - zadne
+  // z nich nie jest trescia trade'a, wiec nie wchodza do skrotu.
+  const { snapshot: _snapshot, source: _source, ...reszta } = t;
+  void _snapshot;
+  void _source;
   return createHash("sha256").update(stabilnyJson(reszta)).digest("hex");
 }
 

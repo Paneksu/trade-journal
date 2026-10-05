@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import postgres from "postgres";
 
+import { wymagajLokalnych } from "./lokalne";
+
 /*
  * Interfejs ocen AI (ADR-026 do 028): karta trade'a, filtry, panel zgodnosci,
  * faza prop przy koncie i rodzaj sesji. Dane wstawiamy SQL-em prosto do bazy
@@ -16,15 +18,6 @@ import postgres from "postgres";
 const DB_URL = process.env.DATABASE_URL ?? "";
 const NAZWA_KONTA = "E2E ocena konto";
 const PREFIKS_REF = "tv:e2e-ocena";
-
-function dbLokalna(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return h === "127.0.0.1" || h === "localhost" || h === "::1";
-  } catch {
-    return false;
-  }
-}
 
 const AXE_TAGI = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -79,11 +72,7 @@ test.describe("ocena AI w interfejsie", () => {
   }
 
   test.beforeAll(async () => {
-    if (!dbLokalna(DB_URL)) {
-      throw new Error(
-        `DATABASE_URL (${DB_URL.replace(/:[^:@/]*@/, ":***@") || "brak"}) nie wskazuje na bazę lokalną - testy wstawiają dane do bazy i nie wolno ich puszczać na produkcji.`,
-      );
-    }
+    wymagajLokalnych(DB_URL, process.env.E2E_URL);
     sql = postgres(DB_URL, { max: 2 });
     await posprzataj();
 

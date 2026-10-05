@@ -70,7 +70,9 @@ export const noTradeReasonEnum = pgEnum("no_trade_reason", [
 
 /* --- Konta ---------------------------------------------------------------- */
 
-export const accounts = pgTable("accounts", {
+export const accounts = pgTable(
+  "accounts",
+  {
   id: serial().primaryKey(),
   name: text().notNull(),
   currency: text().notNull().default("USD"),
@@ -86,7 +88,15 @@ export const accounts = pgTable("accounts", {
   archived: boolean().notNull().default(false),
   sortOrder: integer().notNull().default(0),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-});
+  },
+  (t) => [
+    // Lustro CHECK-a z migracji 0015: faza tylko przy koncie prop.
+    check(
+      "accounts_prop_phase",
+      sql`${t.propPhase} is null or (${t.propPhase} in ('eval', 'funded') and ${t.type}::text = 'prop')`,
+    ),
+  ],
+);
 
 /* --- Instrumenty ---------------------------------------------------------- */
 
@@ -153,6 +163,7 @@ export const backtestSessions = pgTable(
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    check("backtest_sessions_kind", sql`${t.kind} in ('backtest', 'forward')`),
     uniqueIndex("backtest_sessions_external_ref_idx")
       .on(t.externalRef)
       .where(sql`${t.externalRef} is not null`),
@@ -441,6 +452,7 @@ export const screenshots = pgTable(
     origin: text().$type<"manual" | "tradingview" | "fxreplay">().notNull().default("manual"),
   },
   (t) => [
+    check("screenshots_origin", sql`${t.origin} in ('manual', 'tradingview', 'fxreplay')`),
     index("screenshots_trade_idx").on(t.tradeId),
     index("screenshots_day_note_idx").on(t.dayNoteId),
     check(

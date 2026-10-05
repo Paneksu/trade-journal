@@ -66,14 +66,21 @@ export type Filters = {
   search: string | null;
   /**
    * "live" = dziennik realny, "backtest" = sesje rodzaju backtest, "forward" =
-   * sesje rodzaju forward (ADR-027), "all" = wszystko. Konkretna sesja
+   * sesje rodzaju forward (ADR-027), "sessions" = trady z DOWOLNEJ sesji (backtest
+   * i forward razem, bez dziennika realnego), "all" = wszystko. Konkretna sesja
    * (`backtestSession`) bije rodzaj.
    */
-  source: "live" | "backtest" | "forward" | "all";
+  source: "live" | "backtest" | "forward" | "sessions" | "all";
   /** Kategoria konta (ADR-027): realne, prop_eval, prop_funded, demo. Pusta lista = bez filtru. */
   categories: Kategoria[];
   /** Zgodnosc trade'a z regulami wg oceny AI (ADR-028). */
   compliance: ZgodnoscTradu | null;
+  /**
+   * Podstawa oceny AI, wg ktorej liczy sie zgodnosc (ADR-028): `chart`, `history`
+   * albo `null` = obie (rozstrzyganie jak w zestawieniu). Panel zgodnosci niesie
+   * ja w linkach, zeby lista pokazywala te same trady, co liczby w panelu.
+   */
+  basis: "chart" | "history" | null;
   /** Id reguly z mozgu (np. "R-007") - trady, w ktorych ocena AI dotyczy tej reguly. */
   rule: string | null;
   /** Werdykt oceny reguly; razem z `rule` zaweza do tej reguly, sam dziala na dowolnej. */
@@ -104,6 +111,7 @@ export const EMPTY_FILTERS: Filters = {
   source: "live",
   categories: [],
   compliance: null,
+  basis: null,
   rule: null,
   ruleVerdict: null,
   backtestSession: null,
@@ -149,6 +157,7 @@ export function parseFilters(p: SearchParams): Filters {
   const status = one("status");
   const zgodnosc = one("zgodnosc");
   const regula = one("regula");
+  const podstawa = one("podstawa");
   const werdykt = one("werdykt");
 
   return {
@@ -179,13 +188,16 @@ export function parseFilters(p: SearchParams): Filters {
         ? "backtest"
         : source === "forward"
           ? "forward"
-          : source === "wszystko"
-            ? "all"
-            : "live",
+          : source === "sesje"
+            ? "sessions"
+            : source === "wszystko"
+              ? "all"
+              : "live",
     categories: texts(p.kategoria).filter(czyKategoria),
     compliance: (ZGODNOSCI_TRADU as readonly string[]).includes(zgodnosc ?? "")
       ? (zgodnosc as ZgodnoscTradu)
       : null,
+    basis: podstawa === "chart" || podstawa === "history" ? podstawa : null,
     // Id reguly trafia do SQL jako parametr, ale i tak wpuszczamy tylko ksztalt,
     // ktory API przyjmuje - smieci z adresu nie maja po co dochodzic do bazy.
     rule: regula && /^[A-Za-z0-9._-]{1,40}$/.test(regula) ? regula : null,
@@ -219,9 +231,10 @@ export function toSearchParams(f: Filters): URLSearchParams {
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
   if (f.outcome) p.set("wynik", f.outcome);
   put("szukaj", f.search);
-  if (f.source !== "live") p.set("zrodlo", f.source === "all" ? "wszystko" : f.source);
+  if (f.source !== "live") p.set("zrodlo", f.source === "all" ? "wszystko" : f.source === "sessions" ? "sesje" : f.source);
   if (f.categories.length) p.set("kategoria", f.categories.join(","));
   put("zgodnosc", f.compliance);
+  put("podstawa", f.basis);
   put("regula", f.rule);
   put("werdykt", f.ruleVerdict);
   put("sesja", f.backtestSession);
@@ -262,6 +275,14 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
   const w: (SQL | undefined)[] = [];
 
   if (f.source === "live") w.push(isNull(trades.backtestSessionId));
+  if (f.source === "sessions") {
+    // Trady z dowolnej sesji, bez dziennika realnego (ekran /backtest).
+    w.push(
+      f.backtestSession
+        ? eq(trades.backtestSessionId, f.backtestSession)
+        : sql`${trades.backtestSessionId} is not null`,
+    );
+  }
   if (f.source === "backtest" || f.source === "forward") {
     // Konkretna sesja bije rodzaj; bez niej zawezamy do sesji danego rodzaju (ADR-027).
     w.push(
@@ -297,7 +318,7 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
     sql`exists (select 1 from (
       select distinct on (c0.rule_id) c0.rule_id, c0.verdict
       from trade_rule_checks c0 join trade_reviews r on r.id = c0.review_id
-      where r.trade_id = ${trades.id}
+      where r.trade_id = ${trades.id}${f.basis ? sql` and r.basis = ${f.basis}` : sql``}
       order by c0.rule_id, (c0.verdict in ('pass', 'fail')) desc, (r.basis = 'chart') desc
     ) c where ${warunek})`;
   if (f.compliance === "niezgodne") w.push(sprawdzenie(sql`c.verdict = 'fail'`));

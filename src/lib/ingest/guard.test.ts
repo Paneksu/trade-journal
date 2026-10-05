@@ -15,14 +15,18 @@ const METODY = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 // Dozwolone eksporty konfiguracji trasy Next.js, poza handlerami.
 const KONFIGURACJA = ["dynamic", "runtime", "revalidate", "maxDuration", "fetchCache", "dynamicParams", "preferredRegion"];
 
-function trasy(katalog: string): string[] {
+function wszystkiePliki(katalog: string): string[] {
   const wynik: string[] = [];
   for (const nazwa of readdirSync(katalog)) {
     const pelna = path.join(katalog, nazwa);
-    if (statSync(pelna).isDirectory()) wynik.push(...trasy(pelna));
-    else if (/^route\.(ts|tsx|js|mjs)$/.test(nazwa)) wynik.push(pelna);
+    if (statSync(pelna).isDirectory()) wynik.push(...wszystkiePliki(pelna));
+    else wynik.push(pelna);
   }
   return wynik;
+}
+
+function trasy(katalog: string): string[] {
+  return wszystkiePliki(katalog).filter((p) => /^route\.(ts|tsx|js|mjs)$/.test(path.basename(p)));
 }
 
 function eksporty(zrodlo: string): { nazwa: string; deklaracja: string }[] {
@@ -63,6 +67,11 @@ describe("straznik: kazda trasa /api/ingest jest owinieta withIngest", () => {
       obce.map((e) => e.nazwa),
       "trasa Next.js nie moze eksportowac niczego poza handlerami i konfiguracja",
     ).toEqual([]);
+  });
+
+  it("w katalogu tras sa wylacznie pliki route.* (page, layout czy pliki pomocnicze obeszlyby brame)", () => {
+    const obce = wszystkiePliki(KORZEN).filter((p) => !/^route\.(ts|tsx|js|mjs)$/.test(path.basename(p)));
+    expect(obce.map((p) => path.relative(KORZEN, p))).toEqual([]);
   });
 
   it("matcher proxy wyklucza api/ingest/", () => {

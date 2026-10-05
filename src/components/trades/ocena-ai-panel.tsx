@@ -156,11 +156,12 @@ function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami 
             </table>
           </div>
         )}
-        {plan?.interwalWejscia && (
+        {typeof plan?.interwalWejscia === "string" && plan.interwalWejscia !== "" && (
           <p className="mt-2 text-xs text-faint">
             Wejście szukane na {plan.interwalWejscia}
-            {plan.interwalyKontekstu && plan.interwalyKontekstu.length > 0
-              ? `, kontekst z ${plan.interwalyKontekstu.join(", ")}`
+            {/* Stare wiersze mogly zapisac plan bez walidacji typow. */}
+            {Array.isArray(plan.interwalyKontekstu) && plan.interwalyKontekstu.length > 0
+              ? `, kontekst z ${plan.interwalyKontekstu.filter((x) => typeof x === "string").join(", ")}`
               : ""}
             .
           </p>

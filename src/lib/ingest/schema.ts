@@ -133,7 +133,16 @@ export const OcenaSchema = z
     summaryMd: z.string().max(20_000).nullish(),
     lesson: z.string().max(4_000).nullish(),
     brainVerdict: z.enum(["wejdz", "czekaj", "odpusc"]).nullish(),
-    brainPlan: z.record(z.string(), z.unknown()).nullish(),
+    // Plan mozgu: znane pola maja typy (UI na nich liczy), reszta przechodzi bez zmian.
+    brainPlan: z
+      .looseObject({
+        entry: z.number().finite().optional(),
+        stopLoss: z.number().finite().optional(),
+        takeProfit: z.number().finite().optional(),
+        interwalWejscia: z.string().max(20).optional(),
+        interwalyKontekstu: z.array(z.string().max(20)).max(10).optional(),
+      })
+      .nullish(),
     brainVersion: z.string().max(80).nullish(),
     evidenceCutoff: czas.nullish(),
     model: z.string().max(120).nullish(),

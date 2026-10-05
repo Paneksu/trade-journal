@@ -6,7 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { screenshots, tradeTags } from "@/lib/db/schema";
+import { screenshots, tradeTags, trades } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import type { TagSzkicu, TradeDraft, WyjscieSzkicu } from "@/lib/domain/trade-draft";
 import { fieldsForScope, readFromForm } from "@/lib/fields/fields";
@@ -317,14 +317,27 @@ export async function tagMany(tradeIds: number[], tagId: number, add: boolean): 
     const doDodania = tradeIds.filter((id) => !pomin.has(id));
     if (doDodania.length === 0) return;
 
-    await db
-      .insert(tradeTags)
-      .values(doDodania.map((tradeId) => ({ tradeId, tagId, interval: null })))
-      .onConflictDoNothing();
+    // Zmiana tagow to edycja w aplikacji: podbija `updated_at` w tej samej
+    // transakcji, inaczej kolejny zapis z API (mode=update) nadpisalby reczny
+    // tag zamiast zglosic `conflict` (ADR-026).
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(tradeTags)
+        .values(doDodania.map((tradeId) => ({ tradeId, tagId, interval: null })))
+        .onConflictDoNothing();
+      await tx.update(trades).set({ updatedAt: new Date() }).where(inArray(trades.id, doDodania));
+    });
   } else {
-    await db
-      .delete(tradeTags)
-      .where(and(inArray(tradeTags.tradeId, tradeIds), eq(tradeTags.tagId, tagId)));
+    await db.transaction(async (tx) => {
+      const zdjete = await tx
+        .delete(tradeTags)
+        .where(and(inArray(tradeTags.tradeId, tradeIds), eq(tradeTags.tagId, tagId)))
+        .returning({ tradeId: tradeTags.tradeId });
+      const ids = [...new Set(zdjete.map((w) => w.tradeId))];
+      if (ids.length > 0) {
+        await tx.update(trades).set({ updatedAt: new Date() }).where(inArray(trades.id, ids));
+      }
+    });
   }
   revalidatePath("/", "layout");
 }

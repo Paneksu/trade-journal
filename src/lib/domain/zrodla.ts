@@ -35,6 +35,6 @@ export function rodzajSesjiZFormularza(w: unknown): RodzajSesji {
 }
 
 /** Filtr `source` z `parseFilters` na wartosc przelacznika zrodla w pasku (parametr `zrodlo`). */
-export function zrodloPrzelacznika(source: "live" | "backtest" | "forward" | "all"): string {
-  return source === "all" ? "wszystko" : source;
+export function zrodloPrzelacznika(source: "live" | "backtest" | "forward" | "sessions" | "all"): string {
+  return source === "all" ? "wszystko" : source === "sessions" ? "sesje" : source;
 }

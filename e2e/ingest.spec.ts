@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { expect, request as pwRequest, test, type APIRequestContext } from "@playwright/test";
 import postgres from "postgres";
+
+import { wymagajLokalnych } from "./lokalne";
 import sharp from "sharp";
 
 /*
@@ -29,15 +31,6 @@ const RUN = Date.now().toString(36);
 const TAG = "E2E ingest FVG";
 /** Adresy testowe zmieniaja sie z kazdym przebiegiem: blokada po 8 bledach trzyma sie 10 minut w pamieci serwera. */
 const PREFIKS = `198.51.${1 + Math.floor(Math.random() * 250)}`;
-
-function dbLokalna(url: string): boolean {
-  try {
-    const h = new URL(url).hostname;
-    return h === "127.0.0.1" || h === "localhost" || h === "::1";
-  } catch {
-    return false;
-  }
-}
 
 test.describe.configure({ mode: "serial" });
 
@@ -128,11 +121,7 @@ test.describe("API synchronizacji", () => {
   }
 
   test.beforeAll(async () => {
-    if (!dbLokalna(DB_URL)) {
-      throw new Error(
-        `DATABASE_URL (${DB_URL.replace(/:[^:@/]*@/, ":***@") || "brak"}) nie wskazuje na bazę lokalną - testy API piszą do bazy i nie wolno ich puszczać na produkcji.`,
-      );
-    }
+    wymagajLokalnych(DB_URL, process.env.E2E_URL);
     sql = postgres(DB_URL, { max: 2 });
     api = await klient(`${PREFIKS}.200`);
     await posprzataj(true); // pozostalosci po przerwanych przebiegach
@@ -445,10 +434,12 @@ test.describe("API synchronizacji", () => {
       ["CME_MINI:NQZ2026", "NQ"],
       ["MNQ1!", "MNQ"],
       ["NQ", "NQ"],
+      ["CME_MINI:NQ1", "NQ"], // FX Replay: kontrakt ciagly bez "!" (N+Q+1 to nie miesiac Q)
+      ["CME_MINI:MNQ1", "MNQ"],
     ];
     const paczka = symbole.map(([s], i) => trade(20 + i, { symbol: s }));
     const b = await (await api.post("/api/ingest/trades", { data: { trades: paczka } })).json();
-    expect(b.results.map((x: { status: string }) => x.status)).toEqual(["created", "created", "created"]);
+    expect(b.results.map((x: { status: string }) => x.status)).toEqual(Array(symbole.length).fill("created"));
     for (const [i, [, oczekiwany]] of symbole.entries()) {
       const w = (await wierszTradu(paczka[i].externalRef))!;
       utworzoneTrady.push(w.id);
@@ -726,6 +717,41 @@ test.describe("API synchronizacji", () => {
     // Powtórka pominięcia jest idempotentna.
     const again = await (await api.post("/api/ingest/skips", { data: { skips: [{ externalRef: refPominiety }] } })).json();
     expect(again.results[0].status).toBe("already_skipped");
+  });
+
+  test("tag masowy z tabeli to edycja w aplikacji: kolejny update z API dostaje conflict (dodanie; zdjęcie pokrywa test na bazie)", async ({ page }) => {
+    const dane = trade(70);
+    const b = await (await api.post("/api/ingest/trades", { data: { trades: [dane] } })).json();
+    expect(b.results[0].status).toBe("created");
+    const id = b.results[0].id as number;
+    utworzoneTrady.push(id);
+    const przed = (await wierszTradu(dane.externalRef))!;
+    expect(przed.updated_at.getTime()).toBe(przed.ingested_at!.getTime());
+
+    const [tag] = await sql`select id from tags where name = ${TAG}`;
+    const oznacz = async (tryb: "dodaj" | "zdejmij") => {
+      // Tabela dziennika realnego: trade z konta glownego, dzien z 1991.
+      await page.goto("/trades?od=1991-03-01&do=1991-03-31");
+      await page.waitForLoadState("networkidle");
+      await page.getByLabel(`Zaznacz trade ${id}`).check();
+      if (tryb === "dodaj") {
+        await page.getByLabel("Dodaj tag do zaznaczonych").selectOption(String(tag.id));
+        await expect.poll(async () => {
+          const [w] = await sql`select count(*)::int as n from trade_tags where trade_id = ${id} and tag_id = ${tag.id}`;
+          return w.n;
+        }).toBe(1);
+      }
+    };
+
+    await oznacz("dodaj");
+    let po = (await wierszTradu(dane.externalRef))!;
+    expect(po.updated_at.getTime()).toBeGreaterThan(po.ingested_at!.getTime());
+    let r = await (await api.post("/api/ingest/trades", {
+      data: { mode: "update", trades: [{ ...dane, exits: [{ time: "1991-03-12T09:50:00-05:00", price: 20030 }] }] },
+    })).json();
+    expect(r.results[0].status).toBe("conflict");
+    expect((await wierszTradu(dane.externalRef))!.pnl).toBe(przed.pnl); // nic nie nadpisano
+
   });
 
   test("skasowanie trade'a w aplikacji zostawia nagrobek, a kolejne wysłanie daje skipped", async ({ page }) => {

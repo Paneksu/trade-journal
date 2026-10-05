@@ -142,6 +142,24 @@ describe("OcenaSchema", () => {
     if (!w.success) expect(opiszBledyZod(w.error, {}).join(" ")).toContain("drugi raz");
   });
 
+  it("brainPlan: znane pola maja typy, nieznane przechodza", () => {
+    const ok = OcenaSchema.safeParse({
+      basis: "chart",
+      brainPlan: { entry: 20000, stopLoss: 19990, interwalWejscia: "5m", interwalyKontekstu: ["1h", "4h"], notatka: "x" },
+    });
+    expect(ok.success).toBe(true);
+    for (const plan of [
+      { entry: "20000" },
+      { stopLoss: Number.POSITIVE_INFINITY },
+      { interwalWejscia: 5 },
+      { interwalWejscia: "x".repeat(21) },
+      { interwalyKontekstu: "1h" },
+      { interwalyKontekstu: Array.from({ length: 11 }, () => "1h") },
+    ]) {
+      expect(OcenaSchema.safeParse({ basis: "chart", brainPlan: plan }).success, JSON.stringify(plan)).toBe(false);
+    }
+  });
+
   it("werdykty i podstawa tylko z list", () => {
     expect(OcenaSchema.safeParse({ basis: "dowolna" }).success).toBe(false);
     expect(OcenaSchema.safeParse({ basis: "chart", brainVerdict: "kup" }).success).toBe(false);

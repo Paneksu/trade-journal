@@ -49,7 +49,14 @@ export function ZgodnoscPanel({
 
   const lamane = stats.poRegule.filter((r) => r.niezgodne > 0).slice(0, MAX_REGUL);
   const linkDoRegulyHref = (ruleId: string) => {
-    const p = toSearchParams({ ...filters, compliance: null, rule: ruleId, ruleVerdict: "fail" });
+    const p = toSearchParams({
+      ...filters,
+      compliance: null,
+      // Lista ma liczyc zgodnosc na tej samej podstawie co panel (ADR-028).
+      basis: podstawa === "kazda" ? null : podstawa,
+      rule: ruleId,
+      ruleVerdict: "fail",
+    });
     return `/trades?${p.toString()}`;
   };
 
