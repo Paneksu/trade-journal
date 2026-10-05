@@ -744,9 +744,9 @@ test.describe("API synchronizacji", () => {
     };
 
     await oznacz("dodaj");
-    let po = (await wierszTradu(dane.externalRef))!;
+    const po = (await wierszTradu(dane.externalRef))!;
     expect(po.updated_at.getTime()).toBeGreaterThan(po.ingested_at!.getTime());
-    let r = await (await api.post("/api/ingest/trades", {
+    const r = await (await api.post("/api/ingest/trades", {
       data: { mode: "update", trades: [{ ...dane, exits: [{ time: "1991-03-12T09:50:00-05:00", price: 20030 }] }] },
     })).json();
     expect(r.results[0].status).toBe("conflict");
