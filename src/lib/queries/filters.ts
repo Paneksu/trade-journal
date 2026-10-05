@@ -1,4 +1,4 @@
-import { and, eq, gte, ilike, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 
 import { trades } from "@/lib/db/schema";
 import { czyInterwal, czyWarstwa, interwalyWarstwy, type Warstwa } from "@/lib/domain/interwaly";
@@ -10,7 +10,14 @@ import {
   type WariantKierunku,
 } from "@/lib/domain/kierunek";
 import { sqlWynik, type Progi, type Wynik } from "@/lib/domain/outcome";
+import { czyKategoria, type Kategoria } from "@/lib/domain/kategorie";
 import { czyStatus } from "@/lib/domain/status";
+import type { Werdykt } from "@/lib/domain/zgodnosc";
+
+/** Wyniki oceny zgodnosci trade'a z regulami (ADR-028), liczone z `trade_rule_checks`. */
+export const ZGODNOSCI_TRADU = ["zgodne", "niezgodne", "nieocenione"] as const;
+export type ZgodnoscTradu = (typeof ZGODNOSCI_TRADU)[number];
+const WERDYKTY: readonly Werdykt[] = ["pass", "fail", "na", "unclear"];
 
 /**
  * Filtry tabeli i statystyk. Jedno miejsce, w ktorym adres URL zamienia sie
@@ -57,8 +64,20 @@ export type Filters = {
   sessions: string[];
   outcome: Wynik | null;
   search: string | null;
-  /** "live" = dziennik realny, "backtest" = symulacje, "all" = oba zbiory */
-  source: "live" | "backtest" | "all";
+  /**
+   * "live" = dziennik realny, "backtest" = sesje rodzaju backtest, "forward" =
+   * sesje rodzaju forward (ADR-027), "all" = wszystko. Konkretna sesja
+   * (`backtestSession`) bije rodzaj.
+   */
+  source: "live" | "backtest" | "forward" | "all";
+  /** Kategoria konta (ADR-027): realne, prop_eval, prop_funded, demo. Pusta lista = bez filtru. */
+  categories: Kategoria[];
+  /** Zgodnosc trade'a z regulami wg oceny AI (ADR-028). */
+  compliance: ZgodnoscTradu | null;
+  /** Id reguly z mozgu (np. "R-007") - trady, w ktorych ocena AI dotyczy tej reguly. */
+  rule: string | null;
+  /** Werdykt oceny reguly; razem z `rule` zaweza do tej reguly, sam dziala na dowolnej. */
+  ruleVerdict: Werdykt | null;
   backtestSession: number | null;
   fields: Record<string, string[]>;
 };
@@ -83,6 +102,10 @@ export const EMPTY_FILTERS: Filters = {
   outcome: null,
   search: null,
   source: "live",
+  categories: [],
+  compliance: null,
+  rule: null,
+  ruleVerdict: null,
   backtestSession: null,
   fields: {},
 };
@@ -124,6 +147,9 @@ export function parseFilters(p: SearchParams): Filters {
   const pominiete = one("pominiete");
   const skalowanie = one("skalowanie");
   const status = one("status");
+  const zgodnosc = one("zgodnosc");
+  const regula = one("regula");
+  const werdykt = one("werdykt");
 
   return {
     from: one("od"),
@@ -148,7 +174,22 @@ export function parseFilters(p: SearchParams): Filters {
     outcome:
       outcome === "zysk" || outcome === "strata" || outcome === "be" ? outcome : null,
     search: one("szukaj"),
-    source: source === "backtest" ? "backtest" : source === "wszystko" ? "all" : "live",
+    source:
+      source === "backtest"
+        ? "backtest"
+        : source === "forward"
+          ? "forward"
+          : source === "wszystko"
+            ? "all"
+            : "live",
+    categories: texts(p.kategoria).filter(czyKategoria),
+    compliance: (ZGODNOSCI_TRADU as readonly string[]).includes(zgodnosc ?? "")
+      ? (zgodnosc as ZgodnoscTradu)
+      : null,
+    // Id reguly trafia do SQL jako parametr, ale i tak wpuszczamy tylko ksztalt,
+    // ktory API przyjmuje - smieci z adresu nie maja po co dochodzic do bazy.
+    rule: regula && /^[A-Za-z0-9._-]{1,40}$/.test(regula) ? regula : null,
+    ruleVerdict: (WERDYKTY as readonly string[]).includes(werdykt ?? "") ? (werdykt as Werdykt) : null,
     backtestSession: session ? Number(session) : null,
     fields,
   };
@@ -178,7 +219,11 @@ export function toSearchParams(f: Filters): URLSearchParams {
   if (f.sessions.length) p.set("rynek", f.sessions.join(","));
   if (f.outcome) p.set("wynik", f.outcome);
   put("szukaj", f.search);
-  if (f.source !== "live") p.set("zrodlo", f.source === "all" ? "wszystko" : "backtest");
+  if (f.source !== "live") p.set("zrodlo", f.source === "all" ? "wszystko" : f.source);
+  if (f.categories.length) p.set("kategoria", f.categories.join(","));
+  put("zgodnosc", f.compliance);
+  put("regula", f.rule);
+  put("werdykt", f.ruleVerdict);
   put("sesja", f.backtestSession);
   for (const [key, values] of Object.entries(f.fields)) {
     if (values.length) p.set(`pole_${key}`, values.join(","));
@@ -205,6 +250,9 @@ export function activeFilterCount(f: Filters): number {
   if (f.sessions.length) n += 1;
   if (f.outcome) n += 1;
   if (f.search) n += 1;
+  if (f.categories.length) n += 1;
+  if (f.compliance) n += 1;
+  if (f.rule || f.ruleVerdict) n += 1;
   n += Object.keys(f.fields).length;
   return n;
 }
@@ -214,12 +262,55 @@ export function whereClause(f: Filters, progi: Progi): SQL | undefined {
   const w: (SQL | undefined)[] = [];
 
   if (f.source === "live") w.push(isNull(trades.backtestSessionId));
-  if (f.source === "backtest") {
+  if (f.source === "backtest" || f.source === "forward") {
+    // Konkretna sesja bije rodzaj; bez niej zawezamy do sesji danego rodzaju (ADR-027).
     w.push(
       f.backtestSession
         ? eq(trades.backtestSessionId, f.backtestSession)
-        : isNotNull(trades.backtestSessionId),
+        : sql`${trades.backtestSessionId} in (select id from backtest_sessions where kind = ${f.source})`,
     );
+  }
+
+  if (f.categories.length) {
+    // Kategoria wynika z konta (ADR-027); prop bez fazy nie wpada do zadnej.
+    const warunkiKont = f.categories.map((k) =>
+      k === "realne"
+        ? sql`a.type::text = 'live'`
+        : k === "demo"
+          ? sql`a.type::text in ('demo', 'paper')`
+          : k === "prop_eval"
+            ? sql`(a.type::text = 'prop' and a.prop_phase = 'eval')`
+            : sql`(a.type::text = 'prop' and a.prop_phase = 'funded')`,
+    );
+    w.push(
+      sql`${trades.accountId} in (select a.id from accounts a where ${sql.join(warunkiKont, sql` or `)})`,
+    );
+  }
+
+  // Zgodnosc z regulami (ADR-028). W mianowniku tylko pass/fail - na i unclear
+  // nie sa ani zgodnoscia, ani zlamaniem (patrz domain/zgodnosc.ts).
+  // Kazda regula liczy sie RAZ na trade, tym samym rozstrzygnieciem co w
+  // zestawieniu (queries/oceny.ts): wygrywa ocena, ktora cos rozstrzygnela,
+  // a przy remisie ta z wykresu (nie znala wyniku). Bez tego lista i
+  // zestawienie obok niej pokazywalyby rozne trady jako niezgodne.
+  const sprawdzenie = (warunek: SQL) =>
+    sql`exists (select 1 from (
+      select distinct on (c0.rule_id) c0.rule_id, c0.verdict
+      from trade_rule_checks c0 join trade_reviews r on r.id = c0.review_id
+      where r.trade_id = ${trades.id}
+      order by c0.rule_id, (c0.verdict in ('pass', 'fail')) desc, (r.basis = 'chart') desc
+    ) c where ${warunek})`;
+  if (f.compliance === "niezgodne") w.push(sprawdzenie(sql`c.verdict = 'fail'`));
+  if (f.compliance === "zgodne") {
+    w.push(sprawdzenie(sql`c.verdict = 'pass'`));
+    w.push(sql`not ${sprawdzenie(sql`c.verdict = 'fail'`)}`);
+  }
+  if (f.compliance === "nieocenione") w.push(sql`not ${sprawdzenie(sql`c.verdict in ('pass', 'fail')`)}`);
+  if (f.rule || f.ruleVerdict) {
+    const czesci: SQL[] = [];
+    if (f.rule) czesci.push(sql`c.rule_id = ${f.rule}`);
+    if (f.ruleVerdict) czesci.push(sql`c.verdict = ${f.ruleVerdict}`);
+    w.push(sprawdzenie(sql.join(czesci, sql` and `)));
   }
 
   if (f.from) w.push(gte(trades.tradingDay, f.from));
