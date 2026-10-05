@@ -6,6 +6,7 @@ import { Filter, X } from "lucide-react";
 
 import { Button, Input, Label, Select } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
+import { KATEGORIE, KATEGORIA_NAZWY } from "@/lib/domain/kategorie";
 import { INTERWALY, WARSTWA_NAZWY, WARSTWY } from "@/lib/domain/interwaly";
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import type { FieldDef } from "@/lib/fields/fields";
@@ -22,6 +23,7 @@ export function FilterBar({
   instruments,
   tags,
   fields,
+  reguly = [],
   activeCount,
   embedded = false,
   domyslnieOtwarty = true,
@@ -30,6 +32,8 @@ export function FilterBar({
   instruments: Instrument[];
   tags: TagWithCategory[];
   fields: FieldDef[];
+  /** Reguly z ocen AI do podpowiedzi w polu "Reguła" (ADR-028); pusta lista = samo pole tekstowe. */
+  reguly?: { id: string; text: string }[];
   activeCount: number;
   /** Gdy pasek jest czescia wiekszego panelu, nie rysuje wlasnej ramki. */
   embedded?: boolean;
@@ -306,6 +310,80 @@ export function FilterBar({
               )}
             </div>
           ))}
+        </div>
+
+        <div className="grid gap-3 border-t border-line p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <fieldset className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+            <legend className="etykieta">Kategoria konta</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {KATEGORIE.map((k) => (
+                <label key={k} className="cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="kategoria"
+                    value={k}
+                    defaultChecked={values("kategoria").includes(k)}
+                    className="peer sr-only"
+                  />
+                  <span
+                    className={cx(
+                      "inline-flex items-center rounded-[var(--radius-control)] border",
+                      "border-line-strong bg-surface-2 px-2 py-1 text-xs text-muted",
+                      "transition-colors duration-150 hover:border-faint",
+                      "peer-checked:border-accent peer-checked:text-text",
+                      "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent",
+                    )}
+                  >
+                    {KATEGORIA_NAZWY[k]}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="zgodnosc">Zgodność z regułami</Label>
+            <Select id="zgodnosc" name="zgodnosc" defaultValue={value("zgodnosc")}>
+              <option value="">wszystkie</option>
+              <option value="zgodne">zgodne</option>
+              <option value="niezgodne">niezgodne (złamana reguła)</option>
+              <option value="nieocenione">nieocenione</option>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="regula">Reguła</Label>
+            <Input
+              id="regula"
+              name="regula"
+              list="reguly-ocen"
+              defaultValue={value("regula")}
+              placeholder="np. R-007"
+              pattern="[A-Za-z0-9._\-]{1,40}"
+              title="Identyfikator reguły z mózgu, np. R-007"
+              autoComplete="off"
+            />
+            {reguly.length > 0 && (
+              <datalist id="reguly-ocen">
+                {reguly.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.text}
+                  </option>
+                ))}
+              </datalist>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="werdykt">Werdykt reguły</Label>
+            <Select id="werdykt" name="werdykt" defaultValue={value("werdykt")}>
+              <option value="">dowolny</option>
+              <option value="pass">zgodna</option>
+              <option value="fail">złamana</option>
+              <option value="na">nie dotyczy</option>
+              <option value="unclear">niejasne</option>
+            </Select>
+          </div>
         </div>
 
         <div className="px-3 pb-3">

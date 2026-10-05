@@ -38,6 +38,22 @@ export async function getOceny(tradeId: number): Promise<OcenaZRegulami[]> {
   return oceny.map((o) => ({ ...o, reguly: reguly.filter((r) => r.reviewId === o.id) }));
 }
 
+/**
+ * Reguly, ktore wystapily w ocenach - do podpowiedzi w filtrze. Tresc z
+ * najnowszej oceny (regula w mozgu moze sie zmieniac, ocena trzyma kopie).
+ */
+export async function getRegulyOcen(): Promise<{ id: string; text: string }[]> {
+  const wiersze = await db
+    .selectDistinctOn([tradeRuleChecks.ruleId], {
+      id: tradeRuleChecks.ruleId,
+      text: tradeRuleChecks.ruleText,
+    })
+    .from(tradeRuleChecks)
+    .innerJoin(tradeReviews, eq(tradeRuleChecks.reviewId, tradeReviews.id))
+    .orderBy(tradeRuleChecks.ruleId, desc(tradeReviews.createdAt));
+  return wiersze;
+}
+
 export type PodstawaZgodnosci = "chart" | "history" | "kazda";
 
 /**

@@ -4,6 +4,7 @@ import { GalleryGrid } from "@/components/gallery/gallery-grid";
 import { SourceSwitch } from "@/components/layout/toolbar";
 import { FilterBar } from "@/components/trades/filter-bar";
 import { requireSession } from "@/lib/auth/guard";
+import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
 import { cx } from "@/lib/classes";
 import {
   getAccounts,
@@ -12,6 +13,7 @@ import {
   getTags,
 } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters, toSearchParams } from "@/lib/queries/filters";
+import { getRegulyOcen } from "@/lib/queries/oceny";
 import { countTrades, getTrades } from "@/lib/queries/trades";
 
 export const metadata = { title: "Galeria — Dziennik tradingowy" };
@@ -47,13 +49,14 @@ export default async function GaleriaPage({
   const strona = Math.max(1, Number(oneParam(params.strona) ?? 1) || 1);
   const offset = (strona - 1) * ROZMIAR_STRONY;
 
-  const [accounts, instruments, tags, fields, trades, ile] = await Promise.all([
+  const [accounts, instruments, tags, fields, trades, ile, reguly] = await Promise.all([
     getAccounts(),
     getInstruments(),
     getTags(),
     getFields(),
     getTrades(filtry, { limit: ROZMIAR_STRONY, offset }),
     countTrades(filtry),
+    getRegulyOcen(),
   ]);
 
   const stron = Math.max(1, Math.ceil(ile / ROZMIAR_STRONY));
@@ -67,9 +70,7 @@ export default async function GaleriaPage({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <SourceSwitch
-            active={
-              filtry.source === "backtest" ? "backtest" : filtry.source === "all" ? "wszystko" : "live"
-            }
+            active={zrodloPrzelacznika(filtry.source)}
           />
           <p className="text-sm text-faint">
             {ile === 0 ? "brak trade'ów" : `${ile} trade'ów · strona ${strona} z ${stron}`}
@@ -83,6 +84,7 @@ export default async function GaleriaPage({
           instruments={instruments}
           tags={tags}
           fields={fields}
+          reguly={reguly}
           activeCount={activeFilterCount(filtry)}
           embedded
           domyslnieOtwarty={false}

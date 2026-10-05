@@ -95,6 +95,21 @@ export function UnitSwitch({ active }: { active: string }) {
   );
 }
 
+export function PodstawaSwitch({ active }: { active: string }) {
+  return (
+    <Segment
+      label="Podstawa oceny AI"
+      paramKey="podstawa"
+      active={active}
+      options={[
+        { value: "kazda", label: "wszystkie" },
+        { value: "chart", label: "z wykresu" },
+        { value: "history", label: "po fakcie" },
+      ]}
+    />
+  );
+}
+
 export function SourceSwitch({ active }: { active: string }) {
   return (
     <Segment
@@ -104,6 +119,7 @@ export function SourceSwitch({ active }: { active: string }) {
       options={[
         { value: "live", label: "dziennik" },
         { value: "backtest", label: "backtest" },
+        { value: "forward", label: "forward" },
         { value: "wszystko", label: "razem" },
       ]}
     />
