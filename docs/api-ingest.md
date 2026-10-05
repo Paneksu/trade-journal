@@ -58,6 +58,10 @@ Pozycja trade'a:
 | `tags` | tablica do 40 | `{ tagId, interval? }` albo `{ category, name, interval? }`; tagi nie są zakładane automatycznie |
 | `snapshot` | obiekt | surowe dane klienta do diagnozy (`source_snapshot`), bez wpływu na statystyki |
 
+Przy `mode: "update"` fakty trade'a (konto, symbol, sesja, kierunek, czasy, ceny, wyjścia, stop, cel)
+są **wymieniane w całości** na te z paczki — pominięte `sessionId` oznacza „bez sesji". Tylko pola
+z wiersza „pominięte = nie ruszaj" (notatki, gotowość, własne pola, tagi) zostają, gdy ich nie podasz.
+
 Wynik: `{ dryRun, mode, summary: {created, updated, unchanged, conflict, skipped, error}, results: [...] }`,
 gdzie każda pozycja ma `index`, `externalRef`, `status` (`created` `updated` `unchanged` `conflict`
 `skipped` `error`), a zależnie od statusu `id`, `note`, `error`, `errors[]`, `fieldErrors`,
