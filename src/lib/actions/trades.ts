@@ -6,7 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { screenshots, tradeTags, trades } from "@/lib/db/schema";
+import { screenshots, tradeTags } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import type { TagSzkicu, TradeDraft, WyjscieSzkicu } from "@/lib/domain/trade-draft";
 import { fieldsForScope, readFromForm } from "@/lib/fields/fields";
@@ -15,6 +15,7 @@ import { deleteScreenshot, deleteTradeDir } from "@/lib/screenshots";
 import { bladLimitu } from "@/lib/screenshots-limit";
 import { persistTrade } from "@/lib/trades/persist";
 import { policzZrzuty, wgrajZrzuty, type ZrzutZInterwalem } from "@/lib/trades/screenshots-db";
+import { usunTradeZNagrobkami } from "@/lib/trades/tombstones";
 
 export type FormState = {
   ok: boolean;
@@ -203,7 +204,8 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
 
 export async function deleteTrade(id: number): Promise<void> {
   await requireSession();
-  await db.delete(trades).where(eq(trades.id, id));
+  // Trade z API zostawia nagrobek w ingest_skips, w tej samej transakcji (ADR-026).
+  await usunTradeZNagrobkami([id]);
   await deleteTradeDir(id);
   revalidatePath("/", "layout");
   redirect("/trades");
@@ -330,7 +332,8 @@ export async function tagMany(tradeIds: number[], tagId: number, add: boolean): 
 export async function deleteMany(tradeIds: number[]): Promise<void> {
   await requireSession();
   if (tradeIds.length === 0) return;
-  await db.delete(trades).where(inArray(trades.id, tradeIds));
+  // Nagrobki dla tradow z API w tej samej transakcji co kasowanie (ADR-026).
+  await usunTradeZNagrobkami(tradeIds);
   await Promise.all(tradeIds.map(deleteTradeDir));
   revalidatePath("/", "layout");
 }

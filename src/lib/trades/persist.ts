@@ -25,11 +25,33 @@ export type PersistMeta = {
   sourceSnapshot: Record<string, unknown> | null;
 };
 
+/** Wynik policzony przez `computeTrade` - zwracany przy suchym biegu zamiast zapisu. */
+export type PodgladZapisu = {
+  status: string;
+  pnl: number | null;
+  ticks: number | null;
+  rMultiple: number | null;
+  riskAmount: number | null;
+  durationS: number | null;
+  exitCount: number;
+  marketSession: string | null;
+  tradingDay: string | null;
+};
+
 export type PersistResult =
-  | { ok: true; id: number }
+  | { ok: true; id: number; podglad?: PodgladZapisu }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
-export async function persistTrade(szkic: TradeDraft, meta?: PersistMeta): Promise<PersistResult> {
+export type PersistOpcje = {
+  /** Suchy bieg: cala walidacja i liczenie, zero zapisow (ADR-026). */
+  dryRun?: boolean;
+};
+
+export async function persistTrade(
+  szkic: TradeDraft,
+  meta?: PersistMeta,
+  opcje: PersistOpcje = {},
+): Promise<PersistResult> {
   const instrumentRow = szkic.instrumentId
     ? ((
         await db.select().from(instruments).where(eq(instruments.id, szkic.instrumentId)).limit(1)
@@ -196,6 +218,24 @@ export async function persistTrade(szkic: TradeDraft, meta?: PersistMeta): Promi
         }
       : {}),
   };
+
+  if (opcje.dryRun) {
+    return {
+      ok: true,
+      id: szkic.id ?? 0,
+      podglad: {
+        status: d.status,
+        pnl: result.pnl,
+        ticks: result.ticks,
+        rMultiple: result.rMultiple,
+        riskAmount: result.riskAmount,
+        durationS: result.durationS,
+        exitCount: result.exitCount,
+        marketSession: result.marketSession,
+        tradingDay: result.tradingDay,
+      },
+    };
+  }
 
   // Interwaly tagow wolajacy przefiltrowal juz przez `czyInterwal`.
   const przypisania = szkic.tags;

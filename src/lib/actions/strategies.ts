@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { backtestSessions, strategies } from "@/lib/db/schema";
+import { nagrobkiTradeowSesji } from "@/lib/trades/tombstones";
 import type { ActionState } from "./settings";
 
 function text(d: FormData, k: string): string | null {
@@ -120,7 +121,11 @@ export async function saveBacktestSession(_p: ActionState, d: FormData): Promise
 export async function deleteBacktestSession(sessionId: number): Promise<void> {
   await requireSession();
   // Kaskada usuwa takze trade'y sesji - to symulacja, nie historia realnego konta.
-  await db.delete(backtestSessions).where(eq(backtestSessions.id, sessionId));
+  // Trady z API znikaja razem z sesja, wiec nagrobki ida PRZED kasowaniem, w jednej transakcji (ADR-026).
+  await db.transaction(async (tx) => {
+    await nagrobkiTradeowSesji(tx, sessionId);
+    await tx.delete(backtestSessions).where(eq(backtestSessions.id, sessionId));
+  });
   revalidatePath("/", "layout");
   redirect("/backtest");
 }
