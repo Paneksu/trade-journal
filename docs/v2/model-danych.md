@@ -947,3 +947,35 @@ Po instalacji lokalnie (nie na produkcji): `SELECT public.f_unaccent('Zarządzan
 - tabeli sesji logowania (sesja zostaje bezstanowa, ADR-005); sudo i drugi krok to ciasteczka;
 - połączenia `strategies` (stara tabela, ADR-020) z `setups` — `strategies` zostaje przy sesjach
   backtestu bez zmian; ewentualne `backtest_sessions.setup_id` to SHOULD na później.
+
+---
+
+## 12. Odstępstwa od szkicu w migracjach 0017-0018
+
+Migracje: `drizzle/0017_api_tokens.sql`, `drizzle/0018_notatki.sql`; cofnięcie: `docs/v2/rollback/`;
+dowód: `src/lib/db/migracje-v2.db.test.ts` (41 testów na prawdziwej bazie, `TEST_DATABASE_URL`).
+Wszystko poniżej to odstępstwa od SQL-a w sekcjach 2 i 4, który był szkicem kształtu.
+
+| # | Odstępstwo | Uzasadnienie |
+|---|---|---|
+| 1 | `tj_forbid_update()` jest zdefiniowana w 0018 przez `CREATE OR REPLACE`, a nie tylko w 0016. | Gałąź fazy 1 (0016) powstawała równolegle; 0018 potrzebuje tej funkcji (`note_revisions`). Ciało ma być identyczne w obu plikach. |
+| 2 | 0017 **nie** dokłada FK `auth_events.token_id` → `api_tokens`. | `auth_events` (0016) nie istnieje w gałęzi fazy 2. Po scaleniu dopisać `ALTER TABLE auth_events ADD CONSTRAINT auth_events_token_id_fkey FOREIGN KEY (token_id) REFERENCES api_tokens (id) ON DELETE NO ACTION` na końcu 0017 (jeśli nigdzie jeszcze niezastosowana) i `.references(() => apiTokens.id)` w `schema.ts`. Test pada, gdy tabela istnieje bez tego FK. |
+| 3 | Funkcje triggerów nie mają parametrów w deklaracji; kolumny i stany podaje `CREATE TRIGGER … EXECUTE FUNCTION f('a','b')` (`TG_ARGV`). `tj_guard_columns` odrzuca nazwę nieistniejącej kolumny przy pierwszym `UPDATE`. | W plpgsql trigger nie ma parametrów. Literówka w nazwie kolumny nie może po cichu wyłączyć ochrony (porównanie `NULL` z `NULL` zawsze przechodzi). |
+| 4 | `tj_require_ui_actor('kolumna', 'stan', …)` strzeże wejścia w stan **i wyjścia z niego**, także przy `INSERT`. Na `rule_versions` strzeżone: `approved`, `rejected`, **`superseded`** (szkic: dwa pierwsze). Na `hypotheses.decision` dwa triggery: `UPDATE` przy każdej zmianie, `INSERT` gdy `decision <> 'active'`. | Agent nie może ani wstawić od razu zatwierdzonej wersji, ani cofnąć zatwierdzenia, ani wyłączyć obowiązującej wersji przez `superseded`. UI robi `superseded` w tej samej transakcji co zatwierdzenie (aktor `ui`). |
+| 5 | Trzeci SQLSTATE: `TJ422` (bramka progu `n` dla `origin = 'ai'`). | Ani 409, ani 403 nie opisują „za mało danych”. API mapuje na 422. |
+| 6 | `n` hipotezy liczy `tj_hypothesis_n(id)`, która pyta o `trade_note_links` dynamicznie (`to_regclass`). | `trade_note_links` powstaje w 0019. Dopóki jej nie ma: `n = n_imported`. Po 0019 ta sama funkcja liczy linki (tylko `closed`, `role = 'hypothesis'`) **bez redefinicji**, więc nie ma ukrytego sprzężenia migracji ani ryzyka zapomnianego `CREATE OR REPLACE`. 0019 musi zachować kolumny `trade_id`, `note_id`, `role`. |
+| 7 | `user_words.sha256`, `byte_len` i `notes.content_hash` mają `DEFAULT ''` / `0`. | Trigger i tak nadpisuje (klient nie ustala skrótu); `DEFAULT` pozwala pominąć kolumnę w `INSERT` i tak ma typ w drizzle. Bez triggera `CHECK` odrzuci pusty ciąg. Trigger **nie ufa** skrótowi od klienta; niezgodność wykrywa API przed `INSERT`-em. |
+| 8 | `tj_guard_columns` na `user_words` obejmuje też `id`, `role`, `created_at`. Dodane: CHECK `byte_len > 0`, indeks `(backtest_session_id)`. | `role` zmienia znaczenie dowodu, `created_at` jest dowodem czasu. Indeks na `backtest_session_id` potrzebny kaskadzie z kasowania sesji. |
+| 9 | Brak osobnego indeksu `(status) WHERE status = 'proposed'` na `rule_versions`. | Kolejkę „Do decyzji” obsługuje już unikat `rule_versions_proposed_idx (rule_id) WHERE status = 'proposed'`; indeks na stałej kolumnie byłby bezużyteczny. |
+| 10 | Dodatkowe CHECK-i: `screenshots.sha256` (regex SHA-256), `settings.ruleset_version >= 0`, `note_links.target` niepusty, `notes.rev >= 1`. Wszystkie ograniczenia mają jawne nazwy (unikaty `*_uq`, indeksy `*_idx`). | Konwencja „skróty z CHECK”; nazwy potrzebne do porównania ze `schema.ts`. |
+| 11 | `tj_note_revision`: `INSERT` zawsze ustawia `rev = 1`; `UPDATE` bez zmiany `title`/`body_md`/`meta` (archiwizacja, `SET NULL` z FK) nie tworzy rewizji i **wymusza** dotychczasowe `rev` i `content_hash`; brak `tj.actor` zapisuje się jako `'unknown'`. | Klient nie może ręcznie podbić `rev` ani podmienić skrótu; zapis treści nie pada z powodu braku etykiety aktora. |
+| 12 | `note_revisions.actor` to aktor transakcji, która **zastąpiła** zapisaną treść nową. | Rewizja przechowuje `OLD`; autora `OLD` baza nie zna (nie ma kolumny `last_actor`). |
+
+Konsekwencje dla kodu API: (a) `device_codes.user_code` przyjmuje wyłącznie 20 spółgłosek
+`BCDFGHJKLMNPQRSTVWXZ` (przykład `KTWM-4HQP` z ADR-030 narusza `device_codes_user_code`;
+alfabet generatora = ta lista); (b) tytuł notatki jest unikalny globalnie po `lower(f_unaccent(title))`,
+także między rodzajami i dla zarchiwizowanych (import musi rozstrzygać kolizje); (c) zatwierdzenie
+nowej wersji reguły w UI musi w jednej transakcji najpierw ustawić poprzednią `approved` na
+`superseded`, potem nową na `approved` (unikaty częściowe sprawdzane po każdej instrukcji);
+(d) bardzo duży `body_md` (ponad ok. 1 MB unikalnych słów) przekroczy limit `tsvector`
+(błąd 54000) — API powinno ograniczyć rozmiar treści.

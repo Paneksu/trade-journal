@@ -1,8 +1,10 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
+  customType,
   date,
   index,
   integer,
@@ -450,14 +452,29 @@ export const screenshots = pgTable(
        ponownym wyslaniu wylacznie zrzuty swojego pochodzenia i nigdy nie rusza
        recznych (ADR-026). */
     origin: text().$type<"manual" | "tradingview" | "fxreplay">().notNull().default("manual"),
+    /* --- v2 (migracja 0018, ADR-029) --------------------------------------
+       Zrzut moze wisiec tez pod notatka (np. przyklad pojecia ICT). Kasowana
+       notatka zabiera swoje zrzuty. */
+    noteId: integer().references(() => notes.id, { onDelete: "cascade" }),
+    /* SHA-256 bajtow pliku WGRANEGO (przed konwersja sharp -> WebP): dowod do
+       evidence_hash. Stare wiersze: NULL. */
+    sha256: text(),
+    capturedAt: timestamp({ withTimezone: true }),
+    /* Symbol, interwal i zakres z `tj shot`. */
+    chartState: jsonb().$type<Record<string, unknown>>(),
   },
   (t) => [
     check("screenshots_origin", sql`${t.origin} in ('manual', 'tradingview', 'fxreplay')`),
     index("screenshots_trade_idx").on(t.tradeId),
     index("screenshots_day_note_idx").on(t.dayNoteId),
+    index("screenshots_note_idx")
+      .on(t.noteId)
+      .where(sql`${t.noteId} is not null`),
+    check("screenshots_sha256", sql`${t.sha256} is null or ${t.sha256} ~ '^[0-9a-f]{64}$'`),
+    // Dokladnie jedno z trzech (migracja 0018; wczesniej: jedno z dwoch).
     check(
       "screenshots_owner",
-      sql`(${t.tradeId} is null) != (${t.dayNoteId} is null)`,
+      sql`num_nonnulls(${t.tradeId}, ${t.dayNoteId}, ${t.noteId}) = 1`,
     ),
   ],
 );
@@ -643,7 +660,9 @@ export const savedViews = pgTable("saved_views", {
 
 /* --- Ustawienia (jeden wiersz) -------------------------------------------- */
 
-export const settings = pgTable("settings", {
+export const settings = pgTable(
+  "settings",
+  {
   id: integer().primaryKey().default(1),
   passwordHash: text(),
   sessionVersion: integer().notNull().default(1),
@@ -660,8 +679,428 @@ export const settings = pgTable("settings", {
      po obu stronach (patrz lib/domain/outcome.ts). */
   beProgRMille: integer().notNull().default(100), // 100 = 0,100 R
   beProgNaKontrakt: bigint({ mode: "number" }).notNull().default(200), // centy = 2,00 USD
+  /* Numer zestawu regul (migracja 0018, ADR-033). Podbija go wylacznie akcja
+     zatwierdzenia w UI, w tej samej transakcji co zmiana statusu wersji reguly. */
+  rulesetVersion: integer().notNull().default(0),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check("settings_ruleset_version", sql`${t.rulesetVersion} >= 0`)],
+);
+
+/* ==========================================================================
+   v2: tokeny API i notatki (migracje 0017 i 0018, docs/v2/model-danych.md)
+   Migracje pisane recznie; ten plik jest ich lustrem (kolumny, CHECK-i, indeksy).
+   Nie da sie tu wyrazic funkcji ani triggerow (f_unaccent, tj_guard_columns,
+   tj_require_ui_actor, tj_user_words_hash, tj_note_revision, tj_rule_version_gate)
+   - o nich mowi test src/lib/db/migracje-v2.db.test.ts.
+   ========================================================================== */
+
+/* tsvector w kolumnach generowanych. Baza liczy je sama (GENERATED ALWAYS ... STORED),
+   wiec drizzle nie wstawia ich przy INSERT; wyrazenie ponizej jest tylko opisem. */
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
 });
+
+export type ApiScope = "read" | "write" | "propose";
+export type Origin = "user" | "ai" | "mentor" | "vault-import";
+
+/* --- Tokeny urzadzen (0017, ADR-030) -------------------------------------- */
+
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: serial().primaryKey(),
+    name: text().notNull(),
+    // 8 znakow: wyszukanie wiersza i pokazanie w UI. Sekretu nie zapisujemy.
+    prefix: text().notNull(),
+    // SHA-256 calego tokenu (tj_<prefix>_<sekret>), hex.
+    tokenSha256: text().notNull(),
+    // Zakresu "approve" nie ma i CHECK nie pozwoli go dopisac bez migracji.
+    scopes: text().array().$type<ApiScope[]>().notNull(),
+    createdVia: text().$type<"device_code" | "ui">().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // Zapis najwyzej raz na minute (UPDATE ... WHERE last_used_at < now() - 1 min).
+    lastUsedAt: timestamp({ withTimezone: true }),
+    lastUsedIp: text(),
+    // NULL = bez terminu.
+    expiresAt: timestamp({ withTimezone: true }),
+    // Tokenow sie nie kasuje, tylko uniewaznia: wskazuja na nie tabele niezmienne.
+    revokedAt: timestamp({ withTimezone: true }),
+    revokedReason: text(),
+  },
+  (t) => [
+    check("api_tokens_name", sql`length(${t.name}) between 1 and 80`),
+    check("api_tokens_prefix", sql`${t.prefix} ~ '^[a-z0-9]{8}$'`),
+    check("api_tokens_sha256", sql`${t.tokenSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "api_tokens_scopes",
+      sql`cardinality(${t.scopes}) between 1 and 3 and ${t.scopes} <@ array['read', 'write', 'propose']`,
+    ),
+    check("api_tokens_created_via", sql`${t.createdVia} in ('device_code', 'ui')`),
+    unique("api_tokens_prefix_uq").on(t.prefix),
+    unique("api_tokens_sha256_uq").on(t.tokenSha256),
+  ],
+);
+
+export const deviceCodes = pgTable(
+  "device_codes",
+  {
+    id: serial().primaryKey(),
+    deviceCodeSha256: text().notNull(),
+    // 8 spolglosek z listy bez mylacych liter, np. BCDF-GHJK.
+    userCode: text().notNull(),
+    clientName: text().notNull(),
+    clientIp: text(),
+    requestedScopes: text().array().$type<ApiScope[]>().notNull(),
+    grantedScopes: text().array().$type<ApiScope[]>(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // created_at + 10 min (liczy API).
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    lastPolledAt: timestamp({ withTimezone: true }),
+    approvedAt: timestamp({ withTimezone: true }),
+    deniedAt: timestamp({ withTimezone: true }),
+    // Token powstaje przy odpytaniu PO zatwierdzeniu: jawny token nie lezy w bazie.
+    tokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+    consumedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    check("device_codes_sha256", sql`${t.deviceCodeSha256} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "device_codes_user_code",
+      sql`${t.userCode} ~ '^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$'`,
+    ),
+    check("device_codes_client_name", sql`length(${t.clientName}) between 1 and 80`),
+    check(
+      "device_codes_requested_scopes",
+      sql`${t.requestedScopes} <@ array['read', 'write', 'propose']`,
+    ),
+    check(
+      "device_codes_granted_scopes",
+      sql`${t.grantedScopes} is null or ${t.grantedScopes} <@ ${t.requestedScopes}`,
+    ),
+    check("device_codes_decision", sql`${t.approvedAt} is null or ${t.deniedAt} is null`),
+    check(
+      "device_codes_granted_when_approved",
+      sql`(${t.approvedAt} is null) = (${t.grantedScopes} is null)`,
+    ),
+    check(
+      "device_codes_consumed",
+      sql`${t.consumedAt} is null or (${t.approvedAt} is not null and ${t.tokenId} is not null)`,
+    ),
+    unique("device_codes_sha256_uq").on(t.deviceCodeSha256),
+    unique("device_codes_user_code_uq").on(t.userCode),
+  ],
+);
+
+/* --- Notatki (0018, ADR-029) ------------------------------------------------ */
+
+export type NoteKind =
+  | "system"
+  | "concept"
+  | "rule"
+  | "decision_proc"
+  | "trade_note"
+  | "session"
+  | "hypothesis"
+  | "mistake"
+  | "strength"
+  | "brain_decision"
+  | "learning"
+  | "profile"
+  | "strategy"
+  | "setup";
+
+export const notes = pgTable(
+  "notes",
+  {
+    id: serial().primaryKey(),
+    kind: text().$type<NoteKind>().notNull(),
+    // ASCII z tytulu, do adresow.
+    slug: text().notNull(),
+    title: text().notNull(),
+    bodyMd: text().notNull().default(""),
+    meta: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    origin: text().$type<Origin>().notNull().default("user"),
+    // SET NULL: notatka przezywa skasowanie trade'u / sesji. notes nie jest niezmienna.
+    tradeId: integer().references(() => trades.id, { onDelete: "set null" }),
+    backtestSessionId: integer().references(() => backtestSessions.id, {
+      onDelete: "set null",
+    }),
+    day: date(),
+    // 'vault:<sciezka>' (import), 'mentor:<video_id>'.
+    externalRef: text(),
+    /* sha256(body_md w bajtach UTF-8) - liczy trigger tj_note_revision. Domyslny ""
+       tylko po to, by INSERT mogl go pominac (CHECK odrzuci pusty ciag, gdyby
+       trigger nie dzialal). */
+    contentHash: text().notNull().default(""),
+    // If-Match; podbija trigger przy zmianie title / body_md / meta.
+    rev: integer().notNull().default(1),
+    archivedAt: timestamp({ withTimezone: true }),
+    createdByTokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // Generowana przez baze; unaccent + konfiguracja 'simple' (ADR-029).
+    search: tsvector().generatedAlwaysAs(
+      sql`setweight(to_tsvector('simple', public.f_unaccent("title")), 'A') || setweight(to_tsvector('simple', public.f_unaccent("body_md")), 'B')`,
+    ),
+  },
+  (t) => [
+    check(
+      "notes_kind",
+      sql`${t.kind} in ('system', 'concept', 'rule', 'decision_proc', 'trade_note', 'session', 'hypothesis', 'mistake', 'strength', 'brain_decision', 'learning', 'profile', 'strategy', 'setup')`,
+    ),
+    check("notes_slug", sql`${t.slug} ~ '^[a-z0-9][a-z0-9-]{0,119}$'`),
+    check("notes_title", sql`length(${t.title}) between 1 and 200`),
+    check("notes_origin", sql`${t.origin} in ('user', 'ai', 'mentor', 'vault-import')`),
+    check("notes_content_hash", sql`${t.contentHash} ~ '^[0-9a-f]{64}$'`),
+    check("notes_rev", sql`${t.rev} >= 1`),
+    unique("notes_slug_uq").on(t.slug),
+    uniqueIndex("notes_external_ref_idx")
+      .on(t.externalRef)
+      .where(sql`${t.externalRef} is not null`),
+    // [[Tytul]] rozwiazuje sie po tytule jak w Obsidianie.
+    uniqueIndex("notes_title_norm_idx").on(sql`(lower(public.f_unaccent(${t.title})))`),
+    index("notes_search_idx").using("gin", t.search),
+    index("notes_title_trgm_idx").using(
+      "gin",
+      sql`(lower(public.f_unaccent(${t.title}))) gin_trgm_ops`,
+    ),
+    index("notes_body_trgm_idx").using(
+      "gin",
+      sql`(lower(public.f_unaccent(${t.bodyMd}))) gin_trgm_ops`,
+    ),
+    index("notes_kind_idx").on(t.kind),
+    index("notes_trade_idx")
+      .on(t.tradeId)
+      .where(sql`${t.tradeId} is not null`),
+    index("notes_day_idx")
+      .on(t.day)
+      .where(sql`${t.day} is not null`),
+    index("notes_session_idx")
+      .on(t.backtestSessionId)
+      .where(sql`${t.backtestSessionId} is not null`),
+  ],
+);
+
+/* Historia tresci, tylko dopisywanie (trigger tj_forbid_update). Wiersze wstawia
+   trigger tj_note_revision na notes, nie kod aplikacji. */
+export const noteRevisions = pgTable(
+  "note_revisions",
+  {
+    id: serial().primaryKey(),
+    noteId: integer()
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    // Numer rewizji zachowanej w tym wierszu (OLD.rev w chwili zmiany).
+    rev: integer().notNull(),
+    title: text().notNull(),
+    bodyMd: text().notNull(),
+    meta: jsonb().$type<Record<string, unknown>>().notNull(),
+    contentHash: text().notNull(),
+    // Aktor transakcji, ktora zastapila te tresc nowa.
+    actor: text().notNull(),
+    changedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("note_revisions_content_hash", sql`${t.contentHash} ~ '^[0-9a-f]{64}$'`),
+    unique("note_revisions_note_rev_uq").on(t.noteId, t.rev),
+  ],
+);
+
+export const noteLinks = pgTable(
+  "note_links",
+  {
+    id: serial().primaryKey(),
+    fromNoteId: integer()
+      .notNull()
+      .references(() => notes.id, { onDelete: "cascade" }),
+    // Surowa tresc [[...]] bez aliasu po "|".
+    target: text().notNull(),
+    // NULL = notatki jeszcze nie ma; dowiazuje sie, gdy powstanie.
+    toNoteId: integer().references(() => notes.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    check("note_links_target", sql`length(${t.target}) > 0`),
+    unique("note_links_from_target_uq").on(t.fromNoteId, t.target),
+    index("note_links_to_idx").on(t.toNoteId),
+    index("note_links_unresolved_idx")
+      .on(sql`(lower(public.f_unaccent(${t.target})))`)
+      .where(sql`${t.toNoteId} is null`),
+  ],
+);
+
+/* Slowa uzytkownika doslownie. Niezmienne poza interpretacja AI (trigger
+   tj_guard_columns); skrot i dlugosc liczy trigger tj_user_words_hash. */
+export const userWords = pgTable(
+  "user_words",
+  {
+    id: serial().primaryKey(),
+    // Bajt w bajt: bez trim, bez NFC, bez zamiany CRLF.
+    text: text().notNull(),
+    sha256: text().notNull().default(""),
+    byteLen: integer().notNull().default(0),
+    source: text().$type<"chat" | "note" | "chart" | "ui" | "mobile" | "vault-import">().notNull(),
+    // Czym jest ten tekst: 'trade.note', 'plan.thesis', 'correction', ... (lista w kodzie).
+    role: text(),
+    tradeId: integer().references(() => trades.id, { onDelete: "cascade" }),
+    noteId: integer().references(() => notes.id, { onDelete: "cascade" }),
+    backtestSessionId: integer().references(() => backtestSessions.id, { onDelete: "cascade" }),
+    day: date(),
+    // Kiedy uzytkownik to napisal (z klienta).
+    capturedAt: timestamp({ withTimezone: true }).notNull(),
+    // Jedyna zmienna tresc wiersza; w UI zawsze "interpretacja AI".
+    aiInterpretation: text(),
+    interpretationModel: text(),
+    interpretationAt: timestamp({ withTimezone: true }),
+    // NO ACTION, nigdy SET NULL: to tabela niezmienna.
+    supersedesId: integer().references((): AnyPgColumn => userWords.id, {
+      onDelete: "no action",
+    }),
+    createdByTokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    search: tsvector().generatedAlwaysAs(sql`to_tsvector('simple', public.f_unaccent("text"))`),
+  },
+  (t) => [
+    check("user_words_text", sql`length(${t.text}) > 0`),
+    check("user_words_sha256", sql`${t.sha256} ~ '^[0-9a-f]{64}$'`),
+    check("user_words_byte_len", sql`${t.byteLen} > 0`),
+    check(
+      "user_words_source",
+      sql`${t.source} in ('chat', 'note', 'chart', 'ui', 'mobile', 'vault-import')`,
+    ),
+    index("user_words_search_idx").using("gin", t.search),
+    index("user_words_trade_idx")
+      .on(t.tradeId)
+      .where(sql`${t.tradeId} is not null`),
+    index("user_words_note_idx")
+      .on(t.noteId)
+      .where(sql`${t.noteId} is not null`),
+    index("user_words_session_idx")
+      .on(t.backtestSessionId)
+      .where(sql`${t.backtestSessionId} is not null`),
+    index("user_words_day_idx")
+      .on(t.day)
+      .where(sql`${t.day} is not null`),
+    // Jedna poprawka na wersje.
+    uniqueIndex("user_words_supersedes_idx")
+      .on(t.supersedesId)
+      .where(sql`${t.supersedesId} is not null`),
+  ],
+);
+
+export const hypotheses = pgTable(
+  "hypotheses",
+  {
+    id: serial().primaryKey(),
+    code: text().notNull(),
+    // RESTRICT: hipotezy nie da sie osierocic skasowaniem notatki.
+    noteId: integer()
+      .notNull()
+      .references(() => notes.id, { onDelete: "restrict" }),
+    // Decyzja czlowieka (trigger tj_require_ui_actor). Faza i status statystyczny sa wyliczane.
+    decision: text()
+      .$type<"active" | "confirmed" | "rejected" | "abandoned">()
+      .notNull()
+      .default("active"),
+    progN: integer().notNull().default(20),
+    thresholds: jsonb().$type<Record<string, unknown>>().notNull().default({}),
+    // n z sejfu sprzed aplikacji.
+    nImported: integer().notNull().default(0),
+    declaredAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    check("hypotheses_code", sql`${t.code} ~ '^H-[0-9]{3,}$'`),
+    check(
+      "hypotheses_decision",
+      sql`${t.decision} in ('active', 'confirmed', 'rejected', 'abandoned')`,
+    ),
+    check("hypotheses_prog_n", sql`${t.progN} >= 1`),
+    check("hypotheses_n_imported", sql`${t.nImported} >= 0`),
+    unique("hypotheses_code_uq").on(t.code),
+    unique("hypotheses_note_uq").on(t.noteId),
+  ],
+);
+
+export const rules = pgTable(
+  "rules",
+  {
+    id: serial().primaryKey(),
+    code: text().notNull(),
+    noteId: integer()
+      .notNull()
+      .references(() => notes.id, { onDelete: "restrict" }),
+    // Twarda regula -> wskaznik dyscypliny.
+    hard: boolean().notNull().default(false),
+    retiredAt: timestamp({ withTimezone: true }),
+    retiredInRuleset: integer(),
+    retiredReason: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("rules_code", sql`${t.code} ~ '^R-[0-9]{3,}$'`),
+    check("rules_retired", sql`(${t.retiredAt} is null) = (${t.retiredInRuleset} is null)`),
+    unique("rules_code_uq").on(t.code),
+    unique("rules_note_uq").on(t.noteId),
+  ],
+);
+
+export const ruleVersions = pgTable(
+  "rule_versions",
+  {
+    id: serial().primaryKey(),
+    ruleId: integer()
+      .notNull()
+      .references(() => rules.id, { onDelete: "cascade" }),
+    version: integer().notNull(),
+    textMd: text().notNull(),
+    status: text().$type<"proposed" | "approved" | "rejected" | "superseded">().notNull(),
+    origin: text().$type<Origin>().notNull(),
+    // Najsilniejszy kontrargument (MUST 10).
+    counterargument: text(),
+    // Trade'y, swiece, zrzuty, poziom dowodu, n.
+    evidence: jsonb().$type<Record<string, unknown>>(),
+    // Podstawa propozycji AI. RESTRICT, nie SET NULL (tabela niezmienna).
+    hypothesisId: integer().references(() => hypotheses.id, { onDelete: "restrict" }),
+    // Numer zestawu nadany przy zatwierdzeniu.
+    rulesetVersion: integer(),
+    proposedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp({ withTimezone: true }),
+    supersededAt: timestamp({ withTimezone: true }),
+    createdByTokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+  },
+  (t) => [
+    check("rule_versions_version", sql`${t.version} >= 1`),
+    check("rule_versions_text", sql`length(${t.textMd}) > 0`),
+    check(
+      "rule_versions_status",
+      sql`${t.status} in ('proposed', 'approved', 'rejected', 'superseded')`,
+    ),
+    check("rule_versions_origin", sql`${t.origin} in ('user', 'ai', 'mentor', 'vault-import')`),
+    check(
+      "rule_versions_ai_proof",
+      sql`${t.origin} <> 'ai' or (${t.counterargument} is not null and length(${t.counterargument}) > 0 and ${t.evidence} is not null and ${t.hypothesisId} is not null)`,
+    ),
+    check(
+      "rule_versions_mentor_proof",
+      sql`${t.origin} <> 'mentor' or ${t.evidence} is not null`,
+    ),
+    check(
+      "rule_versions_ruleset",
+      sql`(${t.status} in ('approved', 'superseded')) = (${t.rulesetVersion} is not null)`,
+    ),
+    unique("rule_versions_rule_version_uq").on(t.ruleId, t.version),
+    // Jedna obowiazujaca wersja i jedna propozycja naraz na regule.
+    uniqueIndex("rule_versions_approved_idx")
+      .on(t.ruleId)
+      .where(sql`${t.status} = 'approved'`),
+    uniqueIndex("rule_versions_proposed_idx")
+      .on(t.ruleId)
+      .where(sql`${t.status} = 'proposed'`),
+  ],
+);
 
 export type Account = typeof accounts.$inferSelect;
 export type Instrument = typeof instruments.$inferSelect;
@@ -679,3 +1118,12 @@ export type Settings = typeof settings.$inferSelect;
 export type TradeReview = typeof tradeReviews.$inferSelect;
 export type TradeRuleCheck = typeof tradeRuleChecks.$inferSelect;
 export type IngestSkip = typeof ingestSkips.$inferSelect;
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type DeviceCode = typeof deviceCodes.$inferSelect;
+export type Note = typeof notes.$inferSelect;
+export type NoteRevision = typeof noteRevisions.$inferSelect;
+export type NoteLink = typeof noteLinks.$inferSelect;
+export type UserWords = typeof userWords.$inferSelect;
+export type Hypothesis = typeof hypotheses.$inferSelect;
+export type Rule = typeof rules.$inferSelect;
+export type RuleVersion = typeof ruleVersions.$inferSelect;
