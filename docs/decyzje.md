@@ -1632,3 +1632,20 @@ z cofnięciem, a dopiski do strategii (obserwacje, nie reguły) wchodzą bez zat
    podlegają bramce „poniżej progu `n` AI nie proponuje reguły” (ta bramka dotyczy wniosków AI
    z własnych trade'ów, `origin = 'ai'`). W UI są podpisane „wg mentora, n = 0”. Nadal są tylko
    propozycją: zatwierdza wyłącznie użytkownik, po jednej (MUST 16.5).
+
+---
+
+## ADR-030, uzupełnienie wdrożeniowe fazy 2 / R2 (2026-10-15)
+
+Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `docs/api-v2.md`, `docs/openapi-v2.json`):
+
+- **Brak kasowania nawet notatek** (ADR-032): „D” z CRUD to archiwizacja (`PATCH archived: true`, odwracalna, bez zmiany `rev`).
+- **Pochodzenie deklarowane przez klienta** ogranicza się do `ai`, `mentor`, `vault-import`; `user` jest zarezerwowane dla UI, żeby agent nie podszył się pod użytkownika.
+- **Interpretacja AI słów użytkownika** (`PUT /user-words/:id/interpretation`) ustawia się raz (drugi raz 409); poprawki idą przez korekty w UI (faza 2b).
+- **`POST /user-words` jest idempotentny** po (skrót, `capturedAt`, źródło, rola, kotwice): ponowne wysłanie to 200 z tym samym `id`.
+- **`withApi` nie otwiera jednej transakcji na całe zapytanie**: zapisy trade'ów mają własną transakcję w `persistTrade`, a zrzuty to I/O na dysku. Handler dostaje `api.zapis(tx => …)`, która ustawia `tj.actor` na tym samym połączeniu.
+- **Tytuły notatek unikalne globalnie** (także zarchiwizowane i między rodzajami), bo `[[Tytuł]]` rozwiązuje się po tytule; kolizja to 409 ze wskazaniem istniejącej notatki.
+- **Evidence propozycji reguły** jest obiektem JSON (nie tablicą). Import z sejfu: `externalRef` daje idempotencję, `vaultStatus` ląduje w `notes.meta.vault_status` i nigdy nie zatwierdza.
+- **Kody własne baz**: `TJ409` (niezmienność), `TJ403` (zatwierdzenie spoza UI), `TJ422` (próg n); API mapuje je na 409/403/422 bez parsowania komunikatu.
+- **Werdykt z `as_of`** stanie się niezmienny dopiero w migracji 0020 (faza 2b); do tego czasu `reviews` zachowuje się jak w ADR-028.
+- **TODO po scaleniu z fazą 1**: sudo + TOTP przed zatwierdzeniem urządzenia, wpisy w `auth_events`, FK `auth_events.token_id`.
