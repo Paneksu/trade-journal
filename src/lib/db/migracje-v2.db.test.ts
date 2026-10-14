@@ -1,10 +1,18 @@
 /**
- * Dowod na prawdziwej bazie dla migracji 0017 i 0018 (ADR-029, ADR-030, ADR-033):
+ * Dowod na prawdziwej bazie dla migracji 0017-0027 (ADR-029, ADR-030, ADR-033):
  *  (a) migracje od zera daja to samo, co deklaruje schema.ts,
- *  (b) triggery niezmiennosci, zatwierdzen i bramki n,
+ *  (b) triggery niezmiennosci, zatwierdzen i bramki n (0018),
+ *  (f) presety prop z badania: 138 wierszy zgodnych z JSON-em bajt w bajt (0024),
+ *  (b2) playbook, kolejka AI, dopiski (0020), (b3) plan zamrozony, werdykt niezmienny, rytual dnia (0021),
+ *  (b4) hipotezy, prop, przeglad tygodnia, wykres, slownik, mentor (0022-0027),
+ *  (g) kasowanie trade'u nie jest blokowane przez nowe ograniczenia i triggery,
  *  (c) f_unaccent i wyszukiwanie ("zarzadzanie" znajduje "Zarzadzanie"),
  *  (d) slowa uzytkownika bajt w bajt (skrot w bazie == skrot z Node),
- *  (e) odwracalnosc (skrypty docs/v2/rollback/*.sql) i ponowne zastosowanie.
+ *  (e) odwracalnosc (skrypty docs/v2/rollback/*.sql): po kazdym cofnieciu katalog bazy == katalog po poprzedniej
+ *      migracji, potem ponowne zastosowanie.
+ *
+ * Asercje negatywne triggerow idą przez trigger(): blad MUSI pochodzic z tego triggera (po jego wylaczeniu
+ * ta sama akcja przechodzi), wiec test czerwieni sie na zepsutym albo usunietym triggerze.
  *
  * Uruchamia sie WYLACZNIE, gdy ustawiona jest TEST_DATABASE_URL, np.
  *   TEST_DATABASE_URL=postgres://journal:journal@127.0.0.1:55433/tj_faza2_migracje npx vitest run src/lib/db/migracje-v2.db.test.ts
@@ -18,8 +26,10 @@
  */
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { fileURLToPath } from "node:url";
 import { is } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -196,7 +206,136 @@ if (!TEST_URL) {
     return t.id as number;
   }
 
-  describe("migracje 0017-0019 na prawdziwej bazie", () => {
+  /* ---- pomocnicze dla migracji 0020-0027 ---------------------------------------- */
+
+  type Tx = postgres.TransactionSql;
+
+  /**
+   * Dowod, ze ASERCJA NEGATYWNA naprawde sprawdza trigger: akcja ma (1) paść z podanym SQLSTATE,
+   * a (2) po wylaczeniu TEGO triggera (w transakcji, ktora i tak sie wycofuje) przejsc bez bledu.
+   * Gdyby blad pochodzil z czegos innego (CHECK, FK, literowka w danych), druga faza by padla,
+   * a gdyby trigger zniknal albo zepsul sie warunek, padnie pierwsza.
+   */
+  async function trigger(
+    tabela: string,
+    nazwa: string,
+    kod: string,
+    akcja: (tx: Tx) => Promise<unknown>,
+    fragment?: string,
+  ) {
+    const w: { e?: Blad } = {};
+    await wycofywalna(async (tx) => {
+      w.e = await blad(akcja(tx));
+    });
+    expect(w.e?.code, `${tabela} / ${nazwa}: SQLSTATE (komunikat: ${w.e?.message})`).toBe(kod);
+    if (fragment) expect(w.e?.message, `${tabela} / ${nazwa}: komunikat`).toContain(fragment);
+    try {
+      await wycofywalna(async (tx) => {
+        await tx.unsafe(`ALTER TABLE ${tabela} DISABLE TRIGGER ${nazwa}`);
+        await akcja(tx);
+      });
+    } catch (e) {
+      throw new Error(
+        `${tabela} / ${nazwa}: akcja pada tez po wylaczeniu triggera (${(e as Error).message}), wiec blad nie pochodzi z tego triggera`,
+      );
+    }
+  }
+
+  /** Akcja jako dany aktor (set_config lokalny dla transakcji, jak w API). */
+  const jakoAktor =
+    (kto: string, fn: (tx: Tx) => Promise<unknown>) =>
+    async (tx: Tx) => {
+      await aktor(tx, kto);
+      return fn(tx);
+    };
+
+  async function kontoInstr(db: Db) {
+    const [a] = await db`INSERT INTO accounts (name) VALUES (${unik("konto")}) RETURNING id`;
+    const [i] = await db`
+      INSERT INTO instruments (symbol, name, tick_size, tick_value)
+      VALUES (${unik("SYM")}, 'Test', 0.25, 5000) RETURNING id`;
+    return { accountId: a.id as number, instrumentId: i.id as number };
+  }
+  type KI = Awaited<ReturnType<typeof kontoInstr>>;
+
+  async function tradeDla(db: Db, k: KI, status = "closed"): Promise<number> {
+    const [t] = await db`
+      INSERT INTO trades (account_id, instrument_id, direction, entry_time, entry_price, contracts, status)
+      VALUES (${k.accountId}, ${k.instrumentId}, 'long', now(), 100, 1, ${status}::trade_status) RETURNING id`;
+    return t.id as number;
+  }
+
+  async function slowa(
+    db: Db,
+    tekst: string,
+    o: { tradeId?: number | null; day?: string | null; source?: string } = {},
+  ): Promise<number> {
+    const [w] = await db`
+      INSERT INTO user_words (text, source, captured_at, trade_id, day)
+      VALUES (${tekst}, ${o.source ?? "ui"}, now(), ${o.tradeId ?? null}, ${o.day ?? null}) RETURNING id`;
+    return w.id as number;
+  }
+
+  async function nowyToken(db: Db): Promise<number> {
+    const [t] = await db`
+      INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via)
+      VALUES ('2b', ${"tb" + String(100000 + ++seq)}, ${sha256Node(unik("tok"))}, ARRAY['read','write'], 'ui')
+      RETURNING id`;
+    return t.id as number;
+  }
+
+  async function nowySetup(db: Db): Promise<{ setupId: number; noteId: number }> {
+    const noteId = await nowaNotatka(db, unik("Karta setupu"), { kind: "setup" });
+    const [s] = await db`
+      INSERT INTO setups (slug, name, note_id) VALUES (${unik("setup")}, 'Setup testowy', ${noteId}) RETURNING id`;
+    return { setupId: s.id as number, noteId };
+  }
+
+  async function wersjaSetupu(db: Db, setupId: number, version = 1): Promise<number> {
+    const [v] = await db`
+      INSERT INTO setup_versions (setup_id, version, status, thresholds, origin)
+      VALUES (${setupId}, ${version}, 'proposed', '{"min_n":20}'::jsonb, 'user') RETURNING id`;
+    return v.id as number;
+  }
+
+  async function nowaHipotezaDb(db: Db, nImported = 0, progN = 20): Promise<{ id: number; noteId: number }> {
+    const noteId = await nowaNotatka(db, unik("Hipoteza 2b"), { kind: "hypothesis" });
+    const [h] = await db`
+      INSERT INTO hypotheses (code, note_id, prog_n, n_imported)
+      VALUES (${"H-" + String(5000 + ++seq)}, ${noteId}, ${progN}, ${nImported}) RETURNING id`;
+    return { id: h.id as number, noteId };
+  }
+
+  async function nowaSesja(db: Db): Promise<number> {
+    const [s] = await db`INSERT INTO backtest_sessions (name) VALUES (${unik("sesja")}) RETURNING id`;
+    return s.id as number;
+  }
+
+  /** Werdykt AI z dowodem (as_of + skrot) albo stary, bez dowodu. */
+  async function werdykt(
+    db: Db,
+    tradeId: number,
+    o: { basis?: string; asOf?: boolean; kind?: string; overrides?: number | null } = {},
+  ): Promise<number> {
+    const asOf = o.asOf ?? true;
+    const [r] = await db`
+      INSERT INTO trade_reviews (trade_id, basis, summary_md, kind, overrides_review_id, as_of, evidence_hash)
+      VALUES (${tradeId}, ${o.basis ?? "chart"}, 'ocena', ${o.kind ?? "ai"}, ${o.overrides ?? null},
+              CASE WHEN ${asOf}::boolean THEN now() END, ${asOf ? sha256Node(unik("dowod")) : null})
+      RETURNING id`;
+    return r.id as number;
+  }
+
+  /** Pelny werdykt AI z jednym sprawdzeniem reguly, wstawiony TA SAMA transakcja. */
+  const werdyktZSprawdzeniem = async (tx: Db, tradeId: number, basis = "chart", ruleId = "R-001") => {
+    const rid = await werdykt(tx, tradeId, { basis });
+    await tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${rid}, ${ruleId}, 'regula', 'pass')`;
+    return rid;
+  };
+
+
+
+  describe("migracje 0017-0027 na prawdziwej bazie", () => {
     beforeAll(async () => {
       // 1) migrator drizzle (jak `npm run db:migrate`: jedna transakcja na cala serie)
       await reset();
@@ -207,7 +346,7 @@ if (!TEST_URL) {
       // 2) scripts/migrate.mjs (jak start kontenera: transakcja na plik); to ta baza zostaje do testow
       await reset();
       const wyjscie1 = migrateSkryptem();
-      expect(wyjscie1).toContain("0018_notatki");
+      expect(wyjscie1).toContain("0027_mentor_luki");
       odciskSkrypt = await odcisk();
       const wyjscie2 = migrateSkryptem();
       expect(wyjscie2).toContain("nic nowego");
@@ -359,14 +498,88 @@ if (!TEST_URL) {
         expect(baza).toEqual(schemat.sort());
       });
 
-      it("tabele niezmienne nie maja FK z SET NULL / SET DEFAULT (pulapka z modelu, sekcja 6)", async () => {
+      /**
+       * Pulapka z modelu (sekcja 6): FK ON DELETE SET NULL / SET DEFAULT to UPDATE kolumny, wiec na
+       * tabeli pod ochrona triggera blokuje kasowanie rodzica. Naruszeniem jest SET NULL na kolumnie
+       * chronionej: w tabeli z tj_forbid_update (kazda kolumna), tj_guard_columns (kolumny z argumentow
+       * triggera), albo z funkcja chroniaca caly wiersz. Kolumny pod tj_guard_null_only wolno tylko
+       * zerowac, wiec SET NULL jest tam dozwolony.
+       */
+      async function naruszeniaSetNull(db: Db): Promise<string[]> {
+        const fk = await db`
+          SELECT c.conrelid AS rel, c.conrelid::regclass::text AS tabela, c.conname, a.attname AS kolumna
+          FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+          WHERE c.contype = 'f' AND c.confdeltype IN ('n', 'd') AND c.connamespace = 'public'::regnamespace`;
+        const triggery = await db`
+          SELECT t.tgrelid AS rel, p.proname AS funkcja, encode(t.tgargs, 'escape') AS argumenty
+          FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid WHERE NOT t.tgisinternal`;
+        const calyWiersz = ["tj_plan_guard", "tj_rule_check_guard"];
+        const wynik = new Set<string>();
+        for (const f of fk) {
+          for (const t of triggery.filter((x) => x.rel === f.rel)) {
+            const argumenty = (t.argumenty as string).split("\\000");
+            const chroni =
+              t.funkcja === "tj_forbid_update" ||
+              calyWiersz.includes(t.funkcja as string) ||
+              (t.funkcja === "tj_guard_columns" && argumenty.includes(f.kolumna as string));
+            if (chroni) wynik.add(`${f.tabela}.${f.kolumna} (${f.conname}) pod ${t.funkcja}`);
+          }
+        }
+        return [...wynik].sort();
+      }
+
+      it("tabele niezmienne nie maja FK z SET NULL / SET DEFAULT na chronionych kolumnach (pulapka z modelu, sekcja 6)", async () => {
+        expect(await naruszeniaSetNull(sql)).toEqual([]);
+        // wyjatki sa celowe: kolumny pod tj_guard_null_only i kolumny poza lista tj_guard_columns
+        const setNull = await sql`
+          SELECT c.conrelid::regclass::text AS tabela, a.attname AS kolumna FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+          WHERE c.contype = 'f' AND c.confdeltype = 'n' AND c.conrelid IN ('note_additions'::regclass, 'mentor_claims'::regclass)
+          ORDER BY 1, 2`;
+        expect(setNull.map((r) => `${r.tabela}.${r.kolumna}`)).toEqual([
+          "mentor_claims.merged_note_id",
+          "mentor_claims.setup_id",
+          "note_additions.quote_words_id",
+          "note_additions.trade_id",
+        ]);
+      });
+
+      it("kontrola pulapki czerwieni sie na zepsutym schemacie: SET NULL na chronionej kolumnie jest wykrywany", async () => {
+        await wycofywalna(async (tx) => {
+          await tx.unsafe(`ALTER TABLE note_additions DROP CONSTRAINT note_additions_suggestion_id_fkey,
+            ADD FOREIGN KEY (suggestion_id) REFERENCES ai_suggestions (id) ON DELETE SET NULL`);
+          await tx.unsafe(`ALTER TABLE trade_plans DROP CONSTRAINT trade_plans_thesis_words_id_fkey,
+            ADD FOREIGN KEY (thesis_words_id) REFERENCES user_words (id) ON DELETE SET NULL`);
+          await tx.unsafe(`ALTER TABLE interpretation_corrections DROP CONSTRAINT interpretation_corrections_term_id_fkey,
+            ADD FOREIGN KEY (term_id) REFERENCES profile_terms (id) ON DELETE SET NULL`);
+          const naruszenia = await naruszeniaSetNull(tx);
+          expect(naruszenia.map((n) => n.split(" ")[0])).toEqual([
+            "interpretation_corrections.term_id",
+            "note_additions.suggestion_id",
+            "trade_plans.thesis_words_id",
+          ]);
+        });
+      });
+
+      it("FK do user_words z wierszy, ktore gina razem z trade'em, sa odroczone (kolejnosc kaskad nie moze blokowac kasowania); reszta FK jest natychmiastowa", async () => {
         const wiersze = await sql`
-          SELECT c.conrelid::regclass::text AS tabela, c.conname FROM pg_constraint c
-          WHERE c.contype = 'f' AND c.confdeltype IN ('n', 'd')
-            AND c.conrelid IN (
-              SELECT tgrelid FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
-              WHERE NOT t.tgisinternal AND p.proname IN ('tj_forbid_update', 'tj_guard_columns'))`;
-        expect(wiersze.map((r) => `${r.tabela}.${r.conname}`)).toEqual([]);
+          SELECT c.conrelid::regclass::text || '.' || a.attname AS kolumna, c.condeferrable, c.condeferred, c.confdeltype
+          FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+          WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace AND (c.condeferrable OR c.condeferred)
+          ORDER BY 1`;
+        expect(wiersze.map((r) => r.kolumna)).toEqual([
+          "chart_annotations.words_id",
+          "interpretation_corrections.correction_words_id",
+          "setup_examples.caption_words_id",
+          "trade_plan_addenda.words_id",
+          "trade_plans.invalidation_words_id",
+          "trade_plans.thesis_words_id",
+        ]);
+        for (const r of wiersze) {
+          expect(r.condeferred, r.kolumna).toBe(true);
+          expect(r.confdeltype, r.kolumna).toBe("a"); // NO ACTION
+        }
       });
 
       it("jesli istnieje auth_events (faza 1), ma FK token_id -> api_tokens", async () => {
@@ -603,9 +816,8 @@ if (!TEST_URL) {
         expect(eDruga.code).toBe("23505");
       });
 
-      it("bramka n liczy trade'y z trade_note_links, gdy tabela istnieje (galaz dynamiczna; tabela-zaslepka w wycofanej transakcji)", async () => {
+      it("bramka n liczy trade'y z trade_note_links (tylko zamkniete, tylko rola hypothesis); po wycofaniu n = n_imported", async () => {
         await wycofywalna(async (tx) => {
-          await tx`CREATE TABLE trade_note_links (trade_id integer NOT NULL, note_id integer NOT NULL, role text NOT NULL)`;
           const hid = await nowaHipoteza({ nImported: 17, progN: 20 }, tx);
           const [h] = await tx`SELECT note_id FROM hypotheses WHERE id = ${hid}`;
           const t1 = await nowyTrade(tx);
@@ -614,16 +826,16 @@ if (!TEST_URL) {
           const tOtwarty = await nowyTrade(tx);
           await tx`UPDATE trades SET status = 'open' WHERE id = ${tOtwarty}`;
           for (const t of [t1, t2, tOtwarty]) {
-            await tx`INSERT INTO trade_note_links VALUES (${t}, ${h.note_id}, 'hypothesis')`;
+            await tx`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t}, ${h.note_id}, 'hypothesis', 'user')`;
           }
-          await tx`INSERT INTO trade_note_links VALUES (${t3}, ${h.note_id}, 'concept')`; // zla rola
+          await tx`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t3}, ${h.note_id}, 'concept', 'user')`; // zla rola
           const [n] = await tx`SELECT public.tj_hypothesis_n(${hid}) AS n`;
           expect(n.n).toBe(19); // 17 + 2 zamkniete, bez otwartego i bez roli concept
           await tx`UPDATE trade_note_links SET role = 'hypothesis' WHERE trade_id = ${t3}`;
           const [n2] = await tx`SELECT public.tj_hypothesis_n(${hid}) AS n`;
           expect(n2.n).toBe(20);
         });
-        // po wycofaniu tabela-zaslepka nie istnieje, a n = n_imported
+        // po wycofaniu linkow nie ma, a n = n_imported
         const hid = await nowaHipoteza({ nImported: 5, progN: 20 });
         const [n] = await sql`SELECT public.tj_hypothesis_n(${hid}) AS n`;
         expect(n.n).toBe(5);
@@ -729,6 +941,1078 @@ if (!TEST_URL) {
         const eTytul = await blad(wstaw("concept", unik("s"), tytul.toUpperCase()));
         expect(eTytul.code).toBe("23505");
         expect(eTytul.constraint_name).toBe("notes_title_norm_idx");
+      });
+    });
+
+    /* ------------------------------------------------------------------ (f) */
+    describe("(f) presety prop z badania (0024): dane bajt w bajt", () => {
+      type Wiersz = Record<string, unknown> & { extra: Record<string, unknown> };
+      const json = JSON.parse(readFileSync(path.join(ROOT, "docs", "research", "prop-presety.json"), "utf8")) as Wiersz[];
+
+      it("138 wierszy, 9 firm, 76 do weryfikacji (needs_verification widoczne, nie ukryte)", async () => {
+        const [r] = await sql`
+          SELECT count(*)::int AS n, count(DISTINCT firm)::int AS firmy,
+                 count(*) FILTER (WHERE needs_verification)::int AS do_weryfikacji,
+                 count(*) FILTER (WHERE effective_from IS NOT NULL)::int AS z_data_wejscia
+          FROM prop_firm_presets`;
+        expect(r).toEqual({ n: 138, firmy: 9, do_weryfikacji: 76, z_data_wejscia: 0 });
+        expect(json.length).toBe(138);
+        expect(json.filter((w) => w.needs_verification).length).toBe(76);
+      });
+
+      it("KAZDY z 138 wierszy zgadza sie z JSON-em: kolumny liczbowe, daty, napisy (bajty UTF-8) i extra", async () => {
+        const wBazie = await sql`
+          SELECT id, firm, program, phase, account_size_cents::text AS account_size_cents, dd_type, max_dd_cents::text AS max_dd_cents,
+                 dd_lock_cents::text AS dd_lock_cents, daily_loss_cents::text AS daily_loss_cents,
+                 profit_target_cents::text AS profit_target_cents, consistency_pct::float8 AS consistency_pct,
+                 min_days, max_contracts_mini, max_contracts_micro, source_url, read_on::text AS read_on,
+                 needs_verification, effective_from, extra, notes,
+                 encode(convert_to(firm, 'UTF8'), 'hex') AS firm_hex, encode(convert_to(program, 'UTF8'), 'hex') AS program_hex,
+                 encode(convert_to(source_url, 'UTF8'), 'hex') AS url_hex, encode(convert_to(coalesce(notes, ''), 'UTF8'), 'hex') AS notes_hex,
+                 encode(convert_to(extra::text, 'UTF8'), 'hex') AS extra_hex
+          FROM prop_firm_presets ORDER BY id`;
+        expect(wBazie.length).toBe(json.length);
+        const hex = (s: string) => Buffer.from(s, "utf8").toString("hex");
+        const liczbaLubNull = (v: unknown) => (v === null ? null : String(v));
+        const roznice: string[] = [];
+        wBazie.forEach((b, i) => {
+          const w = json[i];
+          const oznacz = (co: string) => roznice.push(`#${i + 1} ${String(w.firm)} / ${String(w.program)}: ${co}`);
+          for (const kolumna of ["firm", "program", "phase", "dd_type", "source_url", "read_on"]) {
+            if (b[kolumna] !== w[kolumna]) oznacz(`${kolumna}: baza=${String(b[kolumna])} json=${String(w[kolumna])}`);
+          }
+          for (const kolumna of ["account_size_cents", "max_dd_cents", "dd_lock_cents", "daily_loss_cents", "profit_target_cents"]) {
+            if (b[kolumna] !== liczbaLubNull(w[kolumna])) oznacz(`${kolumna}: baza=${String(b[kolumna])} json=${String(w[kolumna])}`);
+          }
+          for (const kolumna of ["consistency_pct", "min_days", "max_contracts_mini", "max_contracts_micro"]) {
+            if (b[kolumna] !== w[kolumna]) oznacz(`${kolumna}: baza=${String(b[kolumna])} json=${String(w[kolumna])}`);
+          }
+          if (b.needs_verification !== w.needs_verification) oznacz("needs_verification");
+          if (b.effective_from !== null) oznacz("effective_from nie jest NULL");
+          if ((b.notes ?? null) !== (w.notes ?? null)) oznacz(`notes: baza=${String(b.notes)} json=${String(w.notes)}`);
+          if (b.firm_hex !== hex(w.firm as string) || b.program_hex !== hex(w.program as string)) oznacz("bajty firm / program");
+          if (b.url_hex !== hex(w.source_url as string)) oznacz("bajty source_url");
+          if (b.notes_hex !== hex((w.notes as string | null) ?? "")) oznacz("bajty notes");
+          if (JSON.stringify(b.extra) !== JSON.stringify(w.extra) && !isDeepStrictEqual(b.extra, w.extra)) oznacz("extra (struktura)");
+        });
+        expect(roznice).toEqual([]);
+        // tekst extra (po normalizacji jsonb) zawiera te same napisy co JSON: polskie znaki i cudzyslowy przezyly
+        const polskie = json.filter((w) => /[^\x00-\x7f]/.test(JSON.stringify(w)));
+        expect(polskie.length, "test ma obejmowac wiersze z polskimi znakami").toBeGreaterThan(10);
+      });
+
+      it("wiersze kontrolne: Topstep 50K Trading Combine i Lucid LucidPro funded 100K", async () => {
+        const [ts] = await sql`
+          SELECT dd_type, max_dd_cents, dd_lock_cents, profit_target_cents, consistency_pct::float8 AS c, max_contracts_mini, max_contracts_micro, extra
+          FROM prop_firm_presets WHERE firm = 'Topstep' AND program = 'Trading Combine' AND phase = 'eval' AND account_size_cents = 5000000`;
+        expect(ts).toMatchObject({ dd_type: "trailing_to_static", max_dd_cents: "200000", dd_lock_cents: "200000", profit_target_cents: "300000", c: 55, max_contracts_mini: 5, max_contracts_micro: 50 });
+        expect(ts.extra).toMatchObject({ trail_basis: "eod", dll_optional_usd: 1000, consistency_basis: "best_day/total_profit" });
+        const lucid = json.find((w) => w.firm === "Lucid Trading" && w.program === "LucidPro" && w.phase === "funded" && w.account_size_cents === 10000000);
+        expect(lucid, "wiersz Lucid LucidPro funded 100K w JSON").toBeTruthy();
+        const [l] = await sql`
+          SELECT max_dd_cents::text AS max_dd_cents, dd_type, extra, notes FROM prop_firm_presets
+          WHERE firm = 'Lucid Trading' AND program = 'LucidPro' AND phase = 'funded' AND account_size_cents = 10000000`;
+        expect(l.max_dd_cents).toBe(String(lucid!.max_dd_cents));
+        expect(l.dd_type).toBe(lucid!.dd_type);
+        expect(l.extra).toEqual(lucid!.extra);
+        expect(l.notes ?? null).toBe((lucid!.notes as string | null) ?? null);
+      });
+    });
+
+
+
+    /* ------------------------------------------------------------------ (b2) */
+    describe("(b2) faza 2b: playbook, kolejka AI, dopiski (0020)", () => {
+      it("setup_versions: tresc niezmienna, status i decision_reason zmienne; approved / rejected / superseded tylko z UI", async () => {
+        const { setupId } = await nowySetup(sql);
+        const inny = await nowySetup(sql);
+        const tokenId = await nowyToken(sql);
+        const vid = await jako("api:5", (tx) => wersjaSetupu(tx, setupId));
+        const zmiany: Record<string, string> = {
+          setup_id: `setup_id = ${inny.setupId}`,
+          version: "version = 2",
+          preconditions: `preconditions = '[{"id":"a","text":"b"}]'::jsonb`,
+          entry_checklist: `entry_checklist = '[{"id":"a","text":"b"}]'::jsonb`,
+          stop_rule: "stop_rule = 'inny'",
+          target_rule: "target_rule = 'inny'",
+          be_rule: "be_rule = 'inny'",
+          invalidation: "invalidation = 'inne'",
+          avoid: "avoid = 'inne'",
+          thresholds: `thresholds = '{"min_n":99}'::jsonb`,
+          origin: "origin = 'vault-import'",
+          counterargument: "counterargument = 'kontra'",
+          evidence: "evidence = '{}'::jsonb",
+          proposed_at: "proposed_at = now() + interval '1 day'",
+          created_by_token_id: `created_by_token_id = ${tokenId}`,
+        };
+        for (const [kolumna, set] of Object.entries(zmiany)) {
+          await trigger("setup_versions", "setup_versions_immutable", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE setup_versions SET ${set} WHERE id = ${vid}`), kolumna);
+        }
+        // decision_reason nie jest niezmienne (zmienia sie razem ze statusem)
+        await jako("api:5", (tx) => tx`UPDATE setup_versions SET decision_reason = 'uwaga' WHERE id = ${vid}`);
+
+        // zatwierdzenie / odrzucenie / zastapienie tylko z UI
+        for (const [status, extra] of [["approved", ""], ["rejected", ""], ["superseded", ""]] as const) {
+          await trigger("setup_versions", "setup_versions_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+            tx.unsafe(`UPDATE setup_versions SET status = '${status}'${extra} WHERE id = ${vid}`)));
+        }
+        await trigger("setup_versions", "setup_versions_ui_actor", "TJ403", jakoAktor("import", (tx) => tx`
+          INSERT INTO setup_versions (setup_id, version, status, thresholds, origin)
+          VALUES (${inny.setupId}, 1, 'approved', '{}'::jsonb, 'vault-import')`));
+        await jako("ui", (tx) => tx`
+          UPDATE setup_versions SET status = 'approved', decided_at = now(), decision_reason = 'zatwierdzam' WHERE id = ${vid}`);
+        const [po] = await sql`SELECT status, decision_reason FROM setup_versions WHERE id = ${vid}`;
+        expect(po).toEqual({ status: "approved", decision_reason: "zatwierdzam" });
+        // agent nie cofnie zatwierdzenia
+        const e = await blad(jako("api:5", (tx) => tx`UPDATE setup_versions SET status = 'proposed' WHERE id = ${vid}`));
+        expect(e.code).toBe("TJ403");
+      });
+
+      it("setup_versions: CHECK-i dowodu AI / mentora, typy JSON i unikaty approved / proposed", async () => {
+        const { setupId } = await nowySetup(sql);
+        const wstaw = (kolumny: string, wartosci: string) =>
+          sql.unsafe(`INSERT INTO setup_versions (setup_id, version, status, thresholds, ${kolumny}) VALUES (${setupId}, ${++seq}, 'proposed', '{}'::jsonb, ${wartosci})`);
+        expect((await blad(wstaw("origin", "'ai'"))).constraint_name).toBe("setup_versions_ai_proof");
+        expect((await blad(wstaw("origin, counterargument", "'ai', ''"))).constraint_name).toBe("setup_versions_ai_proof");
+        expect((await blad(wstaw("origin", "'mentor'"))).constraint_name).toBe("setup_versions_mentor_proof");
+        expect((await blad(wstaw("origin, preconditions", "'user', '{}'::jsonb"))).constraint_name).toBe("setup_versions_preconditions");
+        expect((await blad(sql.unsafe(`INSERT INTO setup_versions (setup_id, version, status, thresholds, origin) VALUES (${setupId}, 1, 'proposed', '[]'::jsonb, 'user')`))).constraint_name).toBe("setup_versions_thresholds");
+        await sql.unsafe(`INSERT INTO setup_versions (setup_id, version, status, thresholds, origin, counterargument, evidence) VALUES (${setupId}, 1, 'proposed', '{}'::jsonb, 'ai', 'kontra', '{"n":1}'::jsonb)`);
+        // druga propozycja naraz na setupie
+        const eDruga = await blad(wstaw("origin", "'user'"));
+        expect(eDruga.constraint_name).toBe("setup_versions_proposed_idx");
+        // jedna obowiazujaca wersja
+        await jako("ui", (tx) => tx`UPDATE setup_versions SET status = 'approved' WHERE setup_id = ${setupId}`);
+        const eApp = await blad(jako("ui", (tx) => tx.unsafe(
+          `INSERT INTO setup_versions (setup_id, version, status, thresholds, origin) VALUES (${setupId}, 77, 'approved', '{}'::jsonb, 'user')`)));
+        expect(eApp.constraint_name).toBe("setup_versions_approved_idx");
+      });
+
+      const sugestia = (db: Db, kind: string, status = "pending") =>
+        db`INSERT INTO ai_suggestions (kind, status, target, payload, claim, evidence, evidence_level, n, decided_at)
+           VALUES (${kind}, ${status}, '{"type":"trade","id":1}'::jsonb, '{"tag":"fvg"}'::jsonb, 'FVG po sweepie',
+                   '[{"trade":1}]'::jsonb, 'partial', 5, ${status === "pending" ? null : sql`now()`}) RETURNING id`;
+
+      it("ai_suggestions: accepted / rejected / reverted tylko z UI (TJ403); applied tylko dla strategy_detail", async () => {
+        const [s] = await jako("api:5", (tx) => sugestia(tx, "tag"));
+        for (const status of ["accepted", "rejected"]) {
+          await trigger("ai_suggestions", "ai_suggestions_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+            tx.unsafe(`UPDATE ai_suggestions SET status = '${status}', decided_at = now() WHERE id = ${s.id}`)));
+        }
+        // INSERT od razu jako accepted tez tylko z UI
+        await trigger("ai_suggestions", "ai_suggestions_ui_actor", "TJ403", jakoAktor("api:5", (tx) => sugestia(tx, "tag", "accepted")));
+        // 'applied' dla innego rodzaju niz strategy_detail - CHECK (takze z UI)
+        const eApplied = await blad(jako("ui", (tx) => sugestia(tx, "tag", "applied")));
+        expect(eApplied.constraint_name).toBe("ai_suggestions_applied_kind");
+        // 'applied' dla strategy_detail ustawia API
+        const [d] = await jako("api:5", (tx) => sugestia(tx, "strategy_detail", "applied"));
+        expect(d.id).toBeGreaterThan(0);
+        // z UI przechodzi
+        await jako("ui", (tx) => tx`UPDATE ai_suggestions SET status = 'accepted', decided_at = now() WHERE id = ${s.id}`);
+        // wyjscie z accepted (cofniecie) tez tylko z UI
+        await trigger("ai_suggestions", "ai_suggestions_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          tx`UPDATE ai_suggestions SET status = 'reverted' WHERE id = ${s.id}`));
+        await jako("ui", (tx) => tx`UPDATE ai_suggestions SET status = 'reverted' WHERE id = ${s.id}`);
+        // applied -> reverted (strategy_detail) tez UI
+        await trigger("ai_suggestions", "ai_suggestions_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          tx`UPDATE ai_suggestions SET status = 'reverted' WHERE id = ${d.id}`));
+      });
+
+      it("ai_suggestions: tresc niezmienna (UPDATE kazdej kolumny -> TJ409), status / decided_at / applied_ref zmienne; z rozstrzygnietej nie ma powrotu do pending", async () => {
+        const tokenId = await nowyToken(sql);
+        const [s] = await jako("api:5", (tx) => sugestia(tx, "tag"));
+        const zmiany: Record<string, string> = {
+          kind: "kind = 'trade_link'",
+          target: `target = '{"type":"day"}'::jsonb`,
+          payload: `payload = '{"x":1}'::jsonb`,
+          claim: "claim = 'inne'",
+          evidence: `evidence = '[{"a":1}]'::jsonb`,
+          evidence_level: "evidence_level = 'tested'",
+          n: "n = 6",
+          created_by_token_id: `created_by_token_id = ${tokenId}`,
+          created_at: "created_at = now() + interval '1 day'",
+        };
+        for (const [kolumna, set] of Object.entries(zmiany)) {
+          await trigger("ai_suggestions", "ai_suggestions_immutable", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE ai_suggestions SET ${set} WHERE id = ${s.id}`), kolumna);
+        }
+        await jako("api:5", (tx) => tx`UPDATE ai_suggestions SET applied_ref = '{"tag_id":3}'::jsonb WHERE id = ${s.id}`);
+        // rozstrzygnieta nie wraca do pending (nawet z UI)
+        await jako("ui", (tx) => tx`UPDATE ai_suggestions SET status = 'rejected', decided_at = now() WHERE id = ${s.id}`);
+        await trigger("ai_suggestions", "ai_suggestions_flow", "TJ409", jakoAktor("ui", (tx) =>
+          tx`UPDATE ai_suggestions SET status = 'pending', decided_at = NULL WHERE id = ${s.id}`));
+      });
+
+      it("ai_suggestions: twierdzenie bez dowodu nie wejdzie (CHECK evidence), pending musi byc bez decided_at", async () => {
+        const wstaw = (evidence: string, status = "pending", decided = "NULL") =>
+          sql.unsafe(`INSERT INTO ai_suggestions (kind, status, target, payload, claim, evidence, evidence_level, decided_at)
+                      VALUES ('tag', '${status}', '{}'::jsonb, '{}'::jsonb, 'x', '${evidence}'::jsonb, 'inferred', ${decided})`);
+        expect((await blad(wstaw("[]"))).constraint_name).toBe("ai_suggestions_evidence");
+        expect((await blad(wstaw("{}"))).constraint_name).toBe("ai_suggestions_evidence");
+        expect((await blad(wstaw('[1]', "pending", "now()"))).constraint_name).toBe("ai_suggestions_decided");
+        await wstaw("[1]");
+      });
+
+      async function dopisekAi(db: Db, o: { noteId: number; tradeId: number | null; quote?: number | null; evidence?: string | null }) {
+        return db`
+          INSERT INTO note_additions (note_id, body_md, origin, trade_id, quote_words_id, evidence)
+          VALUES (${o.noteId}, 'AI: obserwacja', 'ai', ${o.tradeId}, ${o.quote ?? null}, ${o.evidence ?? null}::text::jsonb) RETURNING id`;
+      }
+
+      it("note_additions: dopisek AI musi dotyczyc trade'u i miec cytat albo dowod (TJ422); mentor tylko z twierdzeniem", async () => {
+        const noteId = await nowaNotatka(sql, unik("Strategia"), { kind: "strategy" });
+        const k = await kontoInstr(sql);
+        const tradeId = await tradeDla(sql, k);
+        const wId = await slowa(sql, "wszedlem po sweepie", { tradeId });
+        await trigger("note_additions", "note_additions_insert_check", "TJ422", (tx) => dopisekAi(tx, { noteId, tradeId: null, quote: wId }), "trade_id = NULL");
+        await trigger("note_additions", "note_additions_insert_check", "TJ422", (tx) => dopisekAi(tx, { noteId, tradeId }), "evidence");
+        await dopisekAi(sql, { noteId, tradeId, quote: wId });
+        await dopisekAi(sql, { noteId, tradeId, evidence: '{"n":3}' });
+        const eMentor = await blad(sql`INSERT INTO note_additions (note_id, body_md, origin) VALUES (${noteId}, 'wg mentora', 'mentor')`);
+        expect(eMentor.constraint_name).toBe("note_additions_mentor");
+      });
+
+      it("note_additions: UPDATE poza reverted_at -> TJ409; trade_id i quote_words_id tylko do NULL", async () => {
+        const noteId = await nowaNotatka(sql, unik("Strategia"), { kind: "strategy" });
+        const k = await kontoInstr(sql);
+        const tradeId = await tradeDla(sql, k);
+        const innyTrade = await tradeDla(sql, k);
+        const wId = await slowa(sql, "cytat", { tradeId });
+        const innyW = await slowa(sql, "inny cytat", { day: "2030-05-05" });
+        const [s] = await jako("api:5", (tx) => sugestia(tx, "strategy_detail"));
+        const [d] = await dopisekAi(sql, { noteId, tradeId, quote: wId, evidence: '{"n":1}' });
+        const zmiany: Record<string, string> = {
+          note_id: `note_id = ${await nowaNotatka(sql, unik("Inna"), { kind: "strategy" })}`,
+          body_md: "body_md = 'podmieniony'",
+          origin: "origin = 'mentor'",
+          evidence: `evidence = '{"n":2}'::jsonb`,
+          suggestion_id: `suggestion_id = ${s.id}`,
+          created_at: "created_at = now() + interval '1 day'",
+        };
+        // origin = 'mentor' lamie CHECK note_additions_mentor, wiec dla niego dopisujemy twierdzenie z 0027
+        const [zrodlo] = await sql`INSERT INTO mentor_sources (video_id, title, url) VALUES (${unik("vid")}, 't', 'https://youtu.be/x') RETURNING id`;
+        const [claim] = await sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zrodlo.id}, 'cytat', 1, 'concept') RETURNING id`;
+        zmiany.origin = `origin = 'mentor', mentor_claim_id = ${claim.id}`;
+        zmiany.mentor_claim_id = `mentor_claim_id = ${claim.id}`;
+        for (const [kolumna, set] of Object.entries(zmiany)) {
+          await trigger("note_additions", "note_additions_immutable", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE note_additions SET ${set} WHERE id = ${d.id}`), kolumna.split(",")[0]);
+        }
+        // przepiecie na inny trade / inne slowa: tylko zerowanie
+        await trigger("note_additions", "note_additions_null_only", "TJ409", (tx) =>
+          tx`UPDATE note_additions SET trade_id = ${innyTrade} WHERE id = ${d.id}`, "trade_id");
+        await trigger("note_additions", "note_additions_null_only", "TJ409", (tx) =>
+          tx`UPDATE note_additions SET quote_words_id = ${innyW} WHERE id = ${d.id}`, "quote_words_id");
+        // wyzerowanie i reverted_at wolno
+        await sql`UPDATE note_additions SET reverted_at = now() WHERE id = ${d.id}`;
+        await sql`UPDATE note_additions SET trade_id = NULL, quote_words_id = NULL WHERE id = ${d.id}`;
+        // z NULL-a nie da sie ustawic z powrotem
+        const e = await blad(sql`UPDATE note_additions SET trade_id = ${tradeId} WHERE id = ${d.id}`);
+        expect(e.code).toBe("TJ409");
+      });
+
+      it("tj_guard_null_only i tj_guard_columns odrzucaja nieistniejaca kolumne (literowka nie wylacza ochrony po cichu)", async () => {
+        await wycofywalna(async (tx) => {
+          await tx`CREATE TABLE proba_null_only (id serial PRIMARY KEY, a integer)`;
+          await tx`CREATE TRIGGER t BEFORE UPDATE ON proba_null_only FOR EACH ROW EXECUTE FUNCTION public.tj_guard_null_only('nie_ma')`;
+          await tx`INSERT INTO proba_null_only (a) VALUES (1)`;
+          const e = await blad(tx`UPDATE proba_null_only SET a = 2`);
+          expect(e.message).toContain("nie ma kolumny nie_ma");
+        });
+      });
+
+      it("trades: nowe kolumny, CHECK-i procesu, wyszukiwanie po notatce i opisie (f_unaccent), tag z pochodzeniem", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const [r0] = await sql`SELECT process_grade, process_graded_at, setup_id, setup_version_id, ruleset_version, day_known FROM trades WHERE id = ${t}`;
+        expect(r0).toEqual({ process_grade: null, process_graded_at: null, setup_id: null, setup_version_id: null, ruleset_version: null, day_known: false });
+        expect((await blad(sql`UPDATE trades SET process_grade = 'D', process_graded_at = now() WHERE id = ${t}`)).constraint_name).toBe("trades_process_grade");
+        expect((await blad(sql`UPDATE trades SET process_grade = 'A' WHERE id = ${t}`)).constraint_name).toBe("trades_process_graded");
+        expect((await blad(sql`UPDATE trades SET process_graded_at = now() WHERE id = ${t}`)).constraint_name).toBe("trades_process_graded");
+        expect((await blad(sql`UPDATE trades SET ruleset_version = -1 WHERE id = ${t}`)).constraint_name).toBe("trades_ruleset_version");
+        await sql`UPDATE trades SET process_grade = 'B', process_graded_at = now(), note = 'Zarządzanie pozycją po sweepie', mood_note = 'spokój' WHERE id = ${t}`;
+        const trafione = await sql`SELECT id FROM trades WHERE search @@ websearch_to_tsquery('simple', public.f_unaccent('zarzadzanie')) AND id = ${t}`;
+        expect(trafione.length).toBe(1);
+        const poOpisie = await sql`SELECT id FROM trades WHERE search @@ websearch_to_tsquery('simple', public.f_unaccent('SPOKOJ')) AND id = ${t}`;
+        expect(poOpisie.length).toBe(1);
+        // setup i wersja: SET NULL przy kasowaniu setupu (trades nie jest tabela niezmienna)
+        const { setupId } = await nowySetup(sql);
+        const vid = await wersjaSetupu(sql, setupId);
+        await sql`UPDATE trades SET setup_id = ${setupId}, setup_version_id = ${vid} WHERE id = ${t}`;
+        await sql`DELETE FROM setup_versions WHERE id = ${vid}`;
+        const [po] = await sql`SELECT setup_id, setup_version_id FROM trades WHERE id = ${t}`;
+        expect(po).toEqual({ setup_id: setupId, setup_version_id: null });
+        await sql`DELETE FROM setups WHERE id = ${setupId}`;
+        expect((await sql`SELECT setup_id FROM trades WHERE id = ${t}`)[0].setup_id).toBeNull();
+        // trade_tags.origin
+        const [kat] = await sql`INSERT INTO tag_categories (name, key) VALUES ('K', ${unik("kat")}) RETURNING id`;
+        const [tag] = await sql`INSERT INTO tags (category_id, name) VALUES (${kat.id}, 'FVG') RETURNING id`;
+        const [dom] = await sql`INSERT INTO trade_tags (trade_id, tag_id) VALUES (${t}, ${tag.id}) RETURNING origin`;
+        expect(dom.origin).toBe("user");
+        expect((await blad(sql`INSERT INTO trade_tags (trade_id, tag_id, origin, interval) VALUES (${t}, ${tag.id}, 'robot', '5m')`)).constraint_name).toBe("trade_tags_origin");
+        await sql`DELETE FROM trades WHERE id = ${t}`;
+        await sql`DELETE FROM tag_categories WHERE id = ${kat.id}`;
+      });
+
+      it("setup_examples i trade_note_links: unikaty, CHECK-i; n hipotezy liczy prawdziwe trade_note_links (tylko zamkniete, tylko rola hypothesis)", async () => {
+        const k = await kontoInstr(sql);
+        const t1 = await tradeDla(sql, k);
+        const t2 = await tradeDla(sql, k);
+        const tOtwarty = await tradeDla(sql, k, "open");
+        const { setupId } = await nowySetup(sql);
+        await sql`INSERT INTO setup_examples (setup_id, trade_id, kind, origin) VALUES (${setupId}, ${t1}, 'a_plus', 'user')`;
+        expect((await blad(sql`INSERT INTO setup_examples (setup_id, trade_id, kind, origin) VALUES (${setupId}, ${t1}, 'a_plus', 'user')`)).constraint_name).toBe("setup_examples_uq");
+        await sql`INSERT INTO setup_examples (setup_id, trade_id, kind, origin) VALUES (${setupId}, ${t1}, 'anti', 'ai')`;
+        expect((await blad(sql`INSERT INTO setup_examples (setup_id, trade_id, kind, origin) VALUES (${setupId}, ${t2}, 'zly', 'user')`)).constraint_name).toBe("setup_examples_kind");
+        const h = await nowaHipotezaDb(sql, 17, 20);
+        for (const t of [t1, t2, tOtwarty]) {
+          await sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t}, ${h.noteId}, 'hypothesis', 'user')`;
+        }
+        await sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t1}, ${h.noteId}, 'concept', 'user')`;
+        expect((await blad(sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t1}, ${h.noteId}, 'hypothesis', 'ai')`)).constraint_name).toBe("trade_note_links_uq");
+        expect((await blad(sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t2}, ${h.noteId}, 'dziwna', 'ai')`)).constraint_name).toBe("trade_note_links_role");
+        const [n] = await sql`SELECT public.tj_hypothesis_n(${h.id}) AS n`;
+        expect(n.n).toBe(19); // 17 + 2 zamkniete; otwarty i rola concept sie nie licza
+        // bramka n dla propozycji reguly AI korzysta z tych samych linkow: 19 < 20 -> TJ422, po trzecim zamknietym 20 -> OK
+        const regulaId = (await sql`INSERT INTO rules (code, note_id) VALUES (${"R-" + String(7000 + ++seq)}, ${await nowaNotatka(sql, unik("Regula 2b"), { kind: "rule" })}) RETURNING id`)[0].id;
+        const wstawRegule = (tx: Db) => tx`
+          INSERT INTO rule_versions (rule_id, version, text_md, status, origin, counterargument, evidence, hypothesis_id)
+          VALUES (${regulaId}, 1, 'regula AI', 'proposed', 'ai', 'kontra', '{"n":19}'::jsonb, ${h.id})`;
+        expect((await blad(jako("api:5", wstawRegule))).code).toBe("TJ422");
+        const t3 = await tradeDla(sql, k);
+        await sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t3}, ${h.noteId}, 'hypothesis', 'user')`;
+        await jako("api:5", wstawRegule);
+      });
+
+      it("rule_versions.decision_reason: zmienia sie razem ze statusem, nie jest niezmienna (0020)", async () => {
+        const nid = await nowaNotatka(sql, unik("Regula dr"), { kind: "rule" });
+        const [r] = await sql`INSERT INTO rules (code, note_id) VALUES (${"R-" + String(8000 + ++seq)}, ${nid}) RETURNING id`;
+        const [v] = await sql`INSERT INTO rule_versions (rule_id, version, text_md, status, origin) VALUES (${r.id}, 1, 'tresc', 'proposed', 'user') RETURNING id`;
+        await jako("ui", (tx) => tx`UPDATE rule_versions SET status = 'rejected', decided_at = now(), decision_reason = 'za malo danych' WHERE id = ${v.id}`);
+        const [po] = await sql`SELECT status, decision_reason FROM rule_versions WHERE id = ${v.id}`;
+        expect(po).toEqual({ status: "rejected", decision_reason: "za malo danych" });
+        expect((await blad(jako("ui", (tx) => tx`UPDATE rule_versions SET text_md = 'inna' WHERE id = ${v.id}`))).code).toBe("TJ409");
+      });
+    });
+
+    /* ------------------------------------------------------------------ (b3) */
+    describe("(b3) faza 2b: plan zamrozony, werdykt niezmienny, rytual dnia (0021)", () => {
+      it("trade_plans: kazda zmiana poza przypieciem trade'u -> TJ409; przypiecie przechodzi (raz)", async () => {
+        const k = await kontoInstr(sql);
+        const k2 = await kontoInstr(sql);
+        const t1 = await tradeDla(sql, k);
+        const t2 = await tradeDla(sql, k);
+        const tokenId = await nowyToken(sql);
+        const sesja = await nowaSesja(sql);
+        const { setupId } = await nowySetup(sql);
+        const vid = await wersjaSetupu(sql, setupId);
+        const w1 = await slowa(sql, "teza planu", { day: "2030-06-06" });
+        const nowyPlan = async (db: Db, tradeId: number | null = null) => {
+          const [p] = await db`
+            INSERT INTO trade_plans (trade_id, account_id, instrument_id, day, ruleset_version, direction, entry_price,
+                                     stop_loss, take_profit, contracts, risk_cents, origin)
+            VALUES (${tradeId}, ${k.accountId}, ${k.instrumentId}, '2030-06-06', 3, 'long', 100, 95, 110, 1, 12500, 'user')
+            RETURNING id`;
+          return p.id as number;
+        };
+        const planPrzypiety = await nowyPlan(sql, t1);
+        const zmiany: Record<string, string> = {
+          trade_id: `trade_id = ${t2}`,
+          trade_id_null: "trade_id = NULL",
+          account_id: `account_id = ${k2.accountId}`,
+          instrument_id: `instrument_id = ${k2.instrumentId}`,
+          backtest_session_id: `backtest_session_id = ${sesja}`,
+          day: "day = '2030-06-07'",
+          setup_id: `setup_id = ${setupId}`,
+          setup_version_id: `setup_id = ${setupId}, setup_version_id = ${vid}`,
+          ruleset_version: "ruleset_version = 9",
+          direction: "direction = 'short', stop_loss = 105, take_profit = 90",
+          bias: "bias = 'neutral'",
+          entry_price: "entry_price = 101",
+          stop_loss: "stop_loss = 94",
+          take_profit: "take_profit = 111",
+          contracts: "contracts = 2",
+          risk_cents: "risk_cents = 99",
+          thesis_words_id: `thesis_words_id = ${w1}`,
+          invalidation_words_id: `invalidation_words_id = ${w1}`,
+          origin: "origin = 'ai'",
+          created_by_token_id: `created_by_token_id = ${tokenId}`,
+          frozen_at: "frozen_at = now() + interval '1 day'",
+        };
+        for (const set of Object.values(zmiany)) {
+          await trigger("trade_plans", "trade_plans_guard", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE trade_plans SET ${set} WHERE id = ${planPrzypiety}`));
+        }
+        // UPDATE bez zmiany tez nie przechodzi (jedyny dozwolony UPDATE to przypiecie)
+        await trigger("trade_plans", "trade_plans_guard", "TJ409", (tx) => tx`UPDATE trade_plans SET day = day WHERE id = ${planPrzypiety}`);
+
+        // przypiecie trade'u: NULL -> wartosc, reszta bez zmian
+        const planCzekajacy = await nowyPlan(sql);
+        await trigger("trade_plans", "trade_plans_guard", "TJ409", (tx) =>
+          tx`UPDATE trade_plans SET trade_id = ${t2}, contracts = 3 WHERE id = ${planCzekajacy}`);
+        await sql`UPDATE trade_plans SET trade_id = ${t2} WHERE id = ${planCzekajacy}`;
+        const [po] = await sql`SELECT trade_id FROM trade_plans WHERE id = ${planCzekajacy}`;
+        expect(po.trade_id).toBe(t2);
+        // raz przypietego nie przepniesz
+        const eDrugi = await blad(sql`UPDATE trade_plans SET trade_id = ${t1} WHERE id = ${planCzekajacy}`);
+        expect(eDrugi.code).toBe("TJ409");
+      });
+
+      it("trade_plans: unikat trade_id (wiele planow bez trade'u, jeden plan na trade), CHECK-i poziomow / ryzyka / kierunku", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const wstaw = (kolumny: string) =>
+          sql.unsafe(`INSERT INTO trade_plans (account_id, instrument_id, day, ruleset_version, origin, ${kolumny.split("|")[0]}) VALUES (${k.accountId}, ${k.instrumentId}, '2030-06-06', 0, 'user', ${kolumny.split("|")[1]})`);
+        const kolumny = "direction, entry_price, stop_loss, take_profit, contracts, risk_cents";
+        const ok = (dir: string, e: number, sl: number, tp: string, c = 1, r = 100) => `${kolumny}|'${dir}', ${e}, ${sl}, ${tp}, ${c}, ${r}`;
+        await wstaw(ok("long", 100, 95, "110"));
+        await wstaw(ok("long", 100, 95, "NULL")); // druga czekajaca - NULL w trade_id nie koliduje
+        await wstaw(ok("short", 100, 105, "90"));
+        for (const zly of [ok("long", 100, 105, "110"), ok("long", 100, 95, "90"), ok("short", 100, 95, "90"), ok("short", 100, 105, "110"), ok("long", 100, 100, "110")]) {
+          expect((await blad(wstaw(zly))).constraint_name, zly).toBe("trade_plans_levels");
+        }
+        expect((await blad(wstaw(ok("long", 100, 95, "110", 0)))).constraint_name).toBe("trade_plans_contracts");
+        expect((await blad(wstaw(ok("long", 100, 95, "110", 1, 0)))).constraint_name).toBe("trade_plans_risk");
+        expect((await blad(wstaw(ok("flat", 100, 95, "110")))).constraint_name).toBe("trade_plans_direction");
+        const dwa = (tradeId: number) => sql`
+          INSERT INTO trade_plans (trade_id, account_id, instrument_id, day, ruleset_version, direction, entry_price, stop_loss, contracts, risk_cents, origin)
+          VALUES (${tradeId}, ${k.accountId}, ${k.instrumentId}, '2030-06-06', 0, 'long', 100, 95, 1, 100, 'user')`;
+        await dwa(t);
+        expect((await blad(dwa(t))).constraint_name).toBe("trade_plans_trade_uq");
+        expect((await blad(sql`
+          INSERT INTO trade_plans (account_id, instrument_id, day, ruleset_version, direction, entry_price, stop_loss, contracts, risk_cents, origin, setup_version_id)
+          VALUES (${k.accountId}, ${k.instrumentId}, '2030-06-06', 0, 'long', 100, 95, 1, 100, 'user', 1)`)).constraint_name).toBe("trade_plans_setup_version");
+      });
+
+      it("trade_plan_addenda: tylko dopisywanie (UPDATE -> TJ409), kasowanie z planem dziala", async () => {
+        const k = await kontoInstr(sql);
+        const w = await slowa(sql, "przesuwam SL", { day: "2030-06-06" });
+        const [p] = await sql`
+          INSERT INTO trade_plans (account_id, instrument_id, day, ruleset_version, direction, entry_price, stop_loss, contracts, risk_cents, origin)
+          VALUES (${k.accountId}, ${k.instrumentId}, '2030-06-06', 0, 'long', 100, 95, 1, 100, 'user') RETURNING id`;
+        const [a] = await sql`INSERT INTO trade_plan_addenda (plan_id, field, new_value, words_id) VALUES (${p.id}, 'stop_loss', '96'::jsonb, ${w}) RETURNING id`;
+        expect((await blad(sql`INSERT INTO trade_plan_addenda (plan_id, field, words_id) VALUES (${p.id}, 'cena', ${w})`)).constraint_name).toBe("trade_plan_addenda_field");
+        await trigger("trade_plan_addenda", "trade_plan_addenda_immutable", "TJ409", (tx) =>
+          tx`UPDATE trade_plan_addenda SET field = 'other' WHERE id = ${a.id}`);
+        await sql`DELETE FROM trade_plans WHERE id = ${p.id}`;
+        expect((await sql`SELECT 1 FROM trade_plan_addenda WHERE id = ${a.id}`).length).toBe(0);
+      });
+
+      it("trade_reviews: werdykt z as_of niezmienny (UPDATE kazdej kolumny -> TJ409); stary bez as_of mozna podmienic, takze uzupelnic o as_of", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const inny = await tradeDla(sql, k);
+        const innyWerdykt = await werdykt(sql, inny, { basis: "history" });
+        const tokenId = await nowyToken(sql);
+        const rid = await werdykt(sql, t);
+        const zmiany: Record<string, string> = {
+          id: `id = ${rid + 100000}`,
+          trade_id: `trade_id = ${inny}`,
+          setup_type: "setup_type = 'inny'",
+          summary_md: "summary_md = 'podmieniona'",
+          lesson: "lesson = 'inna'",
+          basis: "basis = 'history'",
+          brain_verdict: "brain_verdict = 'wejdz'",
+          brain_plan: `brain_plan = '{"entry":1}'::jsonb`,
+          brain_version: "brain_version = 'abc'",
+          evidence_cutoff: "evidence_cutoff = now()",
+          model: "model = 'inny'",
+          created_at: "created_at = now() + interval '1 day'",
+          kind: `kind = 'user_override', overrides_review_id = ${innyWerdykt}`,
+          as_of: "as_of = now() + interval '1 day'",
+          evidence_hash: `evidence_hash = '${"e".repeat(64)}'`,
+          evidence_manifest: `evidence_manifest = '[]'::jsonb`,
+          ruleset_version: "ruleset_version = 4",
+          created_by_token_id: `created_by_token_id = ${tokenId}`,
+        };
+        for (const [kolumna, set] of Object.entries(zmiany)) {
+          await trigger("trade_reviews", "trade_reviews_immutable", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE trade_reviews SET ${set} WHERE id = ${rid}`), kolumna.startsWith("kind") ? "kind" : kolumna);
+        }
+        // overrides_review_id na korekcie
+        const korekta = await werdykt(sql, t, { kind: "user_override", overrides: rid });
+        await trigger("trade_reviews", "trade_reviews_immutable", "TJ409", (tx) =>
+          tx`UPDATE trade_reviews SET overrides_review_id = ${innyWerdykt} WHERE id = ${korekta}`, "overrides_review_id");
+
+        // stary werdykt (ADR-028): podmiana dozwolona
+        const stary = await werdykt(sql, inny, { basis: "chart", asOf: false });
+        await sql`UPDATE trade_reviews SET summary_md = 'nowa', lesson = 'nauka', brain_verdict = 'czekaj', created_at = now() WHERE id = ${stary}`;
+        // ...a uzupelnienie o as_of zamyka go na zmiany
+        await sql`UPDATE trade_reviews SET as_of = now(), evidence_hash = ${sha256Node(unik("h"))} WHERE id = ${stary}`;
+        expect((await blad(sql`UPDATE trade_reviews SET summary_md = 'za pozno' WHERE id = ${stary}`)).code).toBe("TJ409");
+      });
+
+      it("trade_reviews: unikat (trade, basis) tylko dla kind='ai'; korekty uzytkownika sie nie licza; CHECK-i dowodu i korekty", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const rid = await werdykt(sql, t);
+        // drugi werdykt AI tej samej podstawy -> 409 w API (23505 w bazie)
+        const eDrugi = await blad(werdykt(sql, t));
+        expect(eDrugi.constraint_name).toBe("trade_reviews_trade_basis_uq");
+        // ten sam trade, inna podstawa -> OK
+        await werdykt(sql, t, { basis: "history" });
+        // kilka korekt tego samego werdyktu
+        await werdykt(sql, t, { kind: "user_override", overrides: rid });
+        await werdykt(sql, t, { kind: "user_override", overrides: rid });
+        // legacy bez as_of tez podlega unikatowi
+        const t2 = await tradeDla(sql, k);
+        await werdykt(sql, t2, { asOf: false });
+        expect((await blad(werdykt(sql, t2, { asOf: false }))).constraint_name).toBe("trade_reviews_trade_basis_uq");
+
+        const wstaw = (kolumny: string, wartosci: string) =>
+          sql.unsafe(`INSERT INTO trade_reviews (trade_id, basis, ${kolumny}) VALUES (${t}, 'chart', ${wartosci})`);
+        const h = `'${"a".repeat(64)}'`;
+        expect((await blad(wstaw("kind", "'robot'"))).constraint_name).toBe("trade_reviews_kind");
+        expect((await blad(wstaw("kind", "'user_override'"))).constraint_name).toBe("trade_reviews_override");
+        expect((await blad(wstaw("overrides_review_id", String(rid)))).constraint_name).toBe("trade_reviews_override");
+        expect((await blad(wstaw("as_of", "now()"))).constraint_name).toBe("trade_reviews_as_of_hash");
+        expect((await blad(wstaw("evidence_hash", h))).constraint_name).toBe("trade_reviews_as_of_hash");
+        expect((await blad(wstaw("as_of, evidence_hash", "now(), 'nie-hex'"))).constraint_name).toBe("trade_reviews_evidence_hash");
+        expect((await blad(wstaw("evidence_manifest", "'[]'::jsonb"))).constraint_name).toBe("trade_reviews_manifest");
+        // korekta bez as_of (a wiec bez skrotu) jest odrzucona: korekta tez jest datowana
+        const eBezDaty = await blad(wstaw("kind, overrides_review_id", `'user_override', ${rid}`));
+        expect(eBezDaty.constraint_name).toBe("trade_reviews_override_dated");
+        expect((await blad(wstaw("ruleset_version", "-1"))).constraint_name).toBe("trade_reviews_ruleset");
+      });
+
+      it("trade_reviews: korekta musi wskazywac werdykt AI tego samego trade'u i tej samej podstawy (TJ422)", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const inny = await tradeDla(sql, k);
+        const ai = await werdykt(sql, t);
+        const aiInny = await werdykt(sql, inny);
+        const korekta = await werdykt(sql, t, { kind: "user_override", overrides: ai });
+        const hash = sha256Node(unik("h"));
+        const wstawKorekte = (tradeId: number, basis: string, nadpisuje: number) => (tx: Tx) => tx`
+          INSERT INTO trade_reviews (trade_id, basis, kind, overrides_review_id, as_of, evidence_hash)
+          VALUES (${tradeId}, ${basis}, 'user_override', ${nadpisuje}, now(), ${hash})`;
+        await trigger("trade_reviews", "trade_reviews_override_check", "TJ422", wstawKorekte(t, "chart", aiInny), "trade_id");
+        await trigger("trade_reviews", "trade_reviews_override_check", "TJ422", wstawKorekte(t, "history", ai), "basis");
+        await trigger("trade_reviews", "trade_reviews_override_check", "TJ422", wstawKorekte(t, "chart", korekta), "kind");
+        await sql.begin((tx) => wstawKorekte(t, "chart", ai)(tx));
+      });
+
+      it("trade_rule_checks: sprawdzenia w transakcji, ktora utworzyla werdykt, przechodza (zwykla, w SAVEPOINCIE i po uzupelnieniu starego werdyktu o as_of)", async () => {
+        const k = await kontoInstr(sql);
+        // a) ta sama transakcja
+        const t1 = await tradeDla(sql, k);
+        const r1 = await sql.begin((tx) => werdyktZSprawdzeniem(tx, t1));
+        expect((await sql`SELECT 1 FROM trade_rule_checks WHERE review_id = ${r1}`).length).toBe(1);
+        // b) werdykt wstawiony w SAVEPOINCIE (xmin = numer podtransakcji), sprawdzenie w transakcji nadrzednej
+        const t2 = await tradeDla(sql, k);
+        const r2 = await sql.begin(async (tx) => {
+          const id = await tx.savepoint((sp) => werdykt(sp, t2));
+          await tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${id}, 'R-001', 'regula', 'pass')`;
+          return id;
+        });
+        expect((await sql`SELECT 1 FROM trade_rule_checks WHERE review_id = ${r2}`).length).toBe(1);
+        // c) stary werdykt bez as_of uzupelniony o as_of w tej transakcji (upsert z ADR-028), potem sprawdzenia
+        const t3 = await tradeDla(sql, k);
+        const stary = await werdykt(sql, t3, { asOf: false });
+        await sql.begin(async (tx) => {
+          await tx`UPDATE trade_reviews SET as_of = now(), evidence_hash = ${sha256Node(unik("h"))} WHERE id = ${stary}`;
+          await tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${stary}, 'R-001', 'regula', 'pass')`;
+        });
+        expect((await sql`SELECT 1 FROM trade_rule_checks WHERE review_id = ${stary}`).length).toBe(1);
+        // d) stary werdykt bez as_of: sprawdzenia dowolnie, takze w osobnej transakcji
+        const t4 = await tradeDla(sql, k);
+        const stary2 = await werdykt(sql, t4, { asOf: false });
+        await sql`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${stary2}, 'R-001', 'regula', 'pass')`;
+        await sql`UPDATE trade_rule_checks SET rule_text = 'zmieniona', verdict = 'fail' WHERE review_id = ${stary2}`;
+      });
+
+      it("trade_rule_checks: do werdyktu z as_of z INNEJ transakcji nie dopiszesz sprawdzenia (TJ409); UPDATE tylko user_verdict; DELETE wolno", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const rid = await sql.begin((tx) => werdyktZSprawdzeniem(tx, t));
+        const inny = await sql.begin((tx) => werdyktZSprawdzeniem(tx, t, "history", "R-777"));
+        const nidReguly = await nowaNotatka(sql, unik("Regula rc"), { kind: "rule" });
+        const [regula] = await sql`INSERT INTO rules (code, note_id) VALUES (${"R-" + String(9000 + ++seq)}, ${nidReguly}) RETURNING id`;
+        const [wersja] = await sql`
+          INSERT INTO rule_versions (rule_id, version, text_md, status, origin) VALUES (${regula.id}, 1, 'x', 'proposed', 'user') RETURNING id`;
+
+        // INSERT do istniejacego werdyktu z as_of (osobna transakcja) -> TJ409
+        await trigger("trade_rule_checks", "trade_rule_checks_guard", "TJ409", (tx) =>
+          tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${rid}, 'R-002', 'druga', 'fail')`, "R-002");
+
+        // user_verdict to zdanie uzytkownika, nie werdykt AI: wolno
+        await sql`UPDATE trade_rule_checks SET user_verdict = 'disagree' WHERE review_id = ${rid}`;
+        await sql`UPDATE trade_rule_checks SET user_verdict = NULL WHERE review_id = ${rid}`;
+        // reszta kolumn -> TJ409
+        const zmiany: Record<string, string> = {
+          review_id: `review_id = ${inny}`,
+          rule_id: "rule_id = 'R-009'",
+          rule_text: "rule_text = 'podmieniony'",
+          verdict: "verdict = 'fail'",
+          evidence: "evidence = 'inny dowod'",
+          rule_version_id: `rule_version_id = ${wersja.id}`,
+        };
+        for (const set of Object.values(zmiany)) {
+          await trigger("trade_rule_checks", "trade_rule_checks_guard", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE trade_rule_checks SET ${set} WHERE review_id = ${rid}`), "R-001");
+        }
+        // DELETE nie jest blokowany
+        await sql`DELETE FROM trade_rule_checks WHERE review_id = ${rid}`;
+        expect((await sql`SELECT 1 FROM trade_rule_checks WHERE review_id = ${rid}`).length).toBe(0);
+
+        // rule_version_id: RESTRICT - wersji uzytej w sprawdzeniu nie da sie skasowac
+        await sql.begin(async (tx) => {
+          const r = await werdykt(tx, await tradeDla(tx, k));
+          await tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict, rule_version_id) VALUES (${r}, 'R-003', 'x', 'na', ${wersja.id})`;
+        });
+        expect((await blad(sql`DELETE FROM rule_versions WHERE id = ${wersja.id}`)).code).toBe("23503");
+      });
+
+      it("day_notes: bias / max_trades / sleep i zakresy 1-5 mood / energy / day_rating w bazie; ograniczenia sprawdzone (convalidated)", async () => {
+        const k = await kontoInstr(sql);
+        const wstaw = (kolumny: string, wartosci: string) =>
+          sql.unsafe(`INSERT INTO day_notes (day, account_id, ${kolumny}) VALUES ('2030-07-${String(1 + (seq++ % 28)).padStart(2, "0")}', ${k.accountId}, ${wartosci})`);
+        expect((await blad(wstaw("bias", "'gora'"))).constraint_name).toBe("day_notes_bias");
+        expect((await blad(wstaw("max_trades", "0"))).constraint_name).toBe("day_notes_max_trades");
+        expect((await blad(wstaw("max_trades", "21"))).constraint_name).toBe("day_notes_max_trades");
+        expect((await blad(wstaw("sleep", "0"))).constraint_name).toBe("day_notes_sleep");
+        expect((await blad(wstaw("sleep", "6"))).constraint_name).toBe("day_notes_sleep");
+        expect((await blad(wstaw("mood", "6"))).constraint_name).toBe("day_notes_mood");
+        expect((await blad(wstaw("mood", "0"))).constraint_name).toBe("day_notes_mood");
+        expect((await blad(wstaw("energy", "9"))).constraint_name).toBe("day_notes_energy");
+        expect((await blad(wstaw("day_rating", "-1"))).constraint_name).toBe("day_notes_day_rating");
+        await wstaw("bias, max_trades, sleep, mood, energy, day_rating", "'neutral', 3, 4, 5, 1, 3");
+        await wstaw("bias", "NULL");
+        const c = await sql`
+          SELECT conname, convalidated FROM pg_constraint
+          WHERE conrelid = 'public.day_notes'::regclass AND conname IN ('day_notes_mood', 'day_notes_energy', 'day_notes_day_rating', 'day_notes_bias', 'day_notes_max_trades', 'day_notes_sleep')`;
+        expect(c.length).toBe(6);
+        expect(c.filter((r) => !r.convalidated).map((r) => r.conname)).toEqual([]);
+      });
+    });
+
+    /* ------------------------------------------------------------------ (b4) */
+    describe("(b4) faza 2b: hipotezy, prop, przeglad tygodnia, wykres, slownik, mentor (0022-0027)", () => {
+      it("hypothesis_variants: unikat NULLS NOT DISTINCT (wlasciciel to hipoteza albo setup), dokladnie jeden wlasciciel", async () => {
+        const h1 = await nowaHipotezaDb(sql);
+        const h2 = await nowaHipotezaDb(sql);
+        const { setupId } = await nowySetup(sql);
+        const hash = (s: string) => sha256Node(s);
+        const wstaw = (hid: number | null, sid: number | null, params: string, label = "wariant") => sql`
+          INSERT INTO hypothesis_variants (hypothesis_id, setup_id, label, params, params_hash, n_tested, origin)
+          VALUES (${hid}, ${sid}, ${label}, ${params}::text::jsonb, ${hash(params)}, 12, 'user')`;
+        await wstaw(h1.id, null, '{"sl":"10"}');
+        // ten sam zestaw parametrow na tej samej hipotezie: setup_id jest NULL w obu wierszach
+        expect((await blad(wstaw(h1.id, null, '{"sl":"10"}', "powtorka"))).constraint_name).toBe("hypothesis_variants_uq");
+        await wstaw(h1.id, null, '{"sl":"12"}'); // inne parametry
+        await wstaw(h2.id, null, '{"sl":"10"}'); // inna hipoteza
+        await wstaw(null, setupId, '{"sl":"10"}');
+        expect((await blad(wstaw(null, setupId, '{"sl":"10"}', "powtorka"))).constraint_name).toBe("hypothesis_variants_uq");
+        expect((await blad(wstaw(h1.id, setupId, '{"sl":"1"}'))).constraint_name).toBe("hypothesis_variants_owner");
+        expect((await blad(wstaw(null, null, '{"sl":"1"}'))).constraint_name).toBe("hypothesis_variants_owner");
+        expect((await blad(sql`INSERT INTO hypothesis_variants (hypothesis_id, label, params, params_hash, n_tested, origin)
+          VALUES (${h1.id}, 'x', '{}'::jsonb, 'nie-hex', 1, 'user')`)).constraint_name).toBe("hypothesis_variants_params_hash");
+        expect((await sql`SELECT count(*)::int AS n FROM hypothesis_variants WHERE hypothesis_id = ${h1.id}`)[0].n).toBe(2);
+        // kasowanie hipotezy (bez regul) zabiera jej warianty
+        await sql`DELETE FROM hypotheses WHERE id = ${h1.id}`;
+        expect((await sql`SELECT 1 FROM hypothesis_variants WHERE hypothesis_id = ${h1.id}`).length).toBe(0);
+      });
+
+      it("threshold_changes: zmiana prog_n / thresholds z KAZDEGO aktora zostawia wpis (stara i nowa wartosc, n, widocznosc wyniku, aktor)", async () => {
+        const h = await nowaHipotezaDb(sql, 25, 20); // n = 25 >= prog 20: wynik byl juz widoczny
+        await jako("api:9", (tx) => tx`UPDATE hypotheses SET prog_n = 30 WHERE id = ${h.id}`);
+        const [w1] = await sql`SELECT field, old_value, new_value, n_at_change, result_was_visible, actor FROM threshold_changes WHERE hypothesis_id = ${h.id}`;
+        expect(w1).toEqual({ field: "prog_n", old_value: 20, new_value: 30, n_at_change: 25, result_was_visible: true, actor: "api:9" });
+
+        // zmiana thresholds, wynik jeszcze niewidoczny (n = 25 < nowy prog 30)
+        await jako("ui", (tx) => tx`UPDATE hypotheses SET thresholds = '{"wilson_low":0.4}'::jsonb WHERE id = ${h.id}`);
+        // obie kolumny naraz -> dwa wiersze; bez aktora -> 'unknown'
+        await sql`UPDATE hypotheses SET prog_n = 40, thresholds = '{"wilson_low":0.5}'::jsonb WHERE id = ${h.id}`;
+        const log = await sql`SELECT field, old_value, new_value, n_at_change, result_was_visible, actor FROM threshold_changes WHERE hypothesis_id = ${h.id} ORDER BY id`;
+        expect(log.map((r) => [r.field, r.actor, r.result_was_visible])).toEqual([
+          ["prog_n", "api:9", true],
+          ["thresholds", "ui", false], // n = 25 < prog 30
+          ["prog_n", "unknown", false], // n = 25 < prog 30
+          ["thresholds", "unknown", false],
+        ]);
+        expect(log[1].old_value).toEqual({});
+        expect(log[1].new_value).toEqual({ wilson_low: 0.4 });
+        expect(log[3].old_value).toEqual({ wilson_low: 0.4 });
+
+        // UPDATE, ktory niczego nie zmienia, i zmiana innej kolumny nie loguja
+        const przed = (await sql`SELECT count(*)::int AS n FROM threshold_changes WHERE hypothesis_id = ${h.id}`)[0].n;
+        await sql`UPDATE hypotheses SET prog_n = prog_n, thresholds = thresholds WHERE id = ${h.id}`;
+        await sql`UPDATE hypotheses SET n_imported = 26 WHERE id = ${h.id}`;
+        expect((await sql`SELECT count(*)::int AS n FROM threshold_changes WHERE hypothesis_id = ${h.id}`)[0].n).toBe(przed);
+
+        // log jest tylko do dopisywania
+        await trigger("threshold_changes", "threshold_changes_immutable", "TJ409", (tx) =>
+          tx`UPDATE threshold_changes SET actor = 'inny' WHERE hypothesis_id = ${h.id}`);
+        // wpis zapisuje wlasnie trigger hypotheses_threshold_log (bez niego wiersza nie ma)
+        await wycofywalna(async (tx) => {
+          await tx.unsafe("ALTER TABLE hypotheses DISABLE TRIGGER hypotheses_threshold_log");
+          await tx`UPDATE hypotheses SET prog_n = 99 WHERE id = ${h.id}`;
+          expect((await tx`SELECT count(*)::int AS n FROM threshold_changes WHERE hypothesis_id = ${h.id}`)[0].n).toBe(przed);
+        });
+        // kasowanie hipotezy zabiera log (DELETE nie jest blokowany)
+        await sql`DELETE FROM hypotheses WHERE id = ${h.id}`;
+        expect((await sql`SELECT 1 FROM threshold_changes WHERE hypothesis_id = ${h.id}`).length).toBe(0);
+      });
+
+      it("prop_firm_presets: CHECK-i i unikat odczytu; preset domyslnie wymaga weryfikacji; unikat obsluguje wybor (firma, program, faza)", async () => {
+        const insert = (firm: string, url = "https://x.pl") =>
+          `INSERT INTO prop_firm_presets (firm, program, phase, account_size_cents, dd_type, max_dd_cents, source_url, read_on)
+           VALUES ('${firm}', 'P', 'eval', 5000000, 'eod', 200000, '${url}', '2026-10-14') RETURNING id, needs_verification`;
+        const zle: [string, string, string][] = [
+          ["dd_type", "'trailing_to_static'", "prop_firm_presets_dd_lock"],
+          ["dd_type", "'losowy'", "prop_firm_presets_dd_type"],
+          ["phase", "'live'", "prop_firm_presets_phase"],
+          ["max_dd_cents", "0", "prop_firm_presets_max_dd"],
+          ["consistency_pct", "0", "prop_firm_presets_consistency"],
+          ["consistency_pct", "100.5", "prop_firm_presets_consistency"],
+          ["daily_loss_cents", "0", "prop_firm_presets_daily_loss"],
+          ["profit_target_cents", "-5", "prop_firm_presets_profit_target"],
+          ["min_days", "0", "prop_firm_presets_min_days"],
+          ["max_contracts_micro", "0", "prop_firm_presets_contracts"],
+          ["extra", "'[]'::jsonb", "prop_firm_presets_extra"],
+        ];
+        await wycofywalna(async (tx) => {
+          const [p] = await tx.unsafe(insert("F"));
+          expect(p.needs_verification).toBe(true); // domyslnie do weryfikacji, dopoki ktos jej nie potwierdzi
+          // blad w transakcji psuje ja, wiec kazda proba w SAVEPOINCIE
+          const kod = async (stmt: string) => (await blad(tx.savepoint((sp) => sp.unsafe(stmt)))).constraint_name;
+          expect(await kod(insert("F"))).toBe("prop_firm_presets_uq");
+          expect(await kod(insert("G", "http://x.pl"))).toBe("prop_firm_presets_source_url");
+          for (const [kolumna, wartosc, ograniczenie] of zle) {
+            expect(await kod(`UPDATE prop_firm_presets SET ${kolumna} = ${wartosc} WHERE id = ${p.id}`), `${kolumna} = ${wartosc}`).toBe(ograniczenie);
+          }
+        });
+        // wybor presetu: firma -> program -> faza korzysta z unikatu (osobny indeks bylby zbedny)
+        await wycofywalna(async (tx) => {
+          await tx`SET LOCAL enable_seqscan = off`;
+          for (const zapytanie of [
+            "SELECT 1 FROM prop_firm_presets WHERE firm = 'Topstep'",
+            "SELECT 1 FROM prop_firm_presets WHERE firm = 'Topstep' AND program = 'Trading Combine' AND phase = 'eval'",
+          ]) {
+            const plan = (await tx.unsafe(`EXPLAIN ${zapytanie}`)).map((r) => r["QUERY PLAN"]).join("\n");
+            expect(plan, zapytanie).toContain("prop_firm_presets_uq");
+          }
+        });
+      });
+
+      it("prop_rules: kopia presetu nadpisywalna; unikat (konto, valid_from); preset kasowany -> preset_id NULL; konto kasowane -> reguly razem z nim", async () => {
+        const k = await kontoInstr(sql);
+        const [p] = await sql`
+          INSERT INTO prop_firm_presets (firm, program, phase, account_size_cents, dd_type, max_dd_cents, dd_lock_cents, source_url, read_on, extra)
+          VALUES (${unik("Firma")}, 'Program', 'eval', 5000000, 'trailing_to_static', 200000, 200000, 'https://x.pl', '2026-10-14', '{"trail_basis":"eod"}'::jsonb)
+          RETURNING id`;
+        const [r] = await sql`
+          INSERT INTO prop_rules (account_id, preset_id, valid_from, dd_type, max_dd_cents, dd_lock_cents, extra)
+          VALUES (${k.accountId}, ${p.id}, '2026-10-01', 'trailing_to_static', 200000, 200000, '{"trail_basis":"eod"}'::jsonb) RETURNING id`;
+        // kazda wartosc nadpisywalna zwyklym UPDATE
+        await sql`UPDATE prop_rules SET max_dd_cents = 250000, daily_loss_cents = 100000, consistency_pct = 40, confirmed_at = now(),
+                  extra = '{"trail_basis":"intraday"}'::jsonb WHERE id = ${r.id}`;
+        expect((await sql`SELECT consistency_pct::text AS c FROM prop_rules WHERE id = ${r.id}`)[0].c).toBe("40.00");
+        const dup = await blad(sql`INSERT INTO prop_rules (account_id, valid_from, dd_type, max_dd_cents) VALUES (${k.accountId}, '2026-10-01', 'eod', 1000)`);
+        expect(dup.constraint_name).toBe("prop_rules_account_valid_uq");
+        await sql`INSERT INTO prop_rules (account_id, valid_from, dd_type, max_dd_cents) VALUES (${k.accountId}, '2026-11-01', 'eod', 1000)`;
+        expect((await blad(sql`INSERT INTO prop_rules (account_id, valid_from, dd_type, max_dd_cents) VALUES (${k.accountId}, '2026-12-01', 'trailing_to_static', 1000)`)).constraint_name).toBe("prop_rules_dd_lock");
+        expect((await blad(sql`INSERT INTO prop_rules (account_id, valid_from, dd_type, max_dd_cents, source_url) VALUES (${k.accountId}, '2026-12-01', 'eod', 1000, 'ftp://x')`)).constraint_name).toBe("prop_rules_source_url");
+        await sql`DELETE FROM prop_firm_presets WHERE id = ${p.id}`;
+        const [po] = await sql`SELECT preset_id, extra FROM prop_rules WHERE id = ${r.id}`;
+        expect(po.preset_id).toBeNull();
+        expect(po.extra).toEqual({ trail_basis: "intraday" }); // kopia zostaje
+        await sql`DELETE FROM accounts WHERE id = ${k.accountId}`;
+        expect((await sql`SELECT 1 FROM prop_rules WHERE account_id = ${k.accountId}`).length).toBe(0);
+      });
+
+      it("prop_ledger: znak kwoty zalezy od rodzaju; konto z ksiega nie da sie skasowac (RESTRICT)", async () => {
+        const k = await kontoInstr(sql);
+        const wstaw = (kind: string, kwota: number) =>
+          sql`INSERT INTO prop_ledger (account_id, kind, amount_cents, occurred_on) VALUES (${k.accountId}, ${kind}, ${kwota}, '2026-10-14')`;
+        await wstaw("eval_fee", -15000);
+        await wstaw("payout", 100000);
+        await wstaw("refund", 500);
+        await wstaw("other", -100);
+        await wstaw("other", 100);
+        expect((await blad(wstaw("eval_fee", 15000))).constraint_name).toBe("prop_ledger_sign");
+        expect((await blad(wstaw("payout", -100000))).constraint_name).toBe("prop_ledger_sign");
+        expect((await blad(wstaw("refund", -1))).constraint_name).toBe("prop_ledger_sign");
+        expect((await blad(wstaw("other", 0))).constraint_name).toBe("prop_ledger_amount");
+        expect((await blad(wstaw("premia", 100))).constraint_name).toBe("prop_ledger_kind");
+        expect((await blad(sql`DELETE FROM accounts WHERE id = ${k.accountId}`)).code).toBe("23503");
+      });
+
+      it("weekly_reviews: zatwierdzenie tylko z UI (TJ403); poniedzialek; jedno zobowiazanie; rozliczany jest wczesniejszy przeglad", async () => {
+        const wstaw = (tx: Db, tydzien: string, kolumny = "", wartosci = "") =>
+          tx.unsafe(`INSERT INTO weekly_reviews (week_start${kolumny ? ", " + kolumny : ""}) VALUES ('${tydzien}'${wartosci ? ", " + wartosci : ""}) RETURNING id`);
+        // kolejne poniedzialki (2037-01-05 to poniedzialek)
+        const pon = (n: number) => new Date(Date.UTC(2037, 0, 5) + n * 7 * 86400000).toISOString().slice(0, 10);
+        expect(new Date(pon(0) + "T00:00:00Z").getUTCDay()).toBe(1);
+        const [w1] = await jako("api:5", (tx) => wstaw(tx, pon(0)));
+        expect((await blad(wstaw(sql, "2037-01-06"))).constraint_name).toBe("weekly_reviews_week_monday");
+        expect((await blad(wstaw(sql, pon(0)))).constraint_name).toBe("weekly_reviews_week_uq");
+
+        // zatwierdzenie tylko z UI
+        await trigger("weekly_reviews", "weekly_reviews_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          tx`UPDATE weekly_reviews SET status = 'approved', approved_at = now() WHERE id = ${w1.id}`));
+        await trigger("weekly_reviews", "weekly_reviews_ui_actor", "TJ403", jakoAktor("import", (tx) =>
+          wstaw(tx, pon(1), "status, approved_at", "'approved', now()")));
+        await jako("ui", (tx) => tx`UPDATE weekly_reviews SET status = 'approved', approved_at = now() WHERE id = ${w1.id}`);
+        // cofniecie zatwierdzenia tez tylko z UI
+        await trigger("weekly_reviews", "weekly_reviews_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          tx`UPDATE weekly_reviews SET status = 'draft', approved_at = NULL WHERE id = ${w1.id}`));
+        expect((await blad(jako("ui", (tx) => tx`UPDATE weekly_reviews SET approved_at = NULL WHERE id = ${w1.id}`))).constraint_name).toBe("weekly_reviews_approved");
+
+        // jedno zobowiazanie (jedna kolumna), rozliczane w nastepnym tygodniu
+        const wCom = await slowa(sql, "zobowiazanie: bez trade'ow po 15:00", { day: pon(0) });
+        await sql`UPDATE weekly_reviews SET commitment_words_id = ${wCom} WHERE id = ${w1.id}`;
+        const [w2] = await wstaw(sql, pon(1), "prev_review_id, prev_commitment_result", `${w1.id}, 'partial'`);
+        expect((await sql`SELECT prev_review_id FROM weekly_reviews WHERE id = ${w2.id}`)[0].prev_review_id).toBe(w1.id);
+        // ten sam przeglad rozliczany dwa razy
+        expect((await blad(wstaw(sql, pon(2), "prev_review_id", String(w1.id)))).constraint_name).toBe("weekly_reviews_prev_idx");
+        // wynik rozliczenia bez wskazania przegladu / z niedozwolona wartoscia / slowa bez wyniku
+        expect((await blad(wstaw(sql, pon(2), "prev_commitment_result", "'kept'"))).constraint_name).toBe("weekly_reviews_prev_linked");
+        expect((await blad(wstaw(sql, pon(2), "prev_review_id, prev_commitment_result", `${w2.id}, 'zly'`))).constraint_name).toBe("weekly_reviews_prev_result");
+        expect((await blad(wstaw(sql, pon(2), "prev_result_words_id", String(wCom)))).constraint_name).toBe("weekly_reviews_prev_words");
+        // przeglad nie rozlicza sam siebie: najpierw lapie to trigger (tydzien nie jest wczesniejszy), a CHECK jest druga linia
+        expect((await blad(sql`UPDATE weekly_reviews SET prev_review_id = id WHERE id = ${w2.id}`)).code).toBe("TJ422");
+        await wycofywalna(async (tx) => {
+          await tx.unsafe("ALTER TABLE weekly_reviews DISABLE TRIGGER weekly_reviews_prev_check");
+          const e = await blad(tx`UPDATE weekly_reviews SET prev_review_id = id WHERE id = ${w2.id}`);
+          expect(e.constraint_name).toBe("weekly_reviews_prev_self");
+        });
+        // rozliczany przeglad musi byc z wczesniejszego tygodnia (TJ422)
+        await trigger("weekly_reviews", "weekly_reviews_prev_check", "TJ422", (tx) =>
+          wstaw(tx, pon(-1), "prev_review_id", String(w2.id)));
+        await trigger("weekly_reviews", "weekly_reviews_prev_check", "TJ422", (tx) =>
+          tx`UPDATE weekly_reviews SET prev_review_id = ${w2.id} WHERE id = ${w1.id}`);
+        // przeglad rozliczany nie da sie skasowac (NO ACTION), liczby i data musza isc w parze
+        expect((await blad(sql`DELETE FROM weekly_reviews WHERE id = ${w1.id}`)).code).toBe("23503");
+        expect((await blad(sql`UPDATE weekly_reviews SET stats_snapshot = '{}'::jsonb WHERE id = ${w1.id}`)).constraint_name).toBe("weekly_reviews_snapshot");
+      });
+
+      it("chart_annotations: NULLS NOT DISTINCT w unikacie, kotwica trade / dzien, kolejnosc czasu", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const wstaw = (ext: string, tradeId: number | null, day: string | null, extra = "") =>
+          sql.unsafe(`INSERT INTO chart_annotations (platform, external_id, trade_id, day, shape, raw, captured_at${extra ? ", " + extra.split("|")[0] : ""})
+                      VALUES ('tradingview', '${ext}', ${tradeId ?? "NULL"}, ${day ? `'${day}'` : "NULL"}, 'hline', '{}'::jsonb, now()${extra ? ", " + extra.split("|")[1] : ""})`);
+        const ext = unik("rys");
+        await wstaw(ext, t, null);
+        // to samo (platforma, id, trade, dzien=NULL): zwykly UNIQUE przepuscilby duplikat
+        expect((await blad(wstaw(ext, t, null))).constraint_name).toBe("chart_annotations_uq");
+        await wstaw(ext, t, "2030-08-01"); // inny dzien
+        await wstaw(ext, null, "2030-08-01"); // inny trade (NULL)
+        expect((await blad(wstaw(ext, null, "2030-08-01"))).constraint_name).toBe("chart_annotations_uq");
+        expect((await blad(wstaw(unik("rys"), null, null))).constraint_name).toBe("chart_annotations_anchor");
+        expect((await blad(wstaw(unik("rys"), t, null, "time_from, time_to|'2030-01-02', '2030-01-01'"))).constraint_name).toBe("chart_annotations_time_order");
+        expect((await blad(sql`INSERT INTO chart_annotations (platform, external_id, trade_id, shape, raw, captured_at)
+          VALUES ('inna', 'x', ${t}, 'hline', '{}'::jsonb, now())`)).constraint_name).toBe("chart_annotations_platform");
+      });
+
+      it("profile_terms: potwierdzenie i odrzucenie tylko z UI (TJ403); termin unikalny po lower(f_unaccent); zrodla; poprawki tylko do dopisywania", async () => {
+        const termin = unik("Płynność") + " po sweepie";
+        const wstaw = (tx: Db, t: string, status = "proposed", decided = "NULL") =>
+          tx.unsafe(`INSERT INTO profile_terms (term, meaning, status, origin, decided_at) VALUES ($1, 'FVG@5m', '${status}', 'ai', ${decided}) RETURNING id`, [t]);
+        const [p] = await jako("api:5", (tx) => wstaw(tx, termin));
+        // ten sam termin z innymi wielkosciami liter i bez ogonkow
+        const eDup = await blad(wstaw(sql, termin.toUpperCase().replace("Ł", "L")));
+        expect(eDup.code).toBe("23505");
+        expect(eDup.constraint_name).toBe("profile_terms_term_norm_uq");
+        const [norm] = await sql`SELECT term_norm FROM profile_terms WHERE id = ${p.id}`;
+        expect(norm.term_norm).toBe(termin.toLowerCase().replace("ł", "l").replace("ś", "s").replace("ć", "c"));
+
+        for (const status of ["confirmed", "rejected"]) {
+          await trigger("profile_terms", "profile_terms_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+            tx.unsafe(`UPDATE profile_terms SET status = '${status}', decided_at = now() WHERE id = ${p.id}`)));
+        }
+        await trigger("profile_terms", "profile_terms_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          wstaw(tx, unik("Inny termin"), "confirmed", "now()")));
+        await jako("ui", (tx) => tx`UPDATE profile_terms SET status = 'confirmed', decided_at = now() WHERE id = ${p.id}`);
+        expect((await blad(jako("ui", (tx) => tx`UPDATE profile_terms SET decided_at = NULL WHERE id = ${p.id}`))).constraint_name).toBe("profile_terms_decided");
+
+        // zrodla: klucz glowny (term, slowa); slowa kasowane -> zrodlo znika
+        const w = await slowa(sql, "FVG po sweepie na piatce", { day: "2030-09-01" });
+        await sql`INSERT INTO profile_term_sources (term_id, words_id) VALUES (${p.id}, ${w})`;
+        expect((await blad(sql`INSERT INTO profile_term_sources (term_id, words_id) VALUES (${p.id}, ${w})`)).constraint_name).toBe("profile_term_sources_pk");
+
+        // rejestr poprawek: tylko dopisywanie; FK term NO ACTION (nie SET NULL)
+        const correction = await slowa(sql, "nie, chodzilo mi o FVG na 5m", { day: "2030-09-01" });
+        const [c] = await sql`
+          INSERT INTO interpretation_corrections (words_id, before_interpretation, correction_words_id, after_interpretation, term_id)
+          VALUES (${w}, 'FVG', ${correction}, 'FVG@5m', ${p.id}) RETURNING id`;
+        await trigger("interpretation_corrections", "interpretation_corrections_immutable", "TJ409", (tx) =>
+          tx`UPDATE interpretation_corrections SET after_interpretation = 'inna' WHERE id = ${c.id}`);
+        expect((await blad(sql`DELETE FROM profile_terms WHERE id = ${p.id}`)).code).toBe("23503");
+        // slowa interpretowane kasowane (np. z trade'em) -> poprawka znika (CASCADE to DELETE, nie UPDATE)
+        await sql`DELETE FROM user_words WHERE id = ${w}`;
+        expect((await sql`SELECT 1 FROM interpretation_corrections WHERE id = ${c.id}`).length).toBe(0);
+        expect((await sql`SELECT 1 FROM profile_term_sources WHERE term_id = ${p.id}`).length).toBe(0);
+      });
+
+      it("mentor_claims: skrot cytatu liczy baza (bajty UTF-8), cytat i znacznik czasu niezmienne; unikat; film z twierdzeniami", async () => {
+        const [zr] = await sql`INSERT INTO mentor_sources (video_id, title, url) VALUES (${unik("vid")}, 'Film', 'https://youtu.be/abc') RETURNING id`;
+        const [zr2] = await sql`INSERT INTO mentor_sources (video_id, title, url) VALUES (${unik("vid")}, 'Film 2', 'https://youtu.be/def') RETURNING id`;
+        const cytat = "Zażółć gęślą jaźń: wchodzę dopiero po sweepie";
+        const [c] = await sql`
+          INSERT INTO mentor_claims (source_id, quote, quote_sha256, t_start_s, t_end_s, claim_type)
+          VALUES (${zr.id}, ${cytat}, ${"b".repeat(64)}, 12, 30, 'setup_condition') RETURNING id, quote_sha256`;
+        expect(c.quote_sha256).toBe(sha256Node(cytat)); // trigger nie ufa skrotowi od klienta
+        const zmiany: Record<string, string> = {
+          source_id: `source_id = ${zr2.id}`,
+          quote: "quote = 'inny cytat'",
+          quote_sha256: `quote_sha256 = '${"c".repeat(64)}'`,
+          t_start_s: "t_start_s = 13",
+          t_end_s: "t_end_s = 31",
+        };
+        for (const [kolumna, set] of Object.entries(zmiany)) {
+          await trigger("mentor_claims", "mentor_claims_immutable", "TJ409", (tx) =>
+            tx.unsafe(`UPDATE mentor_claims SET ${set} WHERE id = ${c.id}`), kolumna);
+        }
+        // zmienne: streszczenie AI, status
+        await sql`UPDATE mentor_claims SET paraphrase = 'streszczenie', status = 'review_ok' WHERE id = ${c.id}`;
+        expect((await blad(sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zr.id}, ${cytat}, 12, 'concept')`)).constraint_name).toBe("mentor_claims_source_quote_uq");
+        await sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zr.id}, ${cytat}, 99, 'concept')`;
+        expect((await blad(sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, t_end_s, claim_type) VALUES (${zr.id}, 'x', 10, 5, 'concept')`)).constraint_name).toBe("mentor_claims_t_end");
+        expect((await blad(sql`INSERT INTO mentor_sources (video_id, title, url) VALUES ('v', 't', 'http://x')`)).constraint_name).toBe("mentor_sources_url");
+        expect((await blad(sql`INSERT INTO mentor_sources (platform, video_id, title, url) VALUES ('youtube', ${(await sql`SELECT video_id FROM mentor_sources WHERE id = ${zr.id}`)[0].video_id}, 't', 'https://x')`)).constraint_name).toBe("mentor_sources_video_uq");
+        // kasowanie notatki, do ktorej wlaczono twierdzenie, tylko zeruje merged_note_id (kolumna poza ochrona)
+        const nid = await nowaNotatka(sql, unik("Wlaczone"), { kind: "concept" });
+        await sql`UPDATE mentor_claims SET merged_note_id = ${nid}, status = 'merged' WHERE id = ${c.id}`;
+        await sql`DELETE FROM notes WHERE id = ${nid}`;
+        expect((await sql`SELECT merged_note_id FROM mentor_claims WHERE id = ${c.id}`)[0].merged_note_id).toBeNull();
+        // film z twierdzeniami kasuje sie razem z nimi, o ile nic na nie nie wskazuje
+        await sql`DELETE FROM mentor_sources WHERE id = ${zr.id}`;
+        expect((await sql`SELECT 1 FROM mentor_claims WHERE id = ${c.id}`).length).toBe(0);
+      });
+
+      it("strategy_gaps: odpowiedz i odrzucenie tylko z UI (TJ403), 'asked' ustawia API; resolution tylko dla mentor_conflict i tylko przy answered", async () => {
+        const [zr] = await sql`INSERT INTO mentor_sources (video_id, title, url) VALUES (${unik("vid")}, 'Film', 'https://youtu.be/abc') RETURNING id`;
+        const [claim] = await sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zr.id}, ${unik("cytat")}, 5, 'concept') RETURNING id`;
+        const klucz = () => sha256Node(unik("pytanie"));
+        const wstaw = (tx: Db, kind: string, o: { claim?: number | null; key?: string } = {}) => tx`
+          INSERT INTO strategy_gaps (kind, question, dedupe_key, mentor_claim_id, origin)
+          VALUES (${kind}, 'Czy wchodzisz bez sweepu?', ${o.key ?? klucz()}, ${o.claim ?? null}, 'ai') RETURNING id`;
+        const [luka] = await jako("api:5", (tx) => wstaw(tx, "gap"));
+        const [konflikt] = await jako("api:5", (tx) => wstaw(tx, "mentor_conflict", { claim: claim.id }));
+        // 'asked' ustawia API
+        await jako("api:5", (tx) => tx`UPDATE strategy_gaps SET status = 'asked', asked_at = now() WHERE id = ${luka.id}`);
+        const odp = await slowa(sql, "Nie, czekam na sweep zawsze.", { day: "2030-10-01" });
+        const answered = (id: number, res = "NULL") =>
+          `UPDATE strategy_gaps SET status = 'answered', answered_at = now(), answer_words_id = ${odp}, resolution = ${res} WHERE id = ${id}`;
+        await trigger("strategy_gaps", "strategy_gaps_ui_actor", "TJ403", jakoAktor("api:5", (tx) => tx.unsafe(answered(luka.id))));
+        await trigger("strategy_gaps", "strategy_gaps_ui_actor", "TJ403", jakoAktor("api:5", (tx) => tx.unsafe(answered(konflikt.id, "'keep_mine'"))));
+        await trigger("strategy_gaps", "strategy_gaps_ui_actor", "TJ403", jakoAktor("api:5", (tx) =>
+          tx`UPDATE strategy_gaps SET status = 'dismissed' WHERE id = ${luka.id}`));
+        await trigger("strategy_gaps", "strategy_gaps_ui_actor", "TJ403", jakoAktor("import", (tx) =>
+          tx`INSERT INTO strategy_gaps (kind, question, dedupe_key, origin, status) VALUES ('gap', 'q', ${klucz()}, 'ai', 'dismissed')`));
+        await jako("ui", (tx) => tx.unsafe(answered(luka.id)));
+        await jako("ui", (tx) => tx.unsafe(answered(konflikt.id, "'both_conditional'")));
+
+        // CHECK-i rozstrzygniecia
+        const eLuka = await blad(jako("ui", (tx) => tx`UPDATE strategy_gaps SET resolution = 'keep_mine' WHERE id = ${luka.id}`));
+        expect(eLuka.constraint_name).toBe("strategy_gaps_resolution");
+        const eBez = await blad(jako("ui", (tx) => tx`UPDATE strategy_gaps SET resolution = NULL WHERE id = ${konflikt.id}`));
+        expect(eBez.constraint_name).toBe("strategy_gaps_resolution");
+        const eZly = await blad(jako("ui", (tx) => tx`UPDATE strategy_gaps SET resolution = 'moze' WHERE id = ${konflikt.id}`));
+        expect(eZly.constraint_name).toBe("strategy_gaps_resolution_value");
+        const [otwarty] = await jako("api:5", (tx) => wstaw(tx, "mentor_conflict", { claim: claim.id }));
+        const eResPrzedOdp = await blad(jako("ui", (tx) => tx`UPDATE strategy_gaps SET resolution = 'keep_mine' WHERE id = ${otwarty.id}`));
+        expect(eResPrzedOdp.constraint_name).toBe("strategy_gaps_resolution");
+        expect((await blad(jako("ui", (tx) => tx`UPDATE strategy_gaps SET status = 'answered', answered_at = now(), resolution = 'keep_mine' WHERE id = ${otwarty.id}`))).constraint_name).toBe("strategy_gaps_answer");
+        expect((await blad(jako("api:5", (tx) => wstaw(tx, "mentor_conflict")))).constraint_name).toBe("strategy_gaps_conflict");
+
+        // to samo pytanie nie wisi dwa razy otwarte; po rozstrzygnieciu mozna je zadac ponownie
+        const k = klucz();
+        await jako("api:5", (tx) => wstaw(tx, "gap", { key: k }));
+        expect((await blad(jako("api:5", (tx) => wstaw(tx, "gap", { key: k })))).constraint_name).toBe("strategy_gaps_open_dedupe_idx");
+        await jako("ui", (tx) => tx`UPDATE strategy_gaps SET status = 'dismissed' WHERE dedupe_key = ${k}`);
+        await jako("api:5", (tx) => wstaw(tx, "gap", { key: k }));
+
+        // twierdzenie, na ktore wskazuje pytanie, nie da sie skasowac (FK NO ACTION, bo CHECK wymaga cytatu)
+        expect((await blad(sql`DELETE FROM mentor_claims WHERE id = ${claim.id}`)).code).toBe("23503");
+        expect((await blad(sql`DELETE FROM mentor_sources WHERE id = ${zr.id}`)).code).toBe("23503");
+      });
+    });
+
+
+    /* ------------------------------------------------------------------ (g) */
+    describe("(g) kasowanie trade'u nie jest blokowane przez zadne nowe ograniczenie ani trigger", () => {
+      it("trade z planem, dopiskami planu, rysunkami, przykladami, linkami, werdyktami (z korekta), pytaniem i dopiskiem AI: DELETE przechodzi, reszta kaskaduje albo zeruje", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const { setupId } = await nowySetup(sql);
+        const noteId = await nowaNotatka(sql, unik("Strategia kasowanie"), { kind: "strategy" });
+        const wTrade = await slowa(sql, "opis trade'u", { tradeId: t });
+        const wPlan = await slowa(sql, "teza planu", { tradeId: t });
+        const wAdd = await slowa(sql, "przesuwam SL", { tradeId: t });
+        const wChart = await slowa(sql, "poziom z wykresu", { tradeId: t, source: "chart" });
+        const [plan] = await sql`
+          INSERT INTO trade_plans (trade_id, account_id, instrument_id, day, ruleset_version, direction, entry_price, stop_loss, contracts, risk_cents, origin, thesis_words_id, invalidation_words_id)
+          VALUES (${t}, ${k.accountId}, ${k.instrumentId}, '2030-11-01', 0, 'long', 100, 95, 1, 100, 'user', ${wPlan}, ${wPlan}) RETURNING id`;
+        await sql`INSERT INTO trade_plan_addenda (plan_id, field, words_id) VALUES (${plan.id}, 'other', ${wAdd})`;
+        await sql`INSERT INTO chart_annotations (platform, external_id, trade_id, shape, raw, captured_at, words_id)
+                  VALUES ('tradingview', ${unik("rys")}, ${t}, 'hline', '{}'::jsonb, now(), ${wChart})`;
+        await sql`INSERT INTO setup_examples (setup_id, trade_id, kind, origin, caption_words_id) VALUES (${setupId}, ${t}, 'a_plus', 'user', ${wTrade})`;
+        await sql`INSERT INTO trade_note_links (trade_id, note_id, role, origin) VALUES (${t}, ${noteId}, 'concept', 'user')`;
+        const ai = await sql.begin((tx) => werdyktZSprawdzeniem(tx, t));
+        const korekta = await sql.begin(async (tx) => {
+          const id = await werdykt(tx, t, { kind: "user_override", overrides: ai });
+          await tx`INSERT INTO trade_rule_checks (review_id, rule_id, rule_text, verdict) VALUES (${id}, 'R-001', 'regula', 'fail')`;
+          return id;
+        });
+        const [gap] = await sql`INSERT INTO strategy_gaps (kind, question, dedupe_key, trade_id, origin) VALUES ('gap', 'q', ${sha256Node(unik("g"))}, ${t}, 'ai') RETURNING id`;
+        const [dopisek] = await sql`
+          INSERT INTO note_additions (note_id, body_md, origin, trade_id, quote_words_id) VALUES (${noteId}, 'AI: obserwacja', 'ai', ${t}, ${wTrade}) RETURNING id`;
+
+        await sql`DELETE FROM trades WHERE id = ${t}`; // nie moze pasc na zadnym triggerze, CHECK-u ani FK
+
+        const ile = async (tabela: string, warunek: string) =>
+          (await sql.unsafe(`SELECT count(*)::int AS n FROM ${tabela} WHERE ${warunek}`))[0].n as number;
+        expect(await ile("trade_plans", `id = ${plan.id}`)).toBe(0);
+        expect(await ile("trade_plan_addenda", `plan_id = ${plan.id}`)).toBe(0);
+        expect(await ile("chart_annotations", `trade_id = ${t}`)).toBe(0);
+        expect(await ile("setup_examples", `trade_id = ${t}`)).toBe(0);
+        expect(await ile("trade_note_links", `trade_id = ${t}`)).toBe(0);
+        expect(await ile("trade_reviews", `id IN (${ai}, ${korekta})`)).toBe(0);
+        expect(await ile("trade_rule_checks", `review_id IN (${ai}, ${korekta})`)).toBe(0);
+        expect(await ile("user_words", `id IN (${wTrade}, ${wPlan}, ${wAdd}, ${wChart})`)).toBe(0);
+        // przezywaja z wyzerowanymi kotwicami
+        expect((await sql`SELECT trade_id FROM strategy_gaps WHERE id = ${gap.id}`)[0].trade_id).toBeNull();
+        expect(await sql`SELECT trade_id, quote_words_id FROM note_additions WHERE id = ${dopisek.id}`).toEqual([{ trade_id: null, quote_words_id: null }]);
+        // dopisek zostaje niezmienny, mimo ze jego kotwice zostaly wyzerowane
+        expect((await blad(sql`UPDATE note_additions SET body_md = 'x' WHERE id = ${dopisek.id}`)).code).toBe("TJ409");
+      });
+
+      it("kasowanie sesji backtestu zabiera jej plany, rysunki i slowa; kasowanie setupu z planem jest blokowane (RESTRICT), bez planu przechodzi", async () => {
+        const k = await kontoInstr(sql);
+        const sesja = await nowaSesja(sql);
+        const { setupId } = await nowySetup(sql);
+        await sql`
+          INSERT INTO trade_plans (backtest_session_id, account_id, instrument_id, day, ruleset_version, direction, entry_price, stop_loss, contracts, risk_cents, origin, setup_id)
+          VALUES (${sesja}, ${k.accountId}, ${k.instrumentId}, '2030-11-01', 0, 'long', 100, 95, 1, 100, 'user', ${setupId})`;
+        expect((await blad(sql`DELETE FROM setups WHERE id = ${setupId}`)).code).toBe("23503");
+        await sql`DELETE FROM backtest_sessions WHERE id = ${sesja}`;
+        expect((await sql`SELECT 1 FROM trade_plans WHERE backtest_session_id = ${sesja}`).length).toBe(0);
+        await sql`DELETE FROM setups WHERE id = ${setupId}`;
+      });
+
+      it("kasowanie trade'u uzywa indeksow (bez skanowania sekwencyjnego tabel potomnych)", async () => {
+        await wycofywalna(async (tx) => {
+          await tx`SET LOCAL enable_seqscan = off`;
+          const plany: [string, string][] = [
+            ["trade_reviews", "trade_reviews_trade_idx"],
+            ["trade_plans", "trade_plans_trade_uq"],
+            ["setup_examples", "setup_examples_trade_idx"],
+            ["trade_note_links", "trade_note_links_uq"],
+            ["chart_annotations", "chart_annotations_trade_idx"],
+            ["note_additions", "note_additions_trade_idx"],
+            ["strategy_gaps", "strategy_gaps_trade_idx"],
+            ["trade_plan_addenda", "trade_plan_addenda_plan_idx"],
+          ];
+          for (const [tabela, indeks] of plany) {
+            const kolumna = tabela === "trade_plan_addenda" ? "plan_id" : "trade_id";
+            const plan = (await tx.unsafe(`EXPLAIN SELECT 1 FROM ${tabela} WHERE ${kolumna} = 1`)).map((r) => r["QUERY PLAN"]).join("\n");
+            expect(plan, `${tabela}: ${kolumna} = 1`).toContain(indeks);
+          }
+        });
       });
     });
 
@@ -868,17 +2152,69 @@ if (!TEST_URL) {
 
     /* ------------------------------------------------------------------ (e) */
     describe("(e) odwracalnosc", () => {
-      it("0019_down, 0018_down i 0017_down przywracaja stan sprzed, a ponowne migracje daja identyczny katalog", async () => {
+      /** Katalog bazy po zastosowaniu migracji od 0000 do NNNN wlacznie (osobny folder z ucietym dziennikiem). */
+      async function odciskPoMigracji(n: number): Promise<string> {
+        const dir = mkdtempSync(path.join(tmpdir(), "tj-mig-"));
+        try {
+          mkdirSync(path.join(dir, "meta"));
+          const dziennik = JSON.parse(readFileSync(path.join(ROOT, "drizzle", "meta", "_journal.json"), "utf8")) as {
+            entries: { idx: number; tag: string }[];
+          };
+          dziennik.entries = dziennik.entries.filter((e) => e.idx <= n);
+          writeFileSync(path.join(dir, "meta", "_journal.json"), JSON.stringify(dziennik));
+          for (const e of dziennik.entries) copyFileSync(path.join(ROOT, "drizzle", `${e.tag}.sql`), path.join(dir, `${e.tag}.sql`));
+          await reset();
+          const k = postgres(url, { max: 1, onnotice: () => {} });
+          try {
+            await migrate(drizzle(k), { migrationsFolder: dir });
+          } finally {
+            await k.end();
+          }
+          return await odcisk();
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      }
+
+      const rollback = (nr: string) => readFileSync(path.join(ROOT, "docs", "v2", "rollback", `${nr}_down.sql`), "utf8");
+
+      it("0027_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
+        // wzorce: stan bazy po migracjach 0000..N zbudowany od zera osobnym przebiegiem
+        const wzorzec = new Map<number, string>();
+        for (let n = 19; n <= 27; n++) wzorzec.set(n, await odciskPoMigracji(n));
+        // 0027 zbudowane od zera osobnym migratorem to ten sam katalog, co po scripts/migrate.mjs
+        await reset();
+        migrateSkryptem();
         const przed = await odcisk();
+        expect(przed).toBe(wzorzec.get(27));
+        expect(przed).toBe(odciskSkrypt);
+        expect((await sql`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(138);
+
         const admin = postgres(url, { max: 1, onnotice: () => {} });
         try {
-          const down18 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0018_down.sql"), "utf8");
-          const down17 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0017_down.sql"), "utf8");
-          const down19 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0019_down.sql"), "utf8");
+          for (const n of [27, 26, 25, 24, 23, 22, 21, 20]) {
+            const nr = `00${n}`;
+            await admin.begin(async (tx) => {
+              await tx.unsafe(rollback(nr));
+            });
+            expect(await odcisk(), `katalog po ${nr}_down ma byc taki jak po migracji 00${n - 1}`).toBe(wzorzec.get(n - 1));
+            const wpisy = await admin`SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at >= ${1787650000000 + (n - 20) * 10000000}`;
+            expect(wpisy.length, `wpisy migratora od ${nr}`).toBe(0);
+          }
+          const funkcje2b = await admin`
+            SELECT proname FROM pg_proc WHERE pronamespace = 'public'::regnamespace
+              AND proname IN ('tj_guard_null_only', 'tj_ai_suggestion_flow', 'tj_note_addition_insert', 'tj_plan_guard',
+                              'tj_review_override_check', 'tj_rule_check_guard', 'tj_log_threshold_change',
+                              'tj_weekly_prev_check', 'tj_mentor_claim_hash')`;
+          expect(funkcje2b.map((f) => f.proname)).toEqual([]);
+
+          // faza 2: jak dotad
+          const przed19 = await odcisk();
+          expect(przed19).toBe(wzorzec.get(19));
           // kolejnosc odwrotna do nakladania: FK auth_events -> api_tokens (0019) schodzi pierwszy
           await admin.begin(async (tx) => {
-            await tx.unsafe(down19);
-            await tx.unsafe(down18);
+            await tx.unsafe(rollback("0019"));
+            await tx.unsafe(rollback("0018"));
           });
           const fk19 = await admin`SELECT 1 FROM pg_constraint WHERE conname = 'auth_events_token_id_fkey'`;
           expect(fk19.length).toBe(0);
@@ -896,7 +2232,7 @@ if (!TEST_URL) {
           expect(fun.map((f) => f.proname)).toEqual([]);
 
           await admin.begin(async (tx) => {
-            await tx.unsafe(down17);
+            await tx.unsafe(rollback("0017"));
           });
           const tabele17 = await admin`
             SELECT relname FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace AND relname IN ('api_tokens', 'device_codes')`;
@@ -908,10 +2244,24 @@ if (!TEST_URL) {
         }
         // ponowne zastosowanie przez scripts/migrate.mjs
         const wyjscie = migrateSkryptem();
-        expect(wyjscie).toContain("0017_api_tokens");
-        expect(wyjscie).toContain("0018_notatki");
+        for (const tag of ["0017_api_tokens", "0018_notatki", "0019_auth_events_token_fk", "0020_proces_playbook", "0021_plan_werdykt",
+          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki"]) {
+          expect(wyjscie).toContain(tag);
+        }
         expect(await odcisk()).toBe(przed);
-      }, 120_000);
+        expect((await sql`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(138);
+      }, 300_000);
+
+      it("0024_down kasuje tylko wiersze wstawione przez migracje (presety dodane przez uzytkownika zostaja)", async () => {
+        await sql`INSERT INTO prop_firm_presets (firm, program, phase, account_size_cents, dd_type, max_dd_cents, source_url, read_on)
+                  VALUES ('Moja firma', 'Moj program', 'eval', 1000000, 'eod', 100000, 'https://x.pl', '2026-10-14')`;
+        await wycofywalna(async (tx) => {
+          await tx.unsafe(rollback("0024").replace(/DELETE FROM drizzle\.__drizzle_migrations[^;]*;/, ""));
+          expect((await tx`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(1);
+          expect((await tx`SELECT firm FROM prop_firm_presets`)[0].firm).toBe("Moja firma");
+        });
+        await sql`DELETE FROM prop_firm_presets WHERE firm = 'Moja firma'`;
+      });
     });
   });
 }
