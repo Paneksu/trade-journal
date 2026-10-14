@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs>
+<linearGradient id="pt" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b212a"/><stop offset=".55" stop-color="#10141a"/><stop offset="1" stop-color="#0b0e12"/></linearGradient>
+<linearGradient id="pa" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="54"><stop offset="0" stop-color="#f5b968"/><stop offset=".6" stop-color="#e8a44c"/><stop offset="1" stop-color="#d68a2e"/></linearGradient>
+<linearGradient id="pd" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="54"><stop offset="0" stop-color="#e8a44c" stop-opacity=".42"/><stop offset="1" stop-color="#e8a44c" stop-opacity=".26"/></linearGradient>
+<radialGradient id="pg" cx=".5" cy=".55" r=".5"><stop offset="0" stop-color="#e8a44c" stop-opacity=".16"/><stop offset="1" stop-color="#e8a44c" stop-opacity="0"/></radialGradient>
+<linearGradient id="ph" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="64" height="64" fill="url(#pt)"/>
+<rect width="64" height="64" fill="url(#pg)"/>
+
+<g transform="translate(32 32) scale(0.92) translate(-32 -32)"><g fill="url(#pa)" stroke="url(#pa)" stroke-width="2" stroke-linejoin="round"><path d="M19.5 29.5A17.5 17.5 0 0 1 54.5 29.5Z"/><path d="M9.5 34.5A17.5 17.5 0 0 0 44.5 34.5Z"/></g></g>
+</svg>

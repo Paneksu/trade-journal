@@ -90,6 +90,18 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 10 | Pytanie celu: „czy ekran wygląda co najmniej tak dobrze jak wzór i czy widać, że to nasz dziennik?” | Słowa użytkownika: «Tak» | Przyjęte brzmienie z planszy | 2026-10-14 |
 | 11 | Logo: prosty znak, robi `brand-designer`; także favicon i ikona PWA | Słowa użytkownika: «Tak, prosty znak» | Marka bez znaku; PWA potrzebuje ikony | 2026-10-14 |
 | 12 | Wzory ekranów 1–14 bez zmian | Słowa użytkownika: «Bez zmian» | Akceptacja listy wzorów | 2026-10-14 |
+| 13 | Znak: FVG, wariant V1 „Bycza luka z CE” (zestaw `docs/design/znak/runda-4-fvg/v1-bycza-ce/`); zmienia „prosty znak” z decyzji 11 na znak z detalem | Słowa użytkownika: «V1: Bycza luka z CE» (wcześniej «2. FVG» i «Cos bardziej w stylu tradingu może być bardziej detalowe») | Rundy 1–3 odrzucone; użytkownik chce znaku tradingowego z detalem | 2026-10-14 |
+
+## Znak
+Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.
+
+Pełny znak to trzy świece z metalu na siatce wykresu: złota świeca przemieszczenia w środku, stalowe po bokach, między nimi złota strefa FVG z kreskowaniem i przerywaną linią CE 50%. Od 16 do 32 px działa osobny, uproszczony favicon z tej samej rodziny. Zieleń i czerwień w znaku nie występują.
+
+Historia (14.10.2026):
+- Runda 1 (`znak/`): trzy proste znaki (nawiasy zakresu, monogramy D i R). Odrzucone: «Jakiś ładniejszy popracuj nad tym dłużej».
+- Runda 2 (`znak/runda-2/`): 10 szkiców geometrycznych, finały: przesunięcie, zakres, horyzont. Odrzucone: «Cos bardziej w stylu tradingu może być bardziej detalowe».
+- Runda 3 (`znak/runda-3/`): 12 szkiców z detalem tradingowym, finały: herb, świeca-dziennik, otwarty dziennik. Użytkownik wybrał szkic 2: «2. FVG».
+- Runda 4 (`znak/runda-4-fvg/`): trzy warianty FVG (bycza z CE, niedźwiedzia z CE, przerwa z kreskowaniem). Wybrany V1: «V1: Bycza luka z CE».
 
 ## Poziom dowodów
 PRZETESTOWANE: szkielet A przy 1440 i 375 (zrzuty i pomiar Playwright, brak poziomego scrolla przy 375), ekran 7b przy 1440, ruch hover Mercury. CZĘŚCIOWE: wszystkie pozostałe wzory (obraz Refero `full` obejrzany, bez pomiaru na żywo). NIEPRZETESTOWANE: liczby Linear, zachowanie 375 wzorów 2–13 (brak wersji telefonu we wzorach; przyjęto regułę jednej kolumny z A), ruch Linear.

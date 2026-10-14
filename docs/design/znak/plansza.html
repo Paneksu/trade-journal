@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<title>Znak dziennika: 3 propozycje</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0e12; --surface: #12161c; --surface-2: #191f26; --line: #262e38; --line-strong: #35404d;
+    --text: #e7ecf1; --muted: #97a3b0; --faint: #838f9d; --accent: #e8a44c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 "IBM Plex Sans", sans-serif; }
+  main { width: 1440px; padding: 48px 56px 64px; }
+  h1 { font-size: 28px; line-height: 36px; font-weight: 600; margin: 0 0 4px; }
+  .lead { color: var(--muted); margin: 0 0 32px; max-width: 900px; }
+  .rząd { display: grid; grid-template-columns: 260px 180px 200px 300px 1fr; gap: 24px; margin-bottom: 24px; }
+  .karta { background: var(--surface); border: 1px solid rgb(255 255 255 / .12); border-radius: 12px; padding: 24px; }
+  .etykieta { font: 500 11px/16px "IBM Plex Mono", monospace; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); margin: 0 0 12px; }
+  .nazwa { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
+  .opis { color: var(--muted); margin: 0; }
+  .duzy { width: 160px; height: 160px; display: block; margin-top: 16px; }
+  .maski { display: flex; gap: 16px; align-items: center; }
+  .maski img { width: 64px; height: 64px; display: block; }
+  .kolo { border-radius: 50%; }
+  .squircle { border-radius: 22%; }
+  .kropla { border-radius: 50% 50% 50% 12%; }
+  .rozmiary { display: flex; gap: 14px; align-items: flex-end; margin-top: 16px; }
+  .rozmiary figure { margin: 0; text-align: center; font: 11px "IBM Plex Mono", monospace; color: var(--faint); }
+  .rozmiary img { display: block; margin: 0 auto 6px; }
+  .piksele { image-rendering: pixelated; width: 96px; height: 96px; }
+  /* karta przeglądarki */
+  .pasek { border-radius: 8px; padding: 8px 8px 0; margin-bottom: 12px; }
+  .pasek.ciemny { background: #1f2329; }
+  .pasek.jasny { background: #dfe3e8; }
+  .zakladki { display: flex; gap: 2px; }
+  .zakladka { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border-radius: 8px 8px 0 0; font-size: 12px; width: 132px; white-space: nowrap; overflow: hidden; }
+  .ciemny .zakladka { color: #9aa3ad; }
+  .ciemny .zakladka.aktywna { background: #35393f; color: #e8eaed; }
+  .jasny .zakladka { color: #5f6368; }
+  .jasny .zakladka.aktywna { background: #fff; color: #202124; }
+  .zakladka i { width: 16px; height: 16px; border-radius: 3px; background: #6b7280; flex: none; }
+  .zakladka img { width: 16px; height: 16px; flex: none; }
+  /* telefon */
+  .telefon { width: 252px; height: 300px; border-radius: 28px; padding: 28px 22px; background: linear-gradient(160deg, #24303d, #0f141a 70%); border: 1px solid var(--line-strong); display: grid; grid-template-columns: repeat(4, 1fr); row-gap: 18px; align-content: start; }
+  .apka { text-align: center; font-size: 10px; color: #dfe5ea; }
+  .apka span { display: block; width: 46px; height: 46px; margin: 0 auto 5px; border-radius: 12px; }
+  .apka img { width: 46px; height: 46px; display: block; margin: 0 auto 5px; border-radius: 12px; }
+  .a1 { background: #3b6fd8; } .a2 { background: #2f9e6a; } .a3 { background: #d1503e; } .a4 { background: #8a5cd0; } .a5 { background: #e1e5ea; } .a6 { background: #4b5563; } .a7 { background: #c9862e; }
+  /* nagłówek aplikacji */
+  .app { display: grid; grid-template-columns: 124px 1fr; height: 300px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .sidebar { background: #080a0d; padding: 16px 12px; border-right: 1px solid var(--line); }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; padding: 2px 8px 16px; }
+  .logo img { width: 22px; height: 22px; }
+  .nav { font-size: 13px; color: var(--muted); padding: 6px 8px; border-radius: 6px; }
+  .nav.aktywny { background: var(--surface-2); color: var(--text); }
+  .tresc { padding: 16px; }
+  .tresc h2 { font-size: 22px; line-height: 28px; font-weight: 600; margin: 0 0 12px; }
+  .pigulka { display: inline-block; margin-bottom: 6px; font-size: 12px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--line-strong); color: var(--muted); margin-right: 6px; }
+  .pigulka.glowna { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 500; }
+  .liczba { font: 500 26px/32px "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; margin-top: 20px; }
+  .roboczy { font: 11px "IBM Plex Mono", monospace; color: var(--faint); margin-top: 8px; }
+  .uwagi { color: var(--muted); max-width: 1000px; margin-top: 32px; }
+  .uwagi b { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Znak dziennika: 3 propozycje</h1>
+  <p class="lead">Każda propozycja w dwóch wariantach: kafel na ciemnym tle (favicon, ikona „any”) i maskable dla PWA (glif w 72% boku, w kole bezpiecznym). Kolory z tokenów: tło #0b0e12, akcent #e8a44c, tekst #e7ecf1. „Dziennik” to nazwa robocza (tekst roboczy).</p>
+
+  <!-- A -->
+  <section class="rząd" data-znak="a-zakres">
+    <div class="karta">
+      <p class="etykieta">Propozycja A</p>
+      <p class="nazwa">Zakres</p>
+      <p class="opis">Nawiasy zakresu z linią 50% w akcencie: dealing range i equilibrium z ICT, bez wykresu.</p>
+      <img class="duzy" src="a-zakres/icon-dark.svg" alt="">
+    </div>
+    <div class="karta">
+      <p class="etykieta">Maskable (Android)</p>
+      <div class="maski"><img class="kolo" src="a-zakres/icon-maskable.svg" alt=""><img class="squircle" src="a-zakres/icon-maskable.svg" alt=""></div>
+      <div class="maski" style="margin-top:16px"><img class="kropla" src="a-zakres/icon-maskable.svg" alt=""><img src="a-zakres/icon-maskable.svg" alt=""></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Rozmiary rzeczywiste</p>
+      <div class="rozmiary">
+        <figure><img src="a-zakres/favicon.svg" width="48" height="48" alt="">48</figure>
+        <figure><img src="a-zakres/favicon-32.png" width="32" height="32" alt="">32</figure>
+        <figure><img src="a-zakres/favicon-16.png" width="16" height="16" alt="">16</figure>
+      </div>
+      <div class="rozmiary"><figure><img class="piksele" src="a-zakres/favicon-16.png" alt="">16 px, piksele ×6</figure></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Karta przeglądarki</p>
+      <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="a-zakres/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="a-zakres/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+      <div class="telefon" style="height:auto;width:100%">
+        <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="a-zakres/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      </div>
+    </div>
+    <div class="app">
+      <div class="sidebar"><div class="logo"><img src="a-zakres/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+      <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section class="rząd" data-znak="b-monogram-d">
+    <div class="karta">
+      <p class="etykieta">Propozycja B</p>
+      <p class="nazwa">Monogram D</p>
+      <p class="opis">Geometryczne D z jednej kreski w akcencie; najprostsze, ale związane z nazwą roboczą „Dziennik”.</p>
+      <img class="duzy" src="b-monogram-d/icon-dark.svg" alt="">
+    </div>
+    <div class="karta">
+      <p class="etykieta">Maskable (Android)</p>
+      <div class="maski"><img class="kolo" src="b-monogram-d/icon-maskable.svg" alt=""><img class="squircle" src="b-monogram-d/icon-maskable.svg" alt=""></div>
+      <div class="maski" style="margin-top:16px"><img class="kropla" src="b-monogram-d/icon-maskable.svg" alt=""><img src="b-monogram-d/icon-maskable.svg" alt=""></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Rozmiary rzeczywiste</p>
+      <div class="rozmiary">
+        <figure><img src="b-monogram-d/favicon.svg" width="48" height="48" alt="">48</figure>
+        <figure><img src="b-monogram-d/favicon-32.png" width="32" height="32" alt="">32</figure>
+        <figure><img src="b-monogram-d/favicon-16.png" width="16" height="16" alt="">16</figure>
+      </div>
+      <div class="rozmiary"><figure><img class="piksele" src="b-monogram-d/favicon-16.png" alt="">16 px, piksele ×6</figure></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Karta przeglądarki</p>
+      <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="b-monogram-d/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="b-monogram-d/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+      <div class="telefon" style="height:auto;width:100%">
+        <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="b-monogram-d/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      </div>
+    </div>
+    <div class="app">
+      <div class="sidebar"><div class="logo"><img src="b-monogram-d/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+      <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section class="rząd" data-znak="c-monogram-r">
+    <div class="karta">
+      <p class="etykieta">Propozycja C</p>
+      <p class="nazwa">Monogram R</p>
+      <p class="opis">Geometryczne R jak jednostka wyniku (R), niezależne od nazwy produktu.</p>
+      <img class="duzy" src="c-monogram-r/icon-dark.svg" alt="">
+    </div>
+    <div class="karta">
+      <p class="etykieta">Maskable (Android)</p>
+      <div class="maski"><img class="kolo" src="c-monogram-r/icon-maskable.svg" alt=""><img class="squircle" src="c-monogram-r/icon-maskable.svg" alt=""></div>
+      <div class="maski" style="margin-top:16px"><img class="kropla" src="c-monogram-r/icon-maskable.svg" alt=""><img src="c-monogram-r/icon-maskable.svg" alt=""></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Rozmiary rzeczywiste</p>
+      <div class="rozmiary">
+        <figure><img src="c-monogram-r/favicon.svg" width="48" height="48" alt="">48</figure>
+        <figure><img src="c-monogram-r/favicon-32.png" width="32" height="32" alt="">32</figure>
+        <figure><img src="c-monogram-r/favicon-16.png" width="16" height="16" alt="">16</figure>
+      </div>
+      <div class="rozmiary"><figure><img class="piksele" src="c-monogram-r/favicon-16.png" alt="">16 px, piksele ×6</figure></div>
+    </div>
+    <div class="karta">
+      <p class="etykieta">Karta przeglądarki</p>
+      <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="c-monogram-r/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="c-monogram-r/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+      <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+      <div class="telefon" style="height:auto;width:100%">
+        <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="c-monogram-r/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      </div>
+    </div>
+    <div class="app">
+      <div class="sidebar"><div class="logo"><img src="c-monogram-r/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+      <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+    </div>
+  </section>
+
+  <p class="uwagi"><b>Siatka:</b> 32 × 32, kreska 4 jednostki = 2 px przy 16 px, krawędzie na całych pikselach. <b>Kafel:</b> r = 7 z ramką 1 px #35404d, żeby znak nie znikał na ciemnym pasku kart. <b>Maskable:</b> pełne tło, glif w 72% boku (mieści się w kole bezpiecznym r = 40%). <b>Apple touch 180:</b> pełne tło bez przezroczystości, glif 86%.</p>
+</main>
+</body>
+</html>

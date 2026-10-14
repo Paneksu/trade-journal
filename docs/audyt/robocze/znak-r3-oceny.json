@@ -1,0 +1,68 @@
+{
+  "wybrane": [
+    "s05",
+    "s06",
+    "s09"
+  ],
+  "wnioski": [
+    [
+      "Trading czyta się z jednego motywu",
+      "Świece z knotami (Take Profit Trader), słupki (Bookmap), byk (TradeZella), linia z ptaszkiem (Tradervue). Jeden motyw tradingowy wystarcza, żeby od razu było wiadomo, o co chodzi."
+    ],
+    [
+      "Złoto na ciemnym to herb, nie gadżet",
+      "My Funded Futures: złota tarcza z koroną i słupkami na granacie. Najbliżej naszej tożsamości, bo akcent #e8a44c to właśnie złoto."
+    ],
+    [
+      "Detal premium to warstwy, nie kolory",
+      "Metal z refleksem (gradient poziomy na korpusie świecy), podwójny grawer obrysu, siatka wykresu w tle na 4%, cień pod znakiem i ciepła poświata. Kolorów mało."
+    ],
+    [
+      "Tania grafika to strzałka w górę i tęcza",
+      "Łamana ze strzałką, klipart byka, pięć kolorów naraz. Unikamy: zieleń i czerwień tylko jako kolor pojedynczej świecy."
+    ],
+    [
+      "Dwa poziomy rysunku",
+      "Herb i odznaka przy 16 px stają się plamą. Zawsze osobny favicon z tej samej sylwetki: obrys plus dwie świece, bez napisów i grawerów."
+    ],
+    [
+      "Napis w znaku tylko duży",
+      "NQ w tarczy czyta się od 180 px. W faviconie znika, więc tam go nie ma."
+    ]
+  ],
+  "szkice": {
+    "s01": "Czytelne, ale to ikona giełdy jak wiele innych.",
+    "s02": "Najbardziej ICT. Przy 16 px luka znika, zostają 3 słupki.",
+    "s03": "Opowiada sweep, ale potrzebuje podpisu, żeby to zobaczyć.",
+    "s04": "Mocny, ale byk to znak TradeZelli.",
+    "s05": "Dziennik i trading naraz. Do finału.",
+    "s06": "Herb jak u prop firm, złoto pasuje. Do finału.",
+    "s07": "Ładna moneta, ale NQ to rynek, nie dziennik.",
+    "s08": "Celownik kojarzy się z grą albo z bronią.",
+    "s09": "Najbardziej własny pomysł: świeca, która jest notesem. Do finału.",
+    "s10": "Strzałka w górę: najtańsza klisza.",
+    "s11": "Ładny szlif, ale bez świec czyta się jak klejnot.",
+    "s12": "Wieniec wygląda jak nagroda, nie jak narzędzie."
+  },
+  "finaly": {
+    "f1-herb": {
+      "zdanie": "Złota tarcza z podwójnym grawerem, w pasie u góry NQ, w polu trzy rosnące świece nad przerywanym poziomem: emblemat jak u firm prop, w kolorach naszej marki.",
+      "ocena": "8",
+      "luka": "10 wyglądałoby tak: litery NQ narysowane przez liternika (teraz to geometria z prostokątów i koła, ogon Q jest za prosty), a na tarczy jeden własny detal, np. grawer siatki wykresu w polu, który zobaczysz dopiero przy 512 px. Favicon czyta się jako tarcza z dwiema świecami, ale przy 16 px świece są tylko dwiema kreskami.",
+      "poprawki": "N z wielokąta zamiast kreski (wcześniej szpikulce na rogach), pas z NQ przyciemniony i oddzielony podwójną linią, świece przeniesione nad przerywany poziom, światło na górnej krawędzi tarczy, osobny favicon: tarcza i dwie świece, bez napisu."
+    },
+    "f2-swieca-dziennik": {
+      "zdanie": "Jedna złota świeca, której korpus jest notesem: spirala z lewej, linie wpisów, zakładka i zielony ptaszek przy ostatnim wpisie.",
+      "ocena": "7",
+      "luka": "10 wyglądałoby tak: od pierwszego spojrzenia jest i świecą, i notesem. Teraz przy 512 px wygrywa notes, a knoty wyglądają jak oś zwoju. Brakuje też drugiej świecy albo poziomu, który od razu powiedziałby „trading”.",
+      "poprawki": "knoty pogrubione z 20 do 24 i z metalu (wcześniej ginęły), zakładka zmieniona ze stalowej na ciemne złoto (stalowa krzyczała), linie wpisów z grawerem: ciemna kreska i jasny refleks pod nią, favicon jako świeca z trzema liniami."
+    },
+    "f3-otwarty-dziennik": {
+      "zdanie": "Otwarta księga ze złotymi krawędziami: na lewej stronie wpisy, na prawej trzy świece dnia (czerwona, złota, zielona) nad przerywanym poziomem i złota zakładka.",
+      "ocena": "7",
+      "luka": "10 wyglądałoby tak: dolne krawędzie kart układają się w czysty stos (teraz złoty spód wygląda trochę jak podwójna linia), a znak ma jeden środek uwagi zamiast dwóch równorzędnych stron. Przy 16 px to złota plama w kształcie książki, świeca ledwo widoczna.",
+      "poprawki": "dodany stos kartek pod stronami i cień grzbietu, zieleń i czerwień tylko na dwóch świecach i jednym wpisie, poziom przerywany przez prawą stronę, favicon: sylwetka książki, trzy linie i ciemna świeca na prawej stronie."
+    }
+  },
+  "stopka": "<b>Pełny znak:</b> siatka 512, kafel r = 112 z tłem #1f2731 → #0b0e12, siatka wykresu 4%, poświata akcentu 22%, cień pod znakiem; złoto #fcd593 → #e8a44c → #b3722a, metal jako gradient poziomy. <b>Favicon:</b> siatka 32, płaski kafel z ramką #35404d, uproszczony rysunek tej samej rodziny. <b>Maskable:</b> pełne tło, znak w 78%. <b>Apple touch 180:</b> pełne tło, znak w 90%."
+}
