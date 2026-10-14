@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button, Checkbox, ErrorMessage, Input, Label, SuccessMessage } from "@/components/ui/base";
-import { uniewaznUrzadzenie, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
+import { odrzucOczekujace, uniewaznUrzadzenie, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
 import { czyInnyAdres } from "@/lib/api-v2/adres";
 import { dateTime } from "@/lib/format";
 
@@ -118,6 +118,31 @@ export function UniewaznPrzycisk({ id, nazwa }: { id: number; nazwa: string }) {
         Unieważnij
       </Button>
       {blad && <span className="text-xs text-loss">{blad}</span>}
+    </span>
+  );
+}
+
+export function OdrzucOczekujacePrzycisk() {
+  const [pending, start] = useTransition();
+  const [info, ustawInfo] = useState<string | null>(null);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Button
+        type="button"
+        variant="danger"
+        size="s"
+        disabled={pending}
+        onClick={() => {
+          if (!window.confirm("Odrzucić wszystkie oczekujące żądania logowania urządzeń? Tak zrób, gdy żadnego z nich nie uruchomiłeś.")) return;
+          start(async () => {
+            const w = await odrzucOczekujace();
+            ustawInfo(w.error ?? `Odrzucono: ${w.odrzucono ?? 0}`);
+          });
+        }}
+      >
+        Odrzuć wszystkie oczekujące
+      </Button>
+      {info && <span className="text-xs text-muted">{info}</span>}
     </span>
   );
 }

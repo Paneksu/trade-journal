@@ -47,38 +47,39 @@ export async function rozpocznijUrzadzenie(
   // Sprzatanie po 10 minutach (czas zycia kodu), nie po dobie: wygasle zadania nie maja po co lezec w bazie.
   await db.delete(deviceCodes).where(lt(deviceCodes.expiresAt, sql`now()`));
 
-  // Limit sprawdzany pod blokada, zeby rownolegle starty nie przekroczyly go razem.
-  const odmowa = await db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tj.device.pending'))`);
-    const [w] = await tx
-      .select({ ile: sql<number>`count(*)::int` })
-      .from(deviceCodes)
-      .where(and(isNull(deviceCodes.approvedAt), isNull(deviceCodes.deniedAt), isNull(deviceCodes.consumedAt), gt(deviceCodes.expiresAt, sql`now()`)));
-    return (w?.ile ?? 0) >= LIMIT_OCZEKUJACYCH ? (w?.ile ?? 0) : null;
-  });
-  if (odmowa !== null) {
-    return {
-      ok: false,
-      kod: "too_many_pending",
-      komunikat: `W aplikacji czeka już ${odmowa} niezatwierdzonych żądań logowania urządzeń (limit ${LIMIT_OCZEKUJACYCH}). Poczekaj do 10 minut, aż wygasną, albo odrzuć je na stronie Urządzenia. Jeśli to nie Ty je wysłałeś, ktoś próbuje wyłudzić zatwierdzenie.`,
-    };
-  }
-
-  // Kolizja user_code (20^8 mozliwosci) jest praktycznie niemozliwa, ale unikat w bazie
-  // jest ostateczny, wiec ponawiamy zamiast zwracac 500.
+  // Kolizja user_code (20^8 mozliwosci) jest praktycznie niemozliwa, ale unikat w bazie jest
+  // ostateczny, wiec ponawiamy zamiast zwracac 500. Kazda proba to JEDNA transakcja:
+  // blokada doradcza -> liczenie limitu -> wstawienie, wiec rownolegle starty z wielu adresow
+  // nie przekrocza limitu (audyt N2: wczesniej wstawienie szlo juz po zwolnieniu blokady).
   for (let proba = 0; proba < 5; proba += 1) {
     const { deviceCode, sha256 } = wygenerujKodUrzadzenia();
     const userCode = wygenerujKodUzytkownika();
     try {
-      await db.insert(deviceCodes).values({
-        deviceCodeSha256: sha256,
-        userCode,
-        clientName: nazwaKlienta,
-        clientIp: adresKlienta,
-        requestedScopes: zakresy,
-        expiresAt: sql`now() + ${WAZNOSC_KODU_S} * interval '1 second'`,
+      const wynik = await db.transaction(async (tx): Promise<WynikStartuLubOdmowa> => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tj.device.pending'))`);
+        const [w] = await tx
+          .select({ ile: sql<number>`count(*)::int` })
+          .from(deviceCodes)
+          .where(and(isNull(deviceCodes.approvedAt), isNull(deviceCodes.deniedAt), isNull(deviceCodes.consumedAt), gt(deviceCodes.expiresAt, sql`now()`)));
+        const ile = w?.ile ?? 0;
+        if (ile >= LIMIT_OCZEKUJACYCH) {
+          return {
+            ok: false,
+            kod: "too_many_pending",
+            komunikat: `W aplikacji czeka już ${ile} niezatwierdzonych żądań logowania urządzeń (limit ${LIMIT_OCZEKUJACYCH}). Poczekaj do 10 minut, aż wygasną, albo odrzuć je na stronie Urządzenia (przycisk „Odrzuć wszystkie oczekujące”). Jeśli to nie Ty je wysłałeś, ktoś próbuje wyłudzić zatwierdzenie.`,
+          };
+        }
+        await tx.insert(deviceCodes).values({
+          deviceCodeSha256: sha256,
+          userCode,
+          clientName: nazwaKlienta,
+          clientIp: adresKlienta,
+          requestedScopes: zakresy,
+          expiresAt: sql`now() + ${WAZNOSC_KODU_S} * interval '1 second'`,
+        });
+        return { ok: true, deviceCode, userCode, expiresIn: WAZNOSC_KODU_S, interval: INTERWAL_ODPYTYWANIA_S };
       });
-      return { ok: true, deviceCode, userCode, expiresIn: WAZNOSC_KODU_S, interval: INTERWAL_ODPYTYWANIA_S };
+      return wynik;
     } catch (e) {
       if (kodBleduBazy(e) === "23505") continue;
       throw e;

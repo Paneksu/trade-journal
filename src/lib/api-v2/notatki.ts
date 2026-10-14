@@ -195,13 +195,13 @@ export async function zmienNotatke(
   d: z.output<typeof NotatkaZmienSchema>,
 ): Promise<WynikNotatki> {
   const [obecnyRodzaj] = await tx.select({ kind: notes.kind }).from(notes).where(eq(notes.id, id)).limit(1);
-  if (obecnyRodzaj && odeslanieDlaKindu(obecnyRodzaj.kind) && (d.title !== undefined || d.bodyMd !== undefined || d.meta !== undefined)) {
+  if (obecnyRodzaj && odeslanieDlaKindu(obecnyRodzaj.kind) && (d.title !== undefined || d.bodyMd !== undefined || d.meta !== undefined || d.archived !== undefined)) {
     const o = odeslanieDlaKindu(obecnyRodzaj.kind)!;
     return {
       ok: false,
       status: 409,
       kod: "managed_note",
-      komunikat: `Notatka #${id} jest częścią typowanej encji (»${obecnyRodzaj.kind}«), więc jej tytułu, treści i meta nie zmienia się zwykłym PATCH. ${o.komunikat} Przez PATCH można ją tylko zarchiwizować (archived).`,
+      komunikat: `Notatka #${id} jest częścią typowanej encji (»${obecnyRodzaj.kind}«), więc jej tytułu, treści i meta nie zmienia się zwykłym PATCH. ${o.komunikat} Archiwizacja takiej notatki też jest tylko w aplikacji: znikałaby z wyszukiwania, z którego korzystają agenci.`,
       dodatkowe: { useInstead: o.sciezka },
     };
   }

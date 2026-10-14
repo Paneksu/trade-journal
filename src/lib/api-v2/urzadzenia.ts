@@ -187,3 +187,16 @@ export async function oczekujaceKody(): Promise<KodDoZatwierdzenia[]> {
     expiresAt: w.expiresAt,
   }));
 }
+
+/**
+ * "Odrzuc wszystkie oczekujace" bez znajomosci kodow: obrona przed zalewem zadan, ktory
+ * blokuje wlasne `tj login` uzytkownika (globalny limit 20). Zwraca liczbe odrzuconych.
+ */
+export async function odrzucWszystkieOczekujace(): Promise<number> {
+  const zmienione = await db
+    .update(deviceCodes)
+    .set({ deniedAt: sql`now()` })
+    .where(and(isNull(deviceCodes.approvedAt), isNull(deviceCodes.deniedAt), isNull(deviceCodes.consumedAt), gt(deviceCodes.expiresAt, sql`now()`)))
+    .returning({ id: deviceCodes.id });
+  return zmienione.length;
+}

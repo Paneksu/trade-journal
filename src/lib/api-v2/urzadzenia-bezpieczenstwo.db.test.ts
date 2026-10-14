@@ -86,6 +86,38 @@ describe.skipIf(!MOZNA_NA_BAZIE)("limit żądań, sprzątanie i wyłącznik devi
     expect(ile).toBe(0);
   });
 
+  it("równoległe starty z wielu adresów nie przekraczają limitu 20 (blokada obejmuje też wstawienie)", async () => {
+    await sql`delete from device_codes where token_id is null`;
+    // Wstawienie spowolnione o 100 ms: bez blokady obejmującej INSERT wszystkie zliczyłyby 0 i wstawiły.
+    await sql.unsafe("create or replace function tj_test_opoznij_kod() returns trigger language plpgsql as $$ begin perform pg_sleep(0.1); return new; end $$");
+    await sql.unsafe("create trigger tj_test_opoznienie_kod before insert on device_codes for each row execute function tj_test_opoznij_kod()");
+    try {
+      const wyniki = await Promise.all(Array.from({ length: 30 }, (_, i) => start(`rownolegle ${i} ${znacznik}`)));
+      const statusy = wyniki.map((r) => r.status);
+      expect(statusy.filter((s) => s === 200)).toHaveLength(20);
+      expect(statusy.filter((s) => s === 429)).toHaveLength(10);
+      const [{ ile }] = await sql`select count(*)::int as ile from device_codes where client_name like ${`rownolegle %${znacznik}`}`;
+      expect(ile).toBe(20);
+    } finally {
+      await sql.unsafe("drop trigger if exists tj_test_opoznienie_kod on device_codes");
+      await sql.unsafe("drop function if exists tj_test_opoznij_kod()");
+    }
+  });
+
+  it("«Odrzuć wszystkie oczekujące» zwalnia limit bez znajomości kodów i nie rusza już zatwierdzonych", async () => {
+    const urz = await import("./urzadzenia");
+    await sql`delete from device_codes where token_id is null`;
+    for (let i = 0; i < 20; i += 1) await start(`zalew ${i} ${znacznik}`);
+    expect((await start(`zalew 21 ${znacznik}`)).status).toBe(429);
+    const [pierwszy] = await sql`select id from device_codes where client_name = ${`zalew 0 ${znacznik}`}`;
+    await urz.zatwierdzKod(pierwszy.id, ["read"]);
+    expect(await urz.odrzucWszystkieOczekujace()).toBe(19);
+    const [zatw] = await sql`select approved_at, denied_at from device_codes where id = ${pierwszy.id}`;
+    expect(zatw.approved_at).not.toBeNull();
+    expect(zatw.denied_at).toBeNull();
+    expect((await start(`po zalewie ${znacznik}`)).status).toBe(200);
+  });
+
   it("DEVICE_LOGIN_DISABLED=1 zamyka device/start (403), a bez niej działa; device/token nadal odpowiada", async () => {
     await sql`delete from device_codes where token_id is null`;
     vi.stubEnv("DEVICE_LOGIN_DISABLED", "1");

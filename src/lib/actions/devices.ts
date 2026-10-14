@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
-import { odrzucKod, uniewaznToken, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
+import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
 
@@ -104,4 +104,12 @@ export async function uniewaznUrzadzenie(id: number): Promise<{ ok?: boolean; er
   if (!w.ok) return { error: w.komunikat };
   revalidatePath("/settings/devices");
   return { ok: true };
+}
+
+/** Odrzuca wszystkie oczekujące żądania logowania urządzeń (bez kodów); za sesją. */
+export async function odrzucOczekujace(): Promise<{ ok?: boolean; error?: string; odrzucono?: number }> {
+  await requireSession();
+  const ile = await odrzucWszystkieOczekujace();
+  revalidatePath("/settings/devices");
+  return { ok: true, odrzucono: ile };
 }

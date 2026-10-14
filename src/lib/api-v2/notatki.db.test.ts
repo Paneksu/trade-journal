@@ -277,7 +277,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
       expect(ile).toBe(0);
     });
 
-    it("PATCH notatki reguły nie zmienia title, bodyMd ani meta (409 managed_note), a archiwizacja przechodzi", async () => {
+    it("PATCH notatki reguły nie zmienia title, bodyMd, meta ani archived (409 managed_note)", async () => {
       const { POST } = await import("@/app/api/v2/rules/proposals/route");
       const pr1 = await POST(zadanie("/rules/proposals", { metoda: "POST", token: pr.token, cialo: { title: t("Reguła zarządzana"), textMd: "Treść wersji.", origin: "mentor", evidence: { video: "yt", t: 1, quote: "cytat" } } }), undefined);
       expect(pr1.status).toBe(201);
@@ -291,7 +291,12 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
       }
       const [w] = await sql`select title, body_md, rev from notes where id = ${noteId}`;
       expect(w).toMatchObject({ title: t("Reguła zarządzana"), body_md: "Treść wersji.", rev: 1 });
-      expect((await zmien(noteId, { archived: true }, "1")).status).toBe(200);
+      // archiwizacja też tylko w aplikacji: ukryłaby regułę przed wyszukiwaniem agentów (audyt N3)
+      const arch = await zmien(noteId, { archived: true }, "1");
+      expect(arch.status).toBe(409);
+      expect((await arch.json()).code).toBe("managed_note");
+      const [po] = await sql`select archived_at from notes where id = ${noteId}`;
+      expect(po.archived_at).toBeNull();
     });
 
     it("PATCH notatki hipotezy też jest zablokowany (409), choć sama hipoteza powstaje przez /hypotheses", async () => {

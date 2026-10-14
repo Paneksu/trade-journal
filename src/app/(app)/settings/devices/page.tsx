@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { UniewaznPrzycisk } from "@/components/settings/devices";
+import { OdrzucOczekujacePrzycisk, UniewaznPrzycisk } from "@/components/settings/devices";
 import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { listaTokenow, oczekujaceKody, DNI_NIEAKTYWNOSCI } from "@/lib/api-v2/urzadzenia";
 import { requireSession } from "@/lib/auth/guard";
@@ -37,7 +37,8 @@ export default async function DevicesSettingsPage() {
             <Link href="/urzadzenia/polacz" className="text-accent underline">
               Przepisz kod, żeby zatwierdzić
             </Link>
-            .
+            .{" "}
+            <OdrzucOczekujacePrzycisk />
           </p>
         )}
         {tokeny.length === 0 ? (
