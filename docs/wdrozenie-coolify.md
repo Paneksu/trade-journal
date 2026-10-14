@@ -166,8 +166,10 @@ sprawi, że wszyscy klienci zlecą się pod jeden adres — wtedy trzeba zmieni�
 
 ## 9. Domena `dziennik.panekweb.pl`, HTTPS i 2FA (wydanie R1, ADR-031)
 
-Kolejność ma znaczenie: nowa wersja wymusza ciasteczka `Secure`, więc **musi** być już dostępna
-domena z HTTPS, zanim nowy kod ruszy, inaczej nikt się nie zaloguje.
+Push na `master` wdraża automatycznie, więc kroki 1-4 wykonaj **PRZED scaleniem**. Nowa wersja
+wymusza ciasteczka `Secure`, dlatego dostęp ma tylko przez HTTPS (adres sslip też je ma).
+
+**PRZED scaleniem:**
 
 1. **Kopia bazy w Coolify** (Backups → ręczny backup) i sprawdzenie, że plik kopii powstał.
    Migracja `0016_totp.sql` dokłada kolumny i tabele (`auth_backup_codes`, `auth_events`), nie zmienia istniejących.
@@ -179,12 +181,18 @@ domena z HTTPS, zanim nowy kod ruszy, inaczej nikt się nie zaloguje.
 4. **Domena w Coolify:** w zasobie aplikacji, pole Domains, dopisz `https://dziennik.panekweb.pl`
    (adres sslip na razie zostaw). Coolify wystąpi o certyfikat Let's Encrypt; poczekaj, aż
    `curl -sI https://dziennik.panekweb.pl/api/health` zwróci 200 z poprawnym certyfikatem.
-5. **Deploy** nowej wersji (kliknięty ręcznie, sprawdź commit == HEAD `master`). Start kontenera uruchamia migrację 0016.
-6. **Usuń adres sslip** z pola Domains i zapisz. Od teraz zostaje tylko `https://dziennik.panekweb.pl`.
-7. **Smoke test** z sekcji 5, razem z nowymi punktami o HSTS, robots i przekierowaniu.
-8. **Włącz 2FA:** Ustawienia → Bezpieczeństwo → hasło → zeskanuj QR → wpisz kod. Zapisz 10 kodów
+
+**Scalenie i po nim:**
+
+5. **Scal do `master`** (to uruchamia deploy; sprawdź w Coolify, że wdrożony commit == HEAD `master`).
+   Start kontenera uruchamia migrację 0016.
+6. **Podmień `TJ_INGEST_URL`** w `C:\Users\ahaah\.claude\sekrety\trade-journal-ingest.env` na
+   `https://dziennik.panekweb.pl`. Dopiero potem krok 7, inaczej łącznik straci adres.
+7. **Usuń adres sslip** z pola Domains i zapisz. Od teraz zostaje tylko `https://dziennik.panekweb.pl`.
+8. **Smoke test** z sekcji 5, razem z nowymi punktami o HSTS, robots i przekierowaniu.
+9. **Włącz 2FA:** Ustawienia → Bezpieczeństwo → hasło → zeskanuj QR → wpisz kod. Zapisz 10 kodów
    zapasowych (pokazują się raz). Wyloguj się i zaloguj ponownie, żeby sprawdzić drugi krok.
-9. **Po tygodniu bez problemów** usuń `OWNER_PASSWORD` ze zmiennych, jeśli jeszcze tam jest.
+10. **Po tygodniu bez problemów** usuń `OWNER_PASSWORD` ze zmiennych, jeśli jeszcze tam jest.
 
 **Awaria: telefon i kody zapasowe zgubione albo zmieniony `TOTP_ENC_KEY`.** Nie ma obejścia w aplikacji, bo
 ma być twardo. Z dostępem do bazy (Coolify → terminal bazy) wyłączasz 2FA SQL-em, potem włączasz od nowa:
@@ -199,7 +207,7 @@ COMMIT;
 
 Wejście do panelu Coolify i do bazy jest więc ostatnią linią obrony: zabezpiecz konto Coolify i GitHub własnym 2FA.
 
-**Wyloguj wszędzie** (Ustawienia → Bezpieczeństwo) odcina wszystkie urządzenia naraz. Blokada prób
+**Wyloguj pozostałe urządzenia** (Ustawienia → Bezpieczeństwo) odcina wszystkie urządzenia poza bieżącym. Blokada prób
 (8 błędów hasła lub kodu na adres, 10 minut) siedzi w pamięci kontenera: restart ją zeruje.
 Adres klienta do blokad to ostatni wpis `X-Forwarded-For` (dopisuje go Traefik); CDN przed Traefikiem
 trzeba by uwzględnić w `adresZNaglowkow` (`lib/ingest/http.ts`).

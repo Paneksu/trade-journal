@@ -28,7 +28,7 @@ export default defineConfig({
     {
       name: "dziennik",
       dependencies: ["logowanie"],
-      testIgnore: /bezpieczenstwo.spec.ts/,
+      testIgnore: /bezpieczenstwo[.]spec[.]ts/,
       use: { ...devices["Desktop Chrome"], storageState: "e2e/.sesja.json" },
     },
     /* 2FA zmienia wersje sesji i uniewaznia ciasteczka z `logowanie`, wiec ten
@@ -37,7 +37,7 @@ export default defineConfig({
     {
       name: "bezpieczenstwo",
       dependencies: ["dziennik"],
-      testMatch: /bezpieczenstwo.spec.ts/,
+      testMatch: /bezpieczenstwo[.]spec[.]ts/,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

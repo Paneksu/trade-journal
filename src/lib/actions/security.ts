@@ -124,6 +124,8 @@ export async function startTotpSetup(_p: SetupStartState, data: FormData): Promi
     errorCorrectionLevel: "M",
     margin: 2,
     width: 240,
+    // Celowo stale #000/#fff, nie tokeny motywu: czytniki QR wymagaja wysokiego kontrastu
+    // ciemny-na-jasnym i jasnego pola ciszy wokol kodu, a motyw aplikacji jest ciemny.
     color: { dark: "#000000", light: "#ffffff" },
   });
   return { qr, sekret };

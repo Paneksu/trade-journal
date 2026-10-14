@@ -224,7 +224,7 @@ export function LogoutEverywhereButton() {
   const [pending, start] = useTransition();
   return (
     <Button variant="danger" size="s" disabled={pending} onClick={() => start(() => logoutEverywhere())}>
-      {pending ? "Wylogowuję…" : "Wyloguj wszystkie urządzenia"}
+      {pending ? "Wylogowuję…" : "Wyloguj pozostałe urządzenia"}
     </Button>
   );
 }
