@@ -1679,3 +1679,24 @@ Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `doc
   - **Wydanie** (Słowa użytkownika: «Dwa wdrożenia»): najpierw R1 (`feat/domena-totp`), potem R2 (`feat/notatki-api-v2`).
   - **Logowanie urządzeń** (Słowa użytkownika: «Zamknięte do włączenia 2FA»): przed R2 `DEVICE_LOGIN_DISABLED=1`, zdjąć po włączeniu 2FA i pierwszym `tj login`.
   - `user_words.source = 'vault-import'` wymaga zakresu `import` (konsekwencja decyzji «Osobny zakres „import”»).
+
+- **Faza 2b (2026-10-15), decyzje smaku wykonawcy (do przeglądu użytkownika):**
+  - **Werdykt z dowodem.** Gdy `POST /trades/:id/reviews` zawiera `evidence` (świece + sha256 zrzutów), serwer sam
+    stempluje `as_of = now()`, liczy `evidence_hash` z kanonicznego JSON i zapisuje wersję zestawu reguł. Ta sama treść
+    ponownie = 200, inna = 409; korekta to nowy wiersz `user_override`. Bez `evidence` zostaje zachowanie ADR-028.
+    Ocena wykresu nie może widzieć świec późniejszych niż wejście.
+  - **Wynik ukryty do zamknięcia.** `GET /trades/:id` ma `resultHidden`, gdy trade nie jest zamknięty, a ma werdykt.
+  - **Statystyki liczą tylko zatwierdzone.** Sugestie AI trafiają do tabel docelowych dopiero po zatwierdzeniu w UI
+    (`tj.actor = 'ui'`); cofnięcie usuwa skutek. Agent z aktorem `api:*` dostaje `TJ403` z bazy.
+  - **Progi statusu zadeklarowane z góry** (domyślnie minimum n=20, potwierdzenie n=100, dolna granica Wilsona
+    powyżej break-even); status: nieważny / niejednoznaczny / obiecujący / potwierdzony; `orientacyjnie` przy n<30.
+  - **Prop:** wzór `floor = start + min(peakProfit, lockProfit) − maxDD`; szczyt EOD nie wlicza bieżącego dnia;
+    szczyt intraday z zamkniętych trade'ów; dzień handlowy wg zegara giełdy (NY, zmiana o 18:00). Ostrzeżenia
+    50/75/90%. Łączna ekspozycja NQ liczy otwarte trade'y i niepowiązane plany dnia (MNQ = 0,1).
+  - **Okno handlu** interpretowane w `settings.timezone`.
+  - **Sprzeczność mentora z praktyką** rozstrzyga wyłącznie UI; słowa „oba pod warunkiem” zapisane dosłownie
+    (`conflict.answer`), pytanie po rozstrzygnięciu nie wraca (409 `already_resolved`).
+  - **HEIC:** `heic-decode` (libheif, WASM, licencja LGPL), bo `sharp` w tej instalacji nie czyta HEIC.
+  - **Zrzut ręczny nie kasuje zrzutów AI**; limit łączny zrzutów liczy wszystko.
+  - **Znane długi:** `scripts/seed` wywala się na pustym `CUSTOM_FIELDS` (błąd sprzed fazy 2b); plik
+    `docs/openapi-v2.json` ma ok. 870 KB (schematy odpowiedzi).

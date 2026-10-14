@@ -109,6 +109,43 @@ Ponowne wysłanie tego samego wpisu (ta sama treść, chwila `capturedAt` i kotw
   nie mnoży.
 - Agent może mieć najwyżej jedną oczekującą propozycję na regułę (`409 proposal_pending`).
 
+## Funkcje MUST (faza 2b)
+
+Wszystkie zapisy idą przez `api.zapis` z `tj.actor = api:<id>`; zatwierdza wyłącznie UI (`ui`).
+Kontrakt i schematy odpowiedzi: `docs/openapi-v2.json`. Tabele: `docs/v2/model-danych.md`, sekcja 14.
+
+| Metoda i ścieżka | Zakres | Opis |
+|---|---|---|
+| `GET /me` | read | kim jest token: zakresy, aktor (bez sekretu) |
+| `GET /trades/:id` | read | trade ze zrzutami, ocenami, planem, słowami; `resultHidden`, gdy trade otwarty ma werdykt |
+| `POST /trades/:id/reviews` | write | z `evidence` (świece + sha256 zrzutów): werdykt NIEZMIENNY z `as_of`; bez `evidence` stara podmiana (ADR-028) |
+| `PATCH`/`PUT /trades/:id/reviews/:rid` | write | zawsze `409`; korekta to `POST .../override` (`user_override`) |
+| `POST /trades/:id/screenshots` | write | `origin=manual` dopisuje, `tradingview`/`fxreplay` zastępują swoje poprzednie wydanie; `capturedAt`, `chartState` |
+| `POST /notes/:id/attachments`, `POST /days/:date/attachments` | write | PNG/JPG/WebP/HEIC → WebP + miniatura |
+| `POST /trade-plans`, `GET /trade-plans[/:id]` | write, read | plan zamrażany raz (ryzyko liczy serwer); `PATCH`/`PUT` = `409` |
+| `POST /trade-plans/:id/addenda`, `/attach` | write | zmiana planu tylko dopiskiem ze słowami użytkownika; powiązanie z trade'em |
+| `GET`/`POST /setups`, `POST /setups/:slug/versions` | read, propose | playbook z wersjami; wersja to PROPOZYCJA do zatwierdzenia w UI; statystyka z przedziałami |
+| `GET /prop/presets`, `/prop/overview` | read | presety (138 wierszy, `needsVerification`), przegląd kont i łączna ekspozycja NQ |
+| `GET`/`POST /prop/accounts/:id/rules` | read, write | preset przypięty od daty zakupu, każda wartość nadpisywalna |
+| `GET /prop/accounts/:id/status` | read | bufory DD/DLL, consistency, ostrzeżenia 50/75/90%, bufor „gdy trafi SL” w $ i R |
+| `GET`/`POST /prop/accounts/:id/ledger` | read, write | koszty i wypłaty |
+| `GET /reviews/weekly`, `PUT /reviews/weekly/:weekStart` | read, write | przegląd tygodnia z jednym zobowiązaniem |
+| `GET`/`POST /ai-suggestions` | read, propose | agent tworzy; skutek w tabelach docelowych dopiero po zatwierdzeniu w UI |
+| `GET`/`POST /hypotheses/:code/variants` | read, write | licznik prób wariantów, korekta na wielokrotne testowanie |
+| `GET`/`POST /chart-annotations` | read, write | tekst rysunku bajt w bajt (sha256 jak `user_words`); przedrostek AI odrzucany |
+| `GET /profile`, `POST /profile/corrections` | read, write | słownik użytkownika i rejestr poprawek interpretacji (tylko dopisywany) |
+| `GET`/`POST /strategy-gaps`, `POST .../:id/ask` | read, propose, write | luki i sprzeczności mentor kontra praktyka; rozstrzyga tylko UI |
+| `/mentor/sources`, `/mentor/claims` | read/write + **import** | import filmów i cytatów (bez zakresu `import` każda trasa = `403`) |
+
+Filtr `externalRef` działa na `GET /rules` i `GET /hypotheses`.
+
+### Ekrany decyzji użytkownika (bez AI)
+
+- `/decyzje` („Do decyzji”): propozycje reguł i wersji setupów po jednej (przyjmij / popraw i przyjmij / odrzuć
+  z powodem), sugestie AI jednym kliknięciem, z cofnięciem. Zatwierdzenie to `tj.actor = 'ui'`.
+- `/decyzje/rozstrzygniecia`: sprzeczność mentora z praktyką, po jednej, z cytatem mentora i linkiem `t=` obok
+  Twoich słów. Wybór: zostaje moje / biorę mentora / oba pod warunkiem (Twoje słowa zapisane dosłownie).
+
 ## Zgodność wstecz: `/api/ingest/**`
 
 Trasy przyjmują stary skrót (`INGEST_TOKEN_SHA256`) **albo** token v2 z zakresem `write`. Każda

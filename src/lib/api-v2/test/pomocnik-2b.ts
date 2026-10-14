@@ -24,6 +24,7 @@ export function zgodneZKontraktem(metoda: Metoda, sciezka: string, json: unknown
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- odpowiedzi testowe sa sprawdzane schematami z kontraktu
 export type Odpowiedz = { status: number; json: any };
 
 async function czytaj(res: Response): Promise<Odpowiedz> {

@@ -267,7 +267,7 @@ test.describe("2FA TOTP", () => {
     ]);
     const sciezka = await pobranie.path();
     const tresc = await (await import("node:fs/promises")).readFile(sciezka, "utf8");
-    expect(JSON.parse(tresc).wersja).toBe(1);
+    expect(JSON.parse(tresc).wersja).toBe(2); // 15.10.2026: eksport v2 zawiera tabele dziennika v2 (faza 2b)
     expect(tresc).not.toContain("totp");
     expect(tresc).not.toContain("scrypt$");
   });

@@ -99,7 +99,7 @@ export async function zapewnijPodstawy(sql: Sql): Promise<{ instrumentId: number
   if (i) return { instrumentId: i.id };
   const [n] = await sql`
     insert into instruments (symbol, name, exchange, tick_size, tick_value, sort_order)
-    values ('NQ', 'E-mini Nasdaq-100', 'CME', 0.25, 5000, 1) returning id`;
+    values ('NQ', 'E-mini Nasdaq 100', 'CME', 0.25, 5000, 1) returning id`;
   return { instrumentId: n.id };
 }
 
