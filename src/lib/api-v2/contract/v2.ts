@@ -215,6 +215,13 @@ export const StatusRegulyFiltr = z.enum(["all", "proposed", "active", "retired",
 
 export const ReguliListaQuery = z.strictObject({
   status: StatusRegulyFiltr.default("all"),
+  /** Klucz idempotencji importu (np. vault:Reguly/R-007.md): zwraca tylko regule z notatki o tym kluczu. */
+  externalRef: z.string().min(1).max(200).optional(),
+});
+
+export const HipotezyListaQuery = z.strictObject({
+  /** Klucz idempotencji importu: zwraca tylko hipoteze z notatki o tym kluczu. */
+  externalRef: z.string().min(1).max(200).optional(),
 });
 
 /**
@@ -340,6 +347,12 @@ export const DzienZapisSchema = z.strictObject({
   dayRating: ocena15.optional(),
   noTrade: z.boolean().optional(),
   noTradeReason: z.string().max(40).nullish(),
+  /* Rytual przed sesja (faza 2b, MUST 11). Unieważnienie dnia to slowa uzytkownika
+     (POST /user-words, role day.invalidation, day), nie pole tekstowe. */
+  bias: z.enum(["long", "short", "neutral"]).nullish(),
+  /** Maksymalna liczba trade'ow dnia (1-20); ponad nia trade liczy sie jako naruszenie twardej reguly. */
+  maxTrades: z.number().int().min(1).max(20).nullable().optional(),
+  sleep: ocena15.optional(),
 });
 
 /* --- Wyszukiwanie ----------------------------------------------------------- */

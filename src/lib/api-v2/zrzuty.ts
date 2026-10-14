@@ -11,10 +11,14 @@ import { policzZrzuty, wgrajZrzuty, type OriginZrzutu } from "@/lib/trades/scree
 import type { Zapis } from "./zapis";
 
 /**
- * Zrzuty z API (ADR-026): ZASTEPUJA wszystkie zrzuty tego samego pochodzenia
- * (`origin`) na tym trade'cie, a zrzutow recznych (`manual`) i cudzego
- * pochodzenia nie dotykaja nigdy. Ponowne wyslanie tej samej paczki daje ten
- * sam stan - zadnych duplikatow po powtorzeniu zapytania.
+ * Zrzuty z API (ADR-026): zrzuty AI (`tradingview`, `fxreplay`) ZASTEPUJA wszystkie zrzuty
+ * tego samego pochodzenia na tym trade'cie, a zrzutow recznych (`manual`) i cudzego
+ * pochodzenia nie dotykaja nigdy. Ponowne wyslanie tej samej paczki daje ten sam stan.
+ *
+ * Zdjecie od uzytkownika (`origin = manual`, faza 2b) jest DOPISYWANE: nigdy nie kasuje
+ * zrzutow AI ani wczesniejszych zdjec. To dowod rownorzedny ze zrzutem AI, oznaczony
+ * pochodzeniem; kolejnosc na liscie to kolejnosc wgrywania. Skrot pliku (`sha256`, z bajtow
+ * wgranego pliku) trafia do odpowiedzi, zeby werdykt AI mogl na niego wskazac.
  */
 
 export type WynikZrzutow =
@@ -23,11 +27,14 @@ export type WynikZrzutow =
       tradeId: number;
       origin: OriginZrzutu;
       replaced: number;
-      screenshots: { id: number; file: string; thumbnail: string | null; interval: string | null; origin: string }[];
+      screenshots: { id: number; file: string; thumbnail: string | null; interval: string | null; origin: string; sha256: string | null }[];
     }
   | { ok: false; status: 400 | 404 | 409 | 422 | 500; error: string };
 
-export type OriginAPI = Exclude<OriginZrzutu, "manual">;
+/** Pochodzenie zrzutu przyjmowane przez API: AI (tradingview / fxreplay) albo zdjecie od uzytkownika (manual). */
+export type OriginAPI = OriginZrzutu;
+
+export type MetaZrzutow = { capturedAt: (Date | null)[]; chartState: (Record<string, unknown> | null)[] };
 
 export async function zastapZrzuty(
   tradeId: number,
@@ -35,6 +42,7 @@ export async function zastapZrzuty(
   pliki: File[],
   interwaly: string[],
   zapis: Zapis,
+  meta: MetaZrzutow = { capturedAt: [], chartState: [] },
 ): Promise<WynikZrzutow> {
   if (pliki.length === 0) {
     return { ok: false, status: 400, error: "Brak plików. Wyślij pola »shot« (jedno na zrzut) w multipart/form-data." };
@@ -63,10 +71,14 @@ export async function zastapZrzuty(
     }
   }
 
-  const stare = await db
-    .select({ id: screenshots.id, file: screenshots.file, thumbnail: screenshots.thumbnail })
-    .from(screenshots)
-    .where(and(eq(screenshots.tradeId, tradeId), eq(screenshots.origin, origin)));
+  // Zdjecie od uzytkownika (manual) tylko dopisujemy; zrzuty AI zastepuja swoje poprzednie wydanie.
+  const stare =
+    origin === "manual"
+      ? []
+      : await db
+          .select({ id: screenshots.id, file: screenshots.file, thumbnail: screenshots.thumbnail })
+          .from(screenshots)
+          .where(and(eq(screenshots.tradeId, tradeId), eq(screenshots.origin, origin)));
 
   // Limit liczymy od tego, co ZOSTAJE (inne pochodzenie), bo stare zrzuty tego
   // pochodzenia zaraz znikna.
@@ -76,13 +88,21 @@ export async function zastapZrzuty(
     return {
       ok: false,
       status: 422,
-      error: `${limit} Na tym trade'cie jest ${zostaje} zrzutów innego pochodzenia, a wysyłasz ${pliki.length} (maksimum ${MAX_ZRZUTOW} łącznie).`,
+      error:
+        origin === "manual"
+          ? `${limit} Na tym trade'cie jest już ${zostaje} zrzutów, a dopisujesz ${pliki.length} (maksimum ${MAX_ZRZUTOW} łącznie; zdjęcia od użytkownika niczego nie zastępują).`
+          : `${limit} Na tym trade'cie jest ${zostaje} zrzutów innego pochodzenia, a wysyłasz ${pliki.length} (maksimum ${MAX_ZRZUTOW} łącznie).`,
     };
   }
 
   const bladZapisu = await wgrajZrzuty(
     tradeId,
-    sparujZInterwalami(pliki, interwaly).map((p) => ({ file: p.plik, interval: p.interval })),
+    sparujZInterwalami(pliki, interwaly).map((p, i) => ({
+      file: p.plik,
+      interval: p.interval,
+      capturedAt: meta.capturedAt[i] ?? null,
+      chartState: meta.chartState[i] ?? null,
+    })),
     origin,
     zapis,
   );
@@ -108,6 +128,7 @@ export async function zastapZrzuty(
       thumbnail: screenshots.thumbnail,
       interval: screenshots.interval,
       origin: screenshots.origin,
+      sha256: screenshots.sha256,
     })
     .from(screenshots)
     .where(and(eq(screenshots.tradeId, tradeId), eq(screenshots.origin, origin)))
@@ -122,10 +143,10 @@ export async function ustalOrigin(
   jawny: string | null,
 ): Promise<{ ok: true; origin: OriginAPI } | { ok: false; error: string }> {
   if (jawny !== null && jawny !== "") {
-    if (jawny === "tradingview" || jawny === "fxreplay") return { ok: true, origin: jawny };
+    if (jawny === "tradingview" || jawny === "fxreplay" || jawny === "manual") return { ok: true, origin: jawny };
     return {
       ok: false,
-      error: `pole origin: »${jawny}« - dozwolone tradingview albo fxreplay (zrzuty ręczne wgrywa się w aplikacji).`,
+      error: `pole origin: »${jawny}« - dozwolone tradingview, fxreplay (zrzuty AI, zastępują swoje poprzednie wydanie) albo manual (zdjęcie od użytkownika, tylko dopisywane).`,
     };
   }
   const [t] = await db.select({ source: trades.source }).from(trades).where(eq(trades.id, tradeId)).limit(1);
@@ -134,4 +155,37 @@ export async function ustalOrigin(
     ok: false,
     error: `Trade #${tradeId} nie pochodzi z API (źródło: ${t?.source ?? "brak trade'a"}), więc podaj pole origin = tradingview albo fxreplay.`,
   };
+}
+
+/** Pola `capturedAt` i `chartState` z formularza zrzutow: po jednym na plik, w tej samej kolejnosci. */
+export function wczytajMetaZrzutow(form: FormData): { ok: true; meta: MetaZrzutow } | { ok: false; error: string } {
+  const capturedAt: (Date | null)[] = [];
+  for (const [i, w] of form.getAll("capturedAt").entries()) {
+    const tekst = String(w);
+    if (tekst === "") {
+      capturedAt.push(null);
+      continue;
+    }
+    if (!/^d{4}-d{2}-d{2}Td{2}:d{2}(:d{2}(.d{1,9})?)?(Z|[+-]d{2}:d{2})$/.test(tekst) || Number.isNaN(Date.parse(tekst))) {
+      return { ok: false, error: `capturedAt #${i + 1}: »${tekst.slice(0, 40)}« - oczekiwano ISO 8601 z offsetem, np. 2026-03-10T09:35:00-04:00.` };
+    }
+    capturedAt.push(new Date(tekst));
+  }
+  const chartState: (Record<string, unknown> | null)[] = [];
+  for (const [i, w] of form.getAll("chartState").entries()) {
+    const tekst = String(w);
+    if (tekst === "") {
+      chartState.push(null);
+      continue;
+    }
+    if (tekst.length > 4_000) return { ok: false, error: `chartState #${i + 1}: ${tekst.length} znaków, limit to 4000.` };
+    try {
+      const j: unknown = JSON.parse(tekst);
+      if (j === null || typeof j !== "object" || Array.isArray(j)) throw new Error("oczekiwano obiektu JSON");
+      chartState.push(j as Record<string, unknown>);
+    } catch (e) {
+      return { ok: false, error: `chartState #${i + 1}: ${(e as Error).message}. Wyślij obiekt JSON jako tekst, np. {"symbol":"NQ1!","interval":"5m"}.` };
+    }
+  }
+  return { ok: true, meta: { capturedAt, chartState } };
 }

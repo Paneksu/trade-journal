@@ -15,7 +15,7 @@ import { znajdzLubUtworzSesje } from "./sesje";
 import { listaTradowZApi, przetworzTrady } from "./trades";
 import { wczytajCialo, idZAdresu } from "./walidacja";
 import type { Zapis } from "./zapis";
-import { ustalOrigin, zastapZrzuty } from "./zrzuty";
+import { ustalOrigin, wczytajMetaZrzutow, zastapZrzuty } from "./zrzuty";
 
 /**
  * Wspolne cialo handlerow dla `/api/ingest/**` (zakres wygaszany, ADR-030) i
@@ -78,18 +78,21 @@ export async function obsluzTradesPost(request: Request, zapis: Zapis): Promise<
 
 /**
  * POST trades/:id/reviews. Ocena AI z regulami (kopia tresci reguly + werdykt +
- * dowod). Jedna ocena na `basis` (chart | history): ponowne wyslanie podmienia,
- * a zdanie uzytkownika o regule zostaje, jesli werdykt AI sie nie zmienil.
+ * dowod). Jedna ocena na `basis` (chart | history). Bez pola `evidence`: ponowne wyslanie
+ * podmienia (ADR-028), a zdanie uzytkownika o regule zostaje, jesli werdykt AI sie nie zmienil.
+ * Z polem `evidence` (swiece + sha256 zrzutow): werdykt NIEZMIENNY z `as_of` (ADR-033);
+ * ta sama tresc wyslana ponownie to 200, inna to 409, a korekta uzytkownika to nowy wiersz
+ * (POST .../reviews/:reviewId/override).
  */
-export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis): Promise<Response> {
+export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis, tokenId: number | null = null): Promise<Response> {
   const id = idZAdresu(idRaw, "id trade'a");
   if (!id.ok) return id.odpowiedz;
 
   const w = await wczytajCialo(request, OcenaSchema, "Nieprawidłowa ocena");
   if (!w.ok) return w.odpowiedz;
 
-  const wynik = await zapiszOcene(id.dane, w.dane, zapis);
-  if (!wynik.ok) return blad(wynik.status, "not_found", wynik.error);
+  const wynik = await zapiszOcene(id.dane, w.dane, zapis, tokenId);
+  if (!wynik.ok) return blad(wynik.status, wynik.kod ?? "not_found", wynik.error, wynik.dodatkowe ?? {});
   return odpowiedz(wynik, wynik.created ? 201 : 200);
 }
 
@@ -98,7 +101,10 @@ export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis)
  *   shot      - plik, powtarzalne (do 8)
  *   interval  - interwal, powtarzalne, po jednym na plik w tej samej kolejnosci (puste = brak)
  *   origin    - tradingview | fxreplay (domyslnie zrodlo trade'a)
- * Zastepuje wszystkie zrzuty tego pochodzenia na trade'cie; recznych nie rusza.
+ *   capturedAt - ISO 8601 z offsetem, powtarzalne, po jednym na plik (kiedy zrobiono zrzut; brak = teraz)
+ *   chartState - obiekt JSON jako tekst, powtarzalny, po jednym na plik (symbol, interwal, zakres z `tj shot`)
+ * Zrzuty AI (tradingview / fxreplay) zastepuja wszystkie zrzuty tego pochodzenia na trade'cie;
+ * origin = manual (zdjecie od uzytkownika) tylko DOPISUJE i niczego nie kasuje.
  */
 export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis): Promise<Response> {
   const id = idZAdresu(idRaw, "id trade'a");
@@ -117,7 +123,10 @@ export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis
   const o = await ustalOrigin(id.dane, typeof origin === "string" ? origin : null);
   if (!o.ok) return blad(400, "bad_request", o.error);
 
-  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly, zapis);
+  const meta = wczytajMetaZrzutow(form);
+  if (!meta.ok) return blad(400, "bad_request", meta.error);
+
+  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly, zapis, meta.meta);
   if (!wynik.ok) {
     const kod = wynik.status === 404 ? "not_found" : wynik.status === 500 ? "internal_error" : "validation_failed";
     return blad(wynik.status, kod, wynik.error);

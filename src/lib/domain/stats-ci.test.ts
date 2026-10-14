@@ -287,3 +287,27 @@ describe("licznik wariantow (zawyzenie najlepszego)", () => {
     expect(() => zawyzenieNajlepszego(1.5)).toThrow(RangeError);
   });
 });
+
+describe("pomiary z klasyfikacja wyniku (BE wg progu, nie wg znaku R)", () => {
+  it("+0,05R oznaczone jako BE nie wchodzi do wygranych, ale liczy sie do n i expectancy", () => {
+    const pomiary = [
+      ...seria(8, 8).map((r) => ({ r, wynik: r > 0 ? ("zysk" as const) : ("strata" as const) })),
+      { r: 0.05, wynik: "be" as const },
+      { r: -0.04, wynik: "be" as const },
+    ];
+    const s = statusZWynikow(pomiary, { minN: 10, potwierdzenieN: 100 });
+    expect(s.n).toBe(18);
+    expect(s.wins).toBe(8);
+    expect(s.losses).toBe(8);
+    expect(s.wilson.n).toBe(16);
+    expect(s.expectancy.mean).toBeCloseTo((8 * 2 - 8 + 0.05 - 0.04) / 18, 12);
+    // gdyby klasyfikowac po znaku, wygranych byloby 9
+    expect(statusZWynikow(pomiary.map((p) => p.r), { minN: 10, potwierdzenieN: 100 }).wins).toBe(9);
+  });
+
+  it("break-even liczy srednie tylko z trade'ow sklasyfikowanych jako zysk i strata", () => {
+    const be = breakEvenWinRate([{ r: 2, wynik: "zysk" }, { r: -1, wynik: "strata" }, { r: 0.08, wynik: "be" }]);
+    expect(be.avgWinR).toBe(2);
+    expect(be.winRate).toBeCloseTo(1 / 3, 12);
+  });
+});

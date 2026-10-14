@@ -3,6 +3,7 @@
 import { requireSession } from "@/lib/auth/guard";
 import { KOMUNIKAT_SUDO, stanSudo } from "@/lib/auth/zadanie";
 import { db } from "@/lib/db";
+import { bezSearch, pobierzTabeleV2 } from "@/lib/export/tabele-v2";
 import {
   accounts,
   backtestSessions,
@@ -51,6 +52,7 @@ export async function exportAll(): Promise<EksportWynik> {
     reviewRows,
     ruleCheckRows,
     skipRows,
+    tabeleV2,
   ] = await Promise.all([
     db.select().from(accounts),
     db.select().from(instruments),
@@ -73,11 +75,14 @@ export async function exportAll(): Promise<EksportWynik> {
     db.select().from(tradeReviews),
     db.select().from(tradeRuleChecks),
     db.select().from(ingestSkips),
+    // Faza 2b (ADR-033): notatki, reguly, playbook, plany, prop, przeglady, kolejka AI, mentor.
+    pobierzTabeleV2(),
   ]);
 
   const json = JSON.stringify(
     {
-      wersja: 1,
+      // 2 = dolozone tabele v2 (klucze od "notes" w dol); stare klucze bez zmian.
+      wersja: 2,
       wyeksportowano: new Date().toISOString(),
       accounts: accountRows,
       instruments: instrumentRows,
@@ -86,7 +91,8 @@ export async function exportAll(): Promise<EksportWynik> {
       tagCategories: categoryRows,
       tags: tagRows,
       customFields: fieldRows,
-      trades: tradeRows,
+      // Bez kolumny generowanej `search` (tsvector): baza liczy ja sama po imporcie.
+      trades: bezSearch(tradeRows),
       tradeTags: tradeTagRows,
       tradeExits: tradeExitRows,
       dayNotes: noteRows,
@@ -94,6 +100,7 @@ export async function exportAll(): Promise<EksportWynik> {
       tradeReviews: reviewRows,
       tradeRuleChecks: ruleCheckRows,
       ingestSkips: skipRows,
+      ...tabeleV2,
     },
     null,
     2,

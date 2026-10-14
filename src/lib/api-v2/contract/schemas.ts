@@ -126,6 +126,24 @@ export const RegulaSchema = z.strictObject({
   evidence: z.string().max(4_000).nullish(),
 });
 
+/**
+ * Dowod werdyktu AI (MUST 2, metodyka R2/R3): swiece, ktore AI widzialo (czas OTWARCIA
+ * swiecy i OHLC), oraz SHA-256 plikow zrzutow. Obecnosc tego pola wlacza werdykt
+ * NIEZMIENNY z `as_of` (czas zegarowy wydania, stawia serwer) i `evidence_hash`
+ * (SHA-256 kanonicznego JSON-a tych danych). Bez niego obowiazuje stare zachowanie
+ * z ADR-028 (ponowne wyslanie podmienia ocene).
+ */
+export const DowodWerdyktuSchema = z.strictObject({
+  candles: z
+    .array(z.strictObject({ t: czas, o: liczba, h: liczba, l: liczba, c: liczba }))
+    .min(1)
+    .max(5_000),
+  screenshots: z
+    .array(z.strictObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/, { message: "oczekiwano 64 znaków hex (małe litery)" }) }))
+    .max(40)
+    .default([]),
+});
+
 export const OcenaSchema = z
   .strictObject({
     basis: z.enum(["chart", "history"]),
@@ -146,9 +164,16 @@ export const OcenaSchema = z
     brainVersion: z.string().max(80).nullish(),
     evidenceCutoff: czas.nullish(),
     model: z.string().max(120).nullish(),
+    /** Dowod werdyktu: wlacza werdykt niezmienny z as_of (patrz DowodWerdyktuSchema). */
+    evidence: DowodWerdyktuSchema.optional(),
+    /** Zestaw regul, wzgledem ktorego oceniono (z GET /rules -> rulesVersion); domyslnie biezacy. Tylko z evidence. */
+    rulesetVersion: z.number().int().min(0).optional(),
     ruleChecks: z.array(RegulaSchema).max(MAX_REGUL).default([]),
   })
   .superRefine((o, ctx) => {
+    if (o.rulesetVersion !== undefined && o.evidence === undefined) {
+      ctx.addIssue({ code: "custom", path: ["rulesetVersion"], message: "rulesetVersion ma sens tylko razem z evidence (werdykt niezmienny)" });
+    }
     const widziane = new Set<string>();
     o.ruleChecks.forEach((r, i) => {
       if (widziane.has(r.ruleId)) {

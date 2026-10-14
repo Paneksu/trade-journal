@@ -1,9 +1,10 @@
 import "server-only";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 
+import { dekodujHeic, BladHeic } from "./heic";
 import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./uploads-path";
 
 /**
@@ -13,7 +14,8 @@ import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./up
  * do sciezki, wiec nie da sie nia wyjsc poza katalog.
  */
 
-const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/avif"]);
+const HEIC = new Set(["image/heic", "image/heif"]);
+const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/avif", ...HEIC]);
 const MAX_BYTES = 10 * 1024 * 1024;
 const THUMBNAIL_WIDTH = 560;
 
@@ -22,12 +24,14 @@ export type SavedScreenshot = {
   thumbnail: string;
   width: number;
   height: number;
+  /** SHA-256 bajtow pliku WGRANEGO (przed konwersja do WebP): dowod do evidence_hash werdyktu AI. */
+  sha256: string;
 };
 
 /** Czy plik przejdzie przez `saveScreenshot`? Pozwala odrzucic cala paczke PRZED zapisem pierwszego pliku. */
 export function bladPliku(upload: File): string | null {
   if (!ALLOWED.has(upload.type)) {
-    return `Plik »${upload.name}« ma typ »${upload.type || "brak"}«. Obsługiwane formaty to PNG, JPEG, WEBP i AVIF.`;
+    return `Plik »${upload.name}« ma typ »${upload.type || "brak"}«. Obsługiwane formaty to PNG, JPEG, WEBP, AVIF i HEIC.`;
   }
   if (upload.size > MAX_BYTES) {
     return `Plik »${upload.name}« ma ${upload.size} B, a limit to ${MAX_BYTES} B (10 MB).`;
@@ -37,7 +41,7 @@ export function bladPliku(upload: File): string | null {
 
 export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<SavedScreenshot> {
   if (!ALLOWED.has(upload.type)) {
-    throw new Error("Obsługiwane formaty to PNG, JPEG, WEBP i AVIF.");
+    throw new Error("Obsługiwane formaty to PNG, JPEG, WEBP, AVIF i HEIC.");
   }
   if (upload.size > MAX_BYTES) {
     throw new Error("Plik jest większy niż 10 MB.");
@@ -48,10 +52,24 @@ export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<Sa
 
   const name = randomBytes(12).toString("hex");
   const buffer = Buffer.from(await upload.arrayBuffer());
+  const sha256 = createHash("sha256").update(buffer).digest("hex");
 
   // Przepuszczamy przez sharpa takze po to, zeby odrzucic plik, ktory tylko
-  // udaje obraz, i zeby zdjac z niego metadane EXIF.
-  const image = sharp(buffer, { limitInputPixels: 40_000_000 }).rotate();
+  // udaje obraz, i zeby zdjac z niego metadane EXIF. HEIC (zdjecia z iPhone'a)
+  // dekoduje osobny dekoder, bo gotowy sharp czyta tylko AVIF.
+  let zrodlo: Sharp;
+  if (HEIC.has(upload.type)) {
+    try {
+      const raw = await dekodujHeic(buffer);
+      zrodlo = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: 4 } });
+    } catch (e) {
+      if (e instanceof BladHeic) throw new Error(e.message);
+      throw e;
+    }
+  } else {
+    zrodlo = sharp(buffer, { limitInputPixels: 40_000_000 });
+  }
+  const image = zrodlo.rotate();
   const meta = await image.metadata();
   if (!meta.width || !meta.height) throw new Error("Nie udało się odczytać obrazu — plik nie jest poprawnym obrazem.");
 
@@ -71,6 +89,7 @@ export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<Sa
     thumbnail: `${segment}/${thumb}`,
     width: meta.width,
     height: meta.height,
+    sha256,
   };
 }
 

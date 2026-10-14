@@ -7,6 +7,7 @@ import {
   BarChart3,
   CalendarDays,
   FlaskConical,
+  Inbox,
   LayoutDashboard,
   Images,
   ListOrdered,
@@ -20,8 +21,11 @@ import {
 
 import { cx } from "@/lib/classes";
 
+export type LicznikiNav = { decyzje: number; rozstrzygniecia: number };
+
 const LINKS = [
   { href: "/", label: "Pulpit", icon: LayoutDashboard },
+  { href: "/decyzje", label: "Do decyzji", icon: Inbox },
   { href: "/trades", label: "Trade'y", icon: ListOrdered },
   { href: "/galeria", label: "Galeria", icon: Images },
   { href: "/stats", label: "Statystyki", icon: BarChart3 },
@@ -36,7 +40,7 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function Links({ onNavigate }: { onNavigate?: () => void }) {
+function Links({ onNavigate, liczniki }: { onNavigate?: () => void; liczniki: LicznikiNav }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-col gap-0.5">
@@ -58,6 +62,12 @@ function Links({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Icon size={16} className={active ? "text-accent" : "text-faint"} aria-hidden />
             {label}
+            {href === "/decyzje" && liczniki.decyzje + liczniki.rozstrzygniecia > 0 && (
+              <span className="ml-auto rounded-full bg-accent px-1.5 text-xs font-semibold text-bg">
+                <span className="sr-only">Oczekuje: </span>
+                {liczniki.decyzje + liczniki.rozstrzygniecia}
+              </span>
+            )}
           </Link>
         );
       })}
@@ -79,7 +89,7 @@ function Footer({ signOutAction }: { signOutAction: () => Promise<void> }) {
   );
 }
 
-export function Sidebar({ signOutAction }: { signOutAction: () => Promise<void> }) {
+export function Sidebar({ signOutAction, liczniki }: { signOutAction: () => Promise<void>; liczniki: LicznikiNav }) {
   return (
     <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-surface px-3 py-4 lg:flex">
       <Link href="/" className="mb-6 block px-2.5">
@@ -97,13 +107,13 @@ export function Sidebar({ signOutAction }: { signOutAction: () => Promise<void> 
         Nowy trade
       </Link>
 
-      <Links />
+      <Links liczniki={liczniki} />
       <Footer signOutAction={signOutAction} />
     </aside>
   );
 }
 
-export function MobileBar({ signOutAction }: { signOutAction: () => Promise<void> }) {
+export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Promise<void>; liczniki: LicznikiNav }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -149,7 +159,7 @@ export function MobileBar({ signOutAction }: { signOutAction: () => Promise<void
                 <X size={18} aria-hidden />
               </button>
             </div>
-            <Links onNavigate={() => setOpen(false)} />
+            <Links onNavigate={() => setOpen(false)} liczniki={liczniki} />
             <Footer signOutAction={signOutAction} />
           </div>
         </div>

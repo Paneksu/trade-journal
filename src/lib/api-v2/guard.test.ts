@@ -109,9 +109,11 @@ describe("straznik: moduly API v2 nie zmieniaja zatwierdzen", () => {
 
   it.each(moduly.map((p) => [path.basename(p), p]))("%s nie aktualizuje tabel zatwierdzen ani nie ustawia statusu approved", (_n, plik) => {
     const zrodlo = bezKomentarzy(readFileSync(plik, "utf8"));
-    expect(zrodlo).not.toMatch(/\.update\(\s*(ruleVersions|setupVersions|hypotheses|aiSuggestions|profileTerms|weeklyReviews|strategyGaps)\s*\)/);
+    // weeklyReviews (szkic) i strategyGaps (open -> asked) agent wolno aktualizowac, ale NIE do stanow zatwierdzenia:
+    // pilnuje tego regula ponizej (answered, dismissed, approved...) oraz trigger tj_require_ui_actor w bazie.
+    expect(zrodlo).not.toMatch(/\.update\(\s*(ruleVersions|setupVersions|hypotheses|aiSuggestions|profileTerms)\s*\)/);
     expect(zrodlo).not.toMatch(/update\s+(rule_versions|setup_versions|hypotheses|ai_suggestions)\b/i);
-    expect(zrodlo).not.toMatch(/status\s*:\s*["'](approved|rejected|superseded)["']/);
+    expect(zrodlo).not.toMatch(/status\s*:\s*["'](approved|rejected|superseded|answered|dismissed|confirmed|accepted|reverted)["']/);
     expect(zrodlo).not.toMatch(/tj\.actor['"]?\s*,\s*['"]ui['"]/);
   });
 });

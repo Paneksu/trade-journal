@@ -58,7 +58,7 @@ export async function numerZestawu(tx: Db): Promise<number> {
   return s?.v ?? 0;
 }
 
-export async function listaRegul(tx: Db, filtr: "all" | StatusReguly) {
+export async function listaRegul(tx: Db, filtr: "all" | StatusReguly, externalRef?: string) {
   const wiersze = await tx
     .select({
       id: rules.id,
@@ -74,6 +74,7 @@ export async function listaRegul(tx: Db, filtr: "all" | StatusReguly) {
     })
     .from(rules)
     .innerJoin(notes, eq(rules.noteId, notes.id))
+    .where(externalRef === undefined ? undefined : eq(notes.externalRef, externalRef))
     .orderBy(asc(rules.code));
 
   const ids = wiersze.map((r) => r.id);
@@ -275,7 +276,7 @@ export async function zaproponujRegule(
 
 /* --- Hipotezy ------------------------------------------------------------- */
 
-export async function listaHipotez(tx: Db) {
+export async function listaHipotez(tx: Db, externalRef?: string) {
   const wiersze = await tx
     .select({
       id: hypotheses.id,
@@ -293,6 +294,7 @@ export async function listaHipotez(tx: Db) {
     })
     .from(hypotheses)
     .innerJoin(notes, eq(hypotheses.noteId, notes.id))
+    .where(externalRef === undefined ? undefined : eq(notes.externalRef, externalRef))
     .orderBy(asc(hypotheses.code));
   return {
     hypotheses: wiersze.map((h) => {

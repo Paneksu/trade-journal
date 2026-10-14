@@ -66,6 +66,9 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
           dayRating: notatkaDnia.dayRating,
           noTrade: notatkaDnia.noTrade,
           noTradeReason: notatkaDnia.noTradeReason,
+          bias: notatkaDnia.bias,
+          maxTrades: notatkaDnia.maxTrades,
+          sleep: notatkaDnia.sleep,
           updatedAt: notatkaDnia.updatedAt.toISOString(),
         }
       : null,
@@ -118,6 +121,9 @@ export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSch
   if (d.mood !== undefined) podane.mood = d.mood;
   if (d.energy !== undefined) podane.energy = d.energy;
   if (d.dayRating !== undefined) podane.dayRating = d.dayRating;
+  if (d.bias !== undefined) podane.bias = d.bias;
+  if (d.maxTrades !== undefined) podane.maxTrades = d.maxTrades;
+  if (d.sleep !== undefined) podane.sleep = d.sleep;
   if (d.noTrade !== undefined) {
     podane.noTrade = d.noTrade;
     // Odznaczenie flagi nie zostawia osieroconego powodu.

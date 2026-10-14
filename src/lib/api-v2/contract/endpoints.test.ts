@@ -65,10 +65,16 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
     for (const [k, metody] of zRejestru) expect(zPlikow.get(k), `metody trasy ${k}`).toEqual(metody);
   });
 
-  it("zakres approve nie istnieje w zadnym wpisie", () => {
+  it("zakres approve nie istnieje w zadnym wpisie, a import tylko przy trasach mentora", () => {
     const wszystkie = new Set(ENDPOINTS.flatMap((e) => e.zakresy ?? []));
-    expect([...wszystkie].sort()).toEqual(["propose", "read", "write"]); // import to zakres dodatkowy, nie zakres trasy
+    expect([...wszystkie].sort()).toEqual(["import", "propose", "read", "write"]);
     expect(JSON.stringify(zbudujOpenApi())).not.toMatch(/"approve"/);
+    const zImportem = ENDPOINTS.filter((e) => e.zakresy?.includes("import")).map((e) => katalogTrasy(e.sciezka));
+    expect(zImportem.length).toBeGreaterThan(0);
+    for (const k of zImportem) expect(k.startsWith("mentor/"), "zakres import wolno wymagac tylko od tras mentora: " + k).toBe(true);
+    for (const e of ENDPOINTS.filter((x) => x.sciezka.startsWith("/mentor/"))) {
+      expect(e.zakresy, "mentor " + e.metoda + " " + e.sciezka).toContain("import");
+    }
   });
 
   it("trasy publiczne (bez tokenu) to dokladnie device/start i device/token", () => {
@@ -76,13 +82,32 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
     expect(publiczne).toEqual(["/device/start", "/device/token"]);
   });
 
-  it("zapisy wymagaja write, odczyty read, propozycje reguly propose", () => {
+  const PROPOZYCJE = ["/rules/proposals", "/setups", "/setups/{slug}/versions", "/ai-suggestions", "/strategy-gaps"];
+
+  it("zapisy wymagaja write, odczyty read, propozycje agenta propose, mentor dokłada import", () => {
     for (const e of ENDPOINTS) {
       if (e.zakresy === null) continue;
-      if (e.metoda === "get") expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["read"]);
-      else if (e.sciezka === "/rules/proposals") expect(e.zakresy).toEqual(["propose"]);
-      else expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["write"]);
+      const dodatek = e.sciezka.startsWith("/mentor/") ? ["import"] : [];
+      if (e.metoda === "get") expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["read", ...dodatek]);
+      else if (e.metoda === "post" && PROPOZYCJE.includes(e.sciezka)) expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["propose"]);
+      else expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["write", ...dodatek]);
     }
+  });
+
+  it("zadna trasa nie ma operacji kasowania, a PATCH/PUT planu, slow i werdyktu to zawsze 409", () => {
+    expect(ENDPOINTS.filter((e) => (e.metoda as string) === "delete")).toEqual([]);
+    for (const sciezka of ["/trade-plans/{id}", "/trades/{id}/reviews/{reviewId}", "/user-words/{id}"]) {
+      for (const metoda of ["patch", "put"] as const) {
+        const e = ENDPOINTS.find((x) => x.metoda === metoda && x.sciezka === sciezka);
+        expect(e?.status, `${metoda} ${sciezka}`).toBe(409);
+      }
+    }
+  });
+
+  it("kazda trasa ma opisana odpowiedz (zadnych pustych schematow {})", () => {
+    for (const e of ENDPOINTS) expect(e.odpowiedz, `${e.metoda} ${e.sciezka}`).toBeDefined();
+    const doc = JSON.stringify(zbudujOpenApi());
+    expect(doc).not.toContain('"schema":{}');
   });
 
   it("zakresy w rejestrze są identyczne z withApi({ scopes }) w plikach tras (kontrakt nie kłamie o uprawnieniach)", () => {
@@ -120,7 +145,7 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
 
   it("trasy oznaczone w kontrakcie jako wymagające import wołają wymagajImportuDlaOrigin (i tylko one)", () => {
     const oznaczone = new Set(ENDPOINTS.filter((e) => e.wymagaImportuDlaOrigin).map((e) => katalogTrasy(e.sciezka)));
-    expect([...oznaczone].sort()).toEqual(["hypotheses", "notes", "rules/proposals", "user-words"]);
+    expect([...oznaczone].sort()).toEqual(["hypotheses", "notes", "notes/[id]/additions", "rules/proposals", "setups", "setups/[slug]/versions", "strategy-gaps", "user-words"]);
     const wolajace = new Set<string>();
     const idz = (katalog: string) => {
       for (const nazwa of readdirSync(katalog)) {

@@ -73,3 +73,10 @@ export function czyHttpsZNaglowkow(naglowki: Headers, url?: string): boolean {
 export function czyHttps(request: Request): boolean {
   return czyHttpsZNaglowkow(request.headers, request.url);
 }
+
+/** Odpowiedz API nie niesie wewnetrznej flagi `ok` wyniku modulu (ksztalt wyniku opisuja jego pola). */
+export function bezOk<T extends { ok: true }>(w: T): Omit<T, "ok"> {
+  const { ok: _ok, ...reszta } = w;
+  void _ok;
+  return reszta;
+}

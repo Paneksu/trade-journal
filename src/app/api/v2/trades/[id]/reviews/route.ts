@@ -7,10 +7,10 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * POST /api/v2/trades/:id/reviews (application/json). Ocena AI z regulami.
- * UWAGA (faza 2b): werdykt z `as_of` stanie sie tu niezmienny (409 przy ponownym
- * wyslaniu, korekta = user_override); do czasu migracji 0021 obowiazuje zasada
- * z ADR-028 - jedna ocena na podstawe, ponowne wyslanie podmienia.
+ * Z polem `evidence` werdykt jest niezmienny (as_of, evidence_hash; ponowne wyslanie innej
+ * tresci = 409, korekta uzytkownika = POST .../:reviewId/override); bez niego obowiazuje
+ * zasada z ADR-028 - jedna ocena na podstawe, ponowne wyslanie podmienia.
  */
 export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { params }) =>
-  obsluzOcene(request, (await params).id, api.zapis),
+  obsluzOcene(request, (await params).id, api.zapis, api.token.id),
 );

@@ -7,7 +7,7 @@ import { slugZNumerem, slugZTytulu, wyciagnijLinki } from "@/lib/domain/notatki"
 import { originEfektywny } from "@/lib/domain/reguly";
 
 import type { NotatkaUtworzSchema, NotatkaZmienSchema, NotatkiListaQuery } from "./contract/v2";
-import type { KontekstApi, Transakcja } from "./with-api";
+import type { Transakcja } from "./with-api";
 
 /**
  * Notatki w aplikacji (ADR-029). Zapis zawsze w transakcji z `tj.actor`
@@ -102,9 +102,12 @@ export async function sprawdzKotwice(
   return { ok: true };
 }
 
+/** Kto zapisuje: token API albo uzytkownik w aplikacji (id = null). */
+export type Autor = { token: { id: number | null } };
+
 export async function utworzNotatke(
   tx: Transakcja,
-  api: KontekstApi,
+  api: Autor,
   d: z.output<typeof NotatkaUtworzSchema>,
 ): Promise<WynikNotatki> {
   const kotwice = await sprawdzKotwice(tx, d);
@@ -176,7 +179,7 @@ export async function utworzNotatke(
  * obszedlby bramki (kontrargument, prog n, jedna propozycja naraz), a zwykly PATCH
  * zmienilby tresc reguly poza wersjami, ktore sa niezmienne.
  */
-export const KINDY_ZARZADZANE = ["rule", "hypothesis"] as const;
+export const KINDY_ZARZADZANE = ["rule", "hypothesis", "setup"] as const;
 
 export function odeslanieDlaKindu(kind: string): { sciezka: string; komunikat: string } | null {
   if (kind === "rule") {
@@ -184,6 +187,9 @@ export function odeslanieDlaKindu(kind: string): { sciezka: string; komunikat: s
   }
   if (kind === "hypothesis") {
     return { sciezka: "/api/v2/hypotheses", komunikat: "Notatki o rodzaju »hypothesis« powstają wyłącznie przez POST /api/v2/hypotheses (z progiem n i progami zadeklarowanymi z góry)." };
+  }
+  if (kind === "setup") {
+    return { sciezka: "/api/v2/setups", komunikat: "Notatki o rodzaju »setup« (karty playbooka) powstają wyłącznie przez POST /api/v2/setups (wersja z warunkami, checklistą i progami statusu; zatwierdza ją użytkownik)." };
   }
   return null;
 }

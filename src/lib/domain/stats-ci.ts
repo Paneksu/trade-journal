@@ -140,6 +140,27 @@ export function bootstrapExpectancy(rValues: readonly number[], opcje: OpcjeBoot
    Break-even win rate
    --------------------------------------------------------------------------- */
 
+/**
+ * Pomiar w R z klasyfikacja wyniku. Zwykla liczba to R, a klasa wynika ze znaku
+ * (>0 zysk, <0 strata, 0 BE). Obiekt pozwala podac klase z zewnatrz: trade z +0,05R
+ * jest »BE« wg progu z ADR-011, wiec nie wchodzi ani do wygranych, ani do strat,
+ * choc jego R liczy sie do expectancy.
+ */
+export type Pomiar = number | { r: number; wynik: "zysk" | "strata" | "be" };
+
+type PomiarZKlasa = { r: number; klasa: 1 | 0 | -1 };
+
+function normalizujPomiary(pomiary: readonly Pomiar[]): PomiarZKlasa[] {
+  const wynik: PomiarZKlasa[] = [];
+  for (const p of pomiary) {
+    const r = typeof p === "number" ? p : p.r;
+    if (!Number.isFinite(r)) continue;
+    const klasa = typeof p === "number" ? (r > 0 ? 1 : r < 0 ? -1 : 0) : p.wynik === "zysk" ? 1 : p.wynik === "strata" ? -1 : 0;
+    wynik.push({ r, klasa });
+  }
+  return wynik;
+}
+
 export type BreakEven = {
   wins: number;
   losses: number;
@@ -156,10 +177,11 @@ export type BreakEven = {
  * wygrana i strata w R. Trade'y z R = 0 (czyste BE) nie wchodza ani do W, ani do L.
  * Win rate wyzszy od tego progu = dodatnie oczekiwane R.
  */
-export function breakEvenWinRate(rValues: readonly number[]): BreakEven {
-  const wygrane = rValues.filter((r) => Number.isFinite(r) && r > 0);
-  const straty = rValues.filter((r) => Number.isFinite(r) && r < 0);
-  const avgWinR = wygrane.length > 0 ? wygrane.reduce((s, x) => s + x, 0) / wygrane.length : null;
+export function breakEvenWinRate(pomiary: readonly Pomiar[]): BreakEven {
+  const wszystkie = normalizujPomiary(pomiary);
+  const wygrane = wszystkie.filter((p) => p.klasa === 1).map((p) => p.r);
+  const straty = wszystkie.filter((p) => p.klasa === -1).map((p) => p.r);
+  const avgWinR = wygrane.length > 0 ? wygrane.reduce((s, x) => s + Math.abs(x), 0) / wygrane.length : null;
   const avgLossR = straty.length > 0 ? straty.reduce((s, x) => s + Math.abs(x), 0) / straty.length : null;
   const winRate = avgWinR !== null && avgLossR !== null ? avgLossR / (avgWinR + avgLossR) : null;
   return { wins: wygrane.length, losses: straty.length, avgWinR, avgLossR, winRate };
@@ -238,10 +260,11 @@ const proc = (x: number | null) => (x === null ? "brak" : `${(x * 100).toFixed(1
  *  - potwierdzony: n >= potwierdzenieN i dolna granica Wilsona nad break-even.
  * Trade'y z R = 0 liczy sie do n, nie do wygranych ani strat.
  */
-export function statusZWynikow(rValues: readonly number[], progi: ProgiStatusu = DOMYSLNE_PROGI_STATUSU, opcje: OpcjeBootstrapu = {}): OcenaStatusu {
-  const wartosci = rValues.filter((r) => Number.isFinite(r));
+export function statusZWynikow(pomiary: readonly Pomiar[], progi: ProgiStatusu = DOMYSLNE_PROGI_STATUSU, opcje: OpcjeBootstrapu = {}): OcenaStatusu {
+  const znormalizowane = normalizujPomiary(pomiary);
+  const wartosci = znormalizowane.map((p) => p.r);
   const n = wartosci.length;
-  const be = breakEvenWinRate(wartosci);
+  const be = breakEvenWinRate(znormalizowane.map((p) => ({ r: p.r, wynik: p.klasa === 1 ? "zysk" : p.klasa === -1 ? "strata" : "be" }) as const));
   // Win rate liczymy od rozstrzygnietych (zysk + strata); R = 0 nie jest wygrana ani strata.
   const rozstrzygniete = be.wins + be.losses;
   const w = wilson(be.wins, rozstrzygniete);

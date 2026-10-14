@@ -11,7 +11,8 @@ const nextConfig: NextConfig = {
   // korzenia projektu wyzej i wypisuje ostrzezenie przy kazdym starcie.
   turbopack: { root: __dirname },
   // Biblioteki z binariami natywnymi nie moga isc przez bundler.
-  serverExternalPackages: ["sharp", "postgres"],
+  // heic-decode / libheif-js: dekoder HEIC w WebAssembly (kilka MB), wiec nie przez bundler.
+  serverExternalPackages: ["sharp", "postgres", "heic-decode", "libheif-js"],
   experimental: {
     // Formularze wysylaja zrzuty ekranu przez Server Actions.
     serverActions: { bodySizeLimit: "12mb" },

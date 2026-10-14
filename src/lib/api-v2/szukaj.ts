@@ -99,15 +99,15 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
   }
 
   if (typy.includes("trades")) {
-    // Ten sam wyrazenie co kolumna `trades.search` z migracji 0020 (faza 2b); do tego czasu bez indeksu.
+    // Kolumna generowana `trades.search` (migracja 0020) z indeksem GIN.
     const wiersze = await db.execute<Wiersz>(sql`
       select t.id,
-             greatest(coalesce(ts_rank(to_tsvector('simple', public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))), ${zapytanie}), 0), 0.05) as rank,
+             greatest(coalesce(ts_rank(t.search, ${zapytanie}), 0), 0.05) as rank,
              ('Trade #' || t.id || ' ' || t.trading_day::text) as title,
              left(coalesce(t.note, t.mood_note, ''), 200) as snippet,
              jsonb_build_object('tradingDay', t.trading_day, 'direction', t.direction, 'status', t.status::text) as meta
         from trades t
-       where to_tsvector('simple', public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))) @@ ${zapytanie}
+       where t.search @@ ${zapytanie}
           or lower(public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))) like ${wzorzecN} escape '\\'
        order by rank desc, t.id
        limit ${limit}`);
