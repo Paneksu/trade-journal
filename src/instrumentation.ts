@@ -10,6 +10,17 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Klucz 2FA sprawdzamy przy starcie, zeby brak zmiennej wyszedl w logach wdrozenia,
+  // a nie dopiero wtedy, gdy ktos probuje wlaczyc 2FA albo sie zalogowac kodem.
+  if (process.env.NODE_ENV === "production") {
+    const { wczytajKluczGlowny } = await import("@/lib/auth/totp");
+    try {
+      wczytajKluczGlowny();
+    } catch (e) {
+      console.error(`[auth] 2FA niedostępne: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
   try {
     const [{ db }, { seedIfEmpty }] = await Promise.all([
       import("@/lib/db"),

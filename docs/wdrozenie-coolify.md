@@ -31,10 +31,11 @@ pierwszy prawdziwy trade.
 | `SESSION_SECRET` | `openssl rand -base64 48` — minimum 32 znaki |
 | `OWNER_PASSWORD` | hasło do pierwszego logowania |
 | `UPLOADS_DIR` | `/data/zrzuty` (już ustawione w obrazie, ale niech będzie jawnie) |
+| `TOTP_ENC_KEY` | **wymagana do włączenia 2FA** (sekcja 9): 32 losowe bajty, `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Secret. **Nie zmieniaj po włączeniu 2FA** |
 | `INGEST_TOKEN_SHA256` | **opcjonalna**: skrót SHA-256 tokenu API synchronizacji, 64 znaki hex (patrz sekcja 8). Bez niej `/api/ingest/*` odpowiada 404 |
 
-`SESSION_SECRET`, `OWNER_PASSWORD` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.
-Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Hasło* i usuń `OWNER_PASSWORD`
+`SESSION_SECRET`, `OWNER_PASSWORD`, `TOTP_ENC_KEY` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.
+Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Bezpieczeństwo* i usuń `OWNER_PASSWORD`
 ze zmiennych — nie jest już potrzebne.
 
 ### Wolumen na zrzuty ekranu
@@ -60,7 +61,7 @@ Kliknij **Deploy**. Kontener przy starcie:
 Nie ma żadnego ręcznego kroku z seedem. Kolejne restarty niczego nie ruszają —
 w szczególności nie wskrzeszają instrumentów ani tagów, które usuniesz.
 
-Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Hasło* i usuń `OWNER_PASSWORD`
+Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Bezpieczeństwo* i usuń `OWNER_PASSWORD`
 ze zmiennych środowiskowych.
 
 ### Healthcheck
@@ -81,12 +82,13 @@ Kolejność ma znaczenie:
 Coolify występuje o certyfikat w momencie dodania domeny. Gdy DNS jeszcze nie wskazuje
 na serwer, walidacja nie przechodzi, a Let's Encrypt blokuje kolejne próby na godziny.
 
-Do czasu podania własnej domeny działa adres wygenerowany przez Coolify.
+Docelowy adres: **`https://dziennik.panekweb.pl`** (ADR-031). Adres wygenerowany przez Coolify
+(`*.sslip.io`, http) **trzeba usunąć**, ale dopiero po sprawdzeniu domeny: patrz kroki w sekcji 9.
 
-Ciasteczko sesji jest oznaczane jako `secure` tylko wtedy, gdy połączenie idzie po HTTPS
-(decyduje nagłówek `x-forwarded-proto` od proxy). Dzięki temu logowanie działa także pod
-adresem `http` z Coolify, ale **hasło leci wtedy otwartym tekstem** — włącz SSL, gdy
-tylko aplikacja przestanie być zabawką testową.
+Ciasteczka sesji, drugiego kroku logowania i trybu sudo są na produkcji **zawsze** `Secure` i
+`SameSite=Strict`. Pod adresem `http://` przeglądarka nie zapisze ich w ogóle, więc logowanie tam
+**nie zadziała** (to zamierzone: hasło nie ma lecieć otwartym tekstem). Nagłówek `x-forwarded-proto`
+od Traefika decyduje już tylko o tym, czy `/api/ingest/**` przyjmie zapytanie (403 bez HTTPS).
 
 ## 5. Smoke test po wdrożeniu
 
@@ -94,7 +96,9 @@ Wykonaj za każdym razem, nie tylko przy pierwszym wdrożeniu:
 
 - [ ] `GET /api/health` zwraca `{"status":"ok"}` — to znaczy, że aplikacja **widzi bazę**
 - [ ] wdrożony commit w Coolify == `HEAD` gałęzi `master` (sprawdzone, nie założone)
-- [ ] logowanie hasłem działa, złe hasło jest odrzucane
+- [ ] logowanie hasłem działa, złe hasło jest odrzucane; przy włączonym 2FA po haśle pyta o kod
+- [ ] `curl -sI https://dziennik.panekweb.pl/login` ma `Strict-Transport-Security: max-age=31536000` **bez** `includeSubDomains`, a `curl -s https://dziennik.panekweb.pl/robots.txt` zwraca `Disallow: /`
+- [ ] `curl -sI http://dziennik.panekweb.pl/login` przekierowuje na `https://` (Traefik), a stary adres sslip nie odpowiada
 - [ ] wpisanie trade'a zapisuje się i zmienia liczby na pulpicie
 - [ ] wgranie zrzutu ekranu działa, a zrzut jest widoczny po restarcie kontenera
 - [ ] kalendarz i statystyki pokazują dane
@@ -110,7 +114,10 @@ Dwie warstwy, obie potrzebne:
 2. **Zrzuty ekranu** — wolumen `/data`. Kopia bazy ich nie obejmuje.
 
 Dodatkowo w aplikacji: *Ustawienia → Dane i kopia → Pobierz kopię w JSON* daje eksport
-wszystkich tabel niezależny od Postgresa.
+danych dziennika niezależny od Postgresa (nie zawiera hasła ani sekretu 2FA; przy włączonym 2FA wymaga trybu sudo).
+
+Kopia **lokalnej** bazy deweloperskiej: `npm run db:backup` (pg_dump do `.dane/kopie/`). Skrypt odmawia, gdy
+`DATABASE_URL` nie wskazuje na localhost, więc produkcji nie dotyka; kopię produkcji robi się wyłącznie w Coolify.
 
 ## 7. Aktualizacja
 
@@ -156,3 +163,43 @@ w pamięci kontenera, więc restart je zeruje.
 **Proxy przed aplikacją:** adres klienta do blokad to ostatni wpis `X-Forwarded-For`, a HTTPS wynika
 z `X-Forwarded-Proto`. Traefik z Coolify ustawia oba. Dodanie kolejnego proxy (CDN) przed Traefikiem
 sprawi, że wszyscy klienci zlecą się pod jeden adres — wtedy trzeba zmienić `adresKlienta` w `lib/ingest/http.ts`.
+
+## 9. Domena `dziennik.panekweb.pl`, HTTPS i 2FA (wydanie R1, ADR-031)
+
+Kolejność ma znaczenie: nowa wersja wymusza ciasteczka `Secure`, więc **musi** być już dostępna
+domena z HTTPS, zanim nowy kod ruszy, inaczej nikt się nie zaloguje.
+
+1. **Kopia bazy w Coolify** (Backups → ręczny backup) i sprawdzenie, że plik kopii powstał.
+   Migracja `0016_totp.sql` dokłada kolumny i tabele (`auth_backup_codes`, `auth_events`), nie zmienia istniejących.
+2. **Zmienna `TOTP_ENC_KEY`** (secret) w Coolify. Wygeneruj na własnym komputerze, nie na serwerze:
+   `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
+   Zapisz klucz poza gitem (menedżer haseł). **Nie zmieniaj go po włączeniu 2FA.**
+3. **DNS:** w Hetzner DNS rekord A `dziennik` w strefie `panekweb.pl` → adres serwera. Sprawdź
+   `nslookup dziennik.panekweb.pl`. Rekordu nie rób na `*`: pozostałe subdomeny nie należą do tej aplikacji.
+4. **Domena w Coolify:** w zasobie aplikacji, pole Domains, dopisz `https://dziennik.panekweb.pl`
+   (adres sslip na razie zostaw). Coolify wystąpi o certyfikat Let's Encrypt; poczekaj, aż
+   `curl -sI https://dziennik.panekweb.pl/api/health` zwróci 200 z poprawnym certyfikatem.
+5. **Deploy** nowej wersji (kliknięty ręcznie, sprawdź commit == HEAD `master`). Start kontenera uruchamia migrację 0016.
+6. **Usuń adres sslip** z pola Domains i zapisz. Od teraz zostaje tylko `https://dziennik.panekweb.pl`.
+7. **Smoke test** z sekcji 5, razem z nowymi punktami o HSTS, robots i przekierowaniu.
+8. **Włącz 2FA:** Ustawienia → Bezpieczeństwo → hasło → zeskanuj QR → wpisz kod. Zapisz 10 kodów
+   zapasowych (pokazują się raz). Wyloguj się i zaloguj ponownie, żeby sprawdzić drugi krok.
+9. **Po tygodniu bez problemów** usuń `OWNER_PASSWORD` ze zmiennych, jeśli jeszcze tam jest.
+
+**Awaria: telefon i kody zapasowe zgubione albo zmieniony `TOTP_ENC_KEY`.** Nie ma obejścia w aplikacji, bo
+ma być twardo. Z dostępem do bazy (Coolify → terminal bazy) wyłączasz 2FA SQL-em, potem włączasz od nowa:
+
+```sql
+BEGIN;
+UPDATE settings SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_last_step = NULL,
+                    session_version = session_version + 1 WHERE id = 1;
+DELETE FROM auth_backup_codes;
+COMMIT;
+```
+
+Wejście do panelu Coolify i do bazy jest więc ostatnią linią obrony: zabezpiecz konto Coolify i GitHub własnym 2FA.
+
+**Wyloguj wszędzie** (Ustawienia → Bezpieczeństwo) odcina wszystkie urządzenia naraz. Blokada prób
+(8 błędów hasła lub kodu na adres, 10 minut) siedzi w pamięci kontenera: restart ją zeruje.
+Adres klienta do blokad to ostatni wpis `X-Forwarded-For` (dopisuje go Traefik); CDN przed Traefikiem
+trzeba by uwzględnić w `adresZNaglowkow` (`lib/ingest/http.ts`).

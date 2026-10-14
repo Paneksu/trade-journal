@@ -51,18 +51,32 @@ export async function isSignedIn(): Promise<boolean> {
  * kontenerze i jednym uzytkowniku to wystarcza, a tabela w bazie bylaby
  * kolejnym zapisem przy kazdej probie.
  */
-const attempts = new Map<string, { count: number; until: number }>();
+type Wpis = { count: number; until: number; eskalowano: boolean };
+const attempts = new Map<string, Wpis>();
 const LIMIT = 8;
 const LOCKOUT_MS = 10 * 60 * 1000;
 
-export function checkRateLimit(key: string): { allowed: boolean; retryInS: number } {
+/*
+ * Eskalacja: kazda kolejna blokada tego samego klucza trwa dwa razy dluzej niz poprzednia
+ * (10 min, 20, 40 ... do 12 h). Seria zanika po dobie bez blokad, a poprawne logowanie
+ * zeruje ja dla swojego adresu. Bez tego atakujacy, ktory zna haslo i rotuje adresy,
+ * zgadywalby kod 2FA w tempie "limit na 10 minut" bez konca (ok. 4300 prob na dobe).
+ */
+const serie = new Map<string, { n: number; ostatnia: number }>();
+const SERIA_ZANIKA_MS = 24 * 60 * 60 * 1000;
+const MAX_BLOKADA_MS = 12 * 60 * 60 * 1000;
+
+export function checkRateLimit(
+  key: string,
+  limit: number = LIMIT,
+): { allowed: boolean; retryInS: number } {
   const entry = attempts.get(key);
   if (!entry) return { allowed: true, retryInS: 0 };
   if (Date.now() > entry.until) {
     attempts.delete(key);
     return { allowed: true, retryInS: 0 };
   }
-  if (entry.count < LIMIT) return { allowed: true, retryInS: 0 };
+  if (entry.count < limit) return { allowed: true, retryInS: 0 };
   return { allowed: false, retryInS: Math.ceil((entry.until - Date.now()) / 1000) };
 }
 
@@ -72,25 +86,40 @@ const MAX_WPISOW = 5000;
 function sprzatnijWygasle(): void {
   const teraz = Date.now();
   for (const [k, v] of attempts) if (teraz > v.until) attempts.delete(k);
+  for (const [k, v] of serie) if (teraz - v.ostatnia > SERIA_ZANIKA_MS) serie.delete(k);
   // Gdy nadal za duzo (atak z wielu adresow): zostaja najswiezsze, najstarsze wypadaja.
-  while (attempts.size > MAX_WPISOW) {
-    const najstarszy = attempts.keys().next().value;
-    if (najstarszy === undefined) break;
-    attempts.delete(najstarszy);
+  for (const mapa of [attempts, serie] as Map<string, unknown>[]) {
+    while (mapa.size > MAX_WPISOW) {
+      const najstarszy = mapa.keys().next().value;
+      if (najstarszy === undefined) break;
+      mapa.delete(najstarszy);
+    }
   }
 }
 
-export function recordFailedAttempt(key: string): void {
-  if (attempts.size >= MAX_WPISOW) sprzatnijWygasle();
-  const entry = attempts.get(key);
-  if (entry && Date.now() <= entry.until) {
+export function recordFailedAttempt(key: string, limit: number = LIMIT): void {
+  if (attempts.size >= MAX_WPISOW || serie.size >= MAX_WPISOW) sprzatnijWygasle();
+  const teraz = Date.now();
+  let entry = attempts.get(key);
+  if (entry && teraz <= entry.until) {
     entry.count += 1;
-    entry.until = Date.now() + LOCKOUT_MS;
+    // Wydluzona blokada (eskalowana) nie moze sie skrocic kolejnym wpisem.
+    if (!entry.eskalowano) entry.until = teraz + LOCKOUT_MS;
   } else {
-    attempts.set(key, { count: 1, until: Date.now() + LOCKOUT_MS });
+    entry = { count: 1, until: teraz + LOCKOUT_MS, eskalowano: false };
+    attempts.set(key, entry);
+  }
+
+  if (entry.count >= limit && !entry.eskalowano) {
+    const poprzednia = serie.get(key);
+    const n = poprzednia && teraz - poprzednia.ostatnia <= SERIA_ZANIKA_MS ? poprzednia.n + 1 : 1;
+    serie.set(key, { n, ostatnia: teraz });
+    entry.until = teraz + Math.min(LOCKOUT_MS * 2 ** (n - 1), MAX_BLOKADA_MS);
+    entry.eskalowano = true;
   }
 }
 
 export function clearAttempts(key: string): void {
   attempts.delete(key);
+  serie.delete(key);
 }

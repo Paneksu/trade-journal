@@ -1450,6 +1450,26 @@ na telefonie, a TOTP daje 2FA od razu); SMS i e-mail jako drugi składnik (słab
 dostawcy); Cloudflare Access albo VPN przed aplikacją (PWA na telefonie i `tj` z dowolnego
 urządzenia muszą działać bez klienta VPN).
 
+**Doprecyzowania z wdrożenia fazy 1 (2026-10-14, decyzje gustu, odwracalne).**
+- **Biblioteki:** `otpauth` 9.5.2 (MIT, jedna zależność `@noble/hashes`, wydana 3.09.2026) do TOTP
+  i `qrcode` 1.5.4 (MIT) do kodu QR **po stronie serwera**: sekret nie trafia do żadnego zewnętrznego
+  generatora QR. Kod sprawdzony wektorami RFC 6238 (dodatek B).
+- **Klucze:** z jednego `TOTP_ENC_KEY` HKDF-SHA256 wyprowadza dwa osobne klucze (szyfrowanie sekretu,
+  HMAC kodów zapasowych). Sekret w trakcie włączania (QR pokazany, kod jeszcze niepotwierdzony) czeka
+  w ciasteczku zaszyfrowanym tym samym kluczem, bo CHECK z 0016 nie dopuszcza sekretu bez daty włączenia.
+- **Włączenie 2FA podbija `session_version`:** sesje sprzed włączenia (także skradzione) przestają działać;
+  bieżąca przeglądarka dostaje nową od razu.
+- **Sudo bez 2FA nie istnieje:** gdy 2FA jest wyłączone, nie ma czym podnieść uprawnień, więc akcje wymagające
+  sudo sprawdzają stan (`nie_dotyczy`) i same żądają hasła (zmiana hasła). Pełny eksport wymaga sudo,
+  gdy 2FA jest włączone (zgodnie z listą w tym ADR).
+- **Blokada:** jeden licznik na adres obejmuje hasło, kod TOTP, kod zapasowy i sudo (8 błędów, 10 min);
+  poprawne hasło go **nie** zeruje, gdy czeka drugi krok. Dodatkowo globalny licznik 30 błędnych kodów
+  na 10 min zatrzymuje zgadywanie z wielu adresów (dotrzeć do drugiego kroku może tylko znający hasło).
+- **Adres klienta** do blokad logowania to ostatni wpis `X-Forwarded-For` (jak w `withIngest`). Wcześniej
+  logowanie brało pierwszy wpis, który klient może podstawić, więc po wystawieniu aplikacji do internetu
+  blokada 8 prób dawała się omijać jednym nagłówkiem.
+- **Kopia lokalnej bazy:** `npm run db:backup` robi `pg_dump` tylko, gdy `DATABASE_URL` jest lokalny.
+
 ---
 
 ## ADR-032 — łącznik `Paneksu/tj-connector` jako plugin Claude Code; AI steruje wykresem, nigdy nie składa zleceń (2026-10-14)

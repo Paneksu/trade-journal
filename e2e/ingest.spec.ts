@@ -40,6 +40,8 @@ test.describe("API synchronizacji", () => {
   let sql: ReturnType<typeof postgres>;
   let api: APIRequestContext;
   const utworzoneTrady: number[] = [];
+  /** Pierwsze konto z bazy: numer zalezy od historii bazy (sekwencje rosna po kasowaniu), wiec nie "1" na sztywno. */
+  let kontoStartowe = 1;
 
   /** Klient z wlasnym adresem (X-Forwarded-For): blokady i limity sa per adres. */
   async function klient(adres: string, token: string | null = TOKEN): Promise<APIRequestContext> {
@@ -55,7 +57,7 @@ test.describe("API synchronizacji", () => {
   function trade(nr: number, nadpisz: Record<string, unknown> = {}) {
     return {
       externalRef: `fxr:e2e-${RUN}-${nr}`,
-      accountId: 1,
+      accountId: kontoStartowe,
       symbol: "NQ1!",
       direction: "long",
       entryTime: `1991-03-12T09:3${nr % 10}:00-05:00`,
@@ -123,6 +125,9 @@ test.describe("API synchronizacji", () => {
   test.beforeAll(async () => {
     wymagajLokalnych(DB_URL, process.env.E2E_URL);
     sql = postgres(DB_URL, { max: 2 });
+    const [konto] = await sql`select min(id)::int as id from accounts`;
+    if (!konto?.id) throw new Error("Baza testowa nie ma żadnego konta - uruchom seed (npx tsx src/lib/db/seed.ts).");
+    kontoStartowe = konto.id;
     api = await klient(`${PREFIKS}.200`);
     await posprzataj(true); // pozostalosci po przerwanych przebiegach
     await sql`insert into tags (category_id, name) select id, ${TAG} from tag_categories where key = 'confluence' on conflict do nothing`;

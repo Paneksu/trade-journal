@@ -1,6 +1,7 @@
 "use server";
 
 import { requireSession } from "@/lib/auth/guard";
+import { KOMUNIKAT_SUDO, stanSudo } from "@/lib/auth/zadanie";
 import { db } from "@/lib/db";
 import {
   accounts,
@@ -24,9 +25,15 @@ import {
  * Eksport calej bazy do JSON. Sluzy jako kopia zapasowa niezalezna od Postgresa
  * i jako droga wyjscia - dane nalezą do uzytkownika, nie do aplikacji.
  * Zrzuty ekranu zostaja na dysku; ich sciezki sa w eksporcie.
+ *
+ * Przy wlaczonym 2FA wymaga trybu sudo (ADR-031): to jedyna droga, ktora wynosi
+ * calosc danych jednym zadaniem, wiec skradziona sesja nie wystarcza.
  */
-export async function exportAll(): Promise<string> {
-  await requireSession();
+export type EksportWynik = { ok: true; json: string } | { ok: false; error: string };
+
+export async function exportAll(): Promise<EksportWynik> {
+  const s = await requireSession();
+  if ((await stanSudo(s)).stan === "wymagany") return { ok: false, error: KOMUNIKAT_SUDO };
 
   const [
     accountRows,
@@ -68,7 +75,7 @@ export async function exportAll(): Promise<string> {
     db.select().from(ingestSkips),
   ]);
 
-  return JSON.stringify(
+  const json = JSON.stringify(
     {
       wersja: 1,
       wyeksportowano: new Date().toISOString(),
@@ -91,6 +98,7 @@ export async function exportAll(): Promise<string> {
     null,
     2,
   );
+  return { ok: true, json };
 }
 
 /** Liczniki do ekranu ustawien - ile czego siedzi w bazie. */

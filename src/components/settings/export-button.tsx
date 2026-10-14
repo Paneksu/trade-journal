@@ -20,8 +20,12 @@ export function ExportButton() {
           setBusy(true);
           setError(null);
           try {
-            const json = await exportAll();
-            const blob = new Blob([json], { type: "application/json" });
+            const wynik = await exportAll();
+            if (!wynik.ok) {
+              setError(wynik.error);
+              return;
+            }
+            const blob = new Blob([wynik.json], { type: "application/json" });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
             link.href = url;

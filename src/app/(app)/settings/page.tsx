@@ -1,4 +1,4 @@
-import { GeneralSettingsForm, PasswordForm } from "@/components/settings/forms";
+import { GeneralSettingsForm } from "@/components/settings/forms";
 import { Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 
@@ -25,13 +25,6 @@ export default async function GeneralSettingsPage() {
             beProgNaKontrakt: settings.beProgNaKontrakt,
           }}
         />
-      </Panel>
-
-      <Panel
-        title="Hasło"
-        description="Zmiana hasła wylogowuje wszystkie sesje, także na innych urządzeniach."
-      >
-        <PasswordForm />
       </Panel>
     </div>
   );

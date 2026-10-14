@@ -157,6 +157,11 @@ describe("adres klienta i HTTPS", () => {
     expect(czyHttps(r({ "x-forwarded-proto": "https" }))).toBe(true);
     expect(czyHttps(r({ "x-forwarded-proto": "https, http" }))).toBe(false);
     expect(czyHttps(r({ "x-forwarded-proto": "http" }))).toBe(false);
+    // Za Traefikiem w Coolify: proxy dopisuje schemat wejscia, a klient (przegladarka lub
+    // atakujacy) moze wyslac wlasny naglowek. Liczy sie zawsze wpis proxy, czyli ostatni.
+    expect(czyHttps(r({ "x-forwarded-proto": "http, https" }))).toBe(true);
+    expect(czyHttps(r({ "x-forwarded-proto": "HTTPS" }))).toBe(true);
+    expect(czyHttps(r({ "x-forwarded-proto": "" }, "https://dziennik.panekweb.pl/x"))).toBe(true);
     expect(czyHttps(r({}, "https://dziennik.example/x"))).toBe(true);
     expect(czyHttps(r({}, "http://dziennik.example/x"))).toBe(false);
   });
