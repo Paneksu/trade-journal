@@ -207,7 +207,8 @@ COMMIT;
 
 Wejście do panelu Coolify i do bazy jest więc ostatnią linią obrony: zabezpiecz konto Coolify i GitHub własnym 2FA.
 
-**Wyloguj pozostałe urządzenia** (Ustawienia → Bezpieczeństwo) odcina wszystkie urządzenia poza bieżącym. Blokada prób
+**Wyloguj pozostałe przeglądarki** (Ustawienia → Bezpieczeństwo) odcina sesje przeglądarek poza bieżącą. Tokeny urządzeń
+(`tj`, asystenci AI) unieważnia tylko zaznaczone pole „unieważnij też wszystkie tokeny urządzeń” albo Ustawienia → Urządzenia. Blokada prób
 (8 błędów hasła lub kodu na adres, 10 minut) siedzi w pamięci kontenera: restart ją zeruje.
 Adres klienta do blokad to ostatni wpis `X-Forwarded-For` (dopisuje go Traefik); CDN przed Traefikiem
 trzeba by uwzględnić w `adresZNaglowkow` (`lib/api-v2/http.ts`).
