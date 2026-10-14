@@ -4,6 +4,7 @@ import { OdrzucOczekujacePrzycisk, TokenImportuPrzycisk, UniewaznPrzycisk } from
 import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { listaTokenow, oczekujaceKody, DNI_NIEAKTYWNOSCI } from "@/lib/api-v2/urzadzenia";
 import { requireSession } from "@/lib/auth/guard";
+import { stanSudo } from "@/lib/auth/zadanie";
 import { dateTime } from "@/lib/format";
 
 export const metadata = { title: "Urządzenia — Dziennik tradingowy" };
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic";
 const STATUSY = { aktywny: "aktywny", uniewazniony: "unieważniony", wygasly: "wygasł" } as const;
 
 export default async function DevicesSettingsPage() {
-  await requireSession();
+  const sesja = await requireSession();
+  const sudo = await stanSudo(sesja);
+  const potwierdzenie = sudo.stan === "aktywny" ? "aktywne" : sudo.stan === "wymagany" ? "sudo" : "haslo";
   const [tokeny, oczekujace] = await Promise.all([listaTokenow(), oczekujaceKody()]);
 
   return (
@@ -30,7 +33,7 @@ export default async function DevicesSettingsPage() {
         }
       >
         <div className="border-b border-line px-4 py-3">
-          <TokenImportuPrzycisk />
+          <TokenImportuPrzycisk potwierdzenie={potwierdzenie} />
           <p className="mt-1 text-xs text-faint">
             Token importu to jedyny sposób na zakres »import« (pochodzenie vault-import i mentor). Urządzenia go nie dostają.
           </p>

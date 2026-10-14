@@ -196,7 +196,7 @@ if (!TEST_URL) {
     return t.id as number;
   }
 
-  describe("migracje 0017-0018 na prawdziwej bazie", () => {
+  describe("migracje 0017-0019 na prawdziwej bazie", () => {
     beforeAll(async () => {
       // 1) migrator drizzle (jak `npm run db:migrate`: jedna transakcja na cala serie)
       await reset();
@@ -312,6 +312,10 @@ if (!TEST_URL) {
           }
           for (const u of cfg.uniqueConstraints) {
             schemat.set(u.name as string, { uniq: true, czesciowy: false, metoda: "btree" });
+          }
+          // unikat zadeklarowany na kolumnie: `text().unique("nazwa")` (tak robi faza 1 w auth_backup_codes)
+          for (const c of cfg.columns) {
+            if (c.isUnique && c.uniqueName) schemat.set(c.uniqueName, { uniq: true, czesciowy: false, metoda: "btree" });
           }
           for (const [n, b] of baza) {
             const s = schemat.get(n);
@@ -642,6 +646,31 @@ if (!TEST_URL) {
         expect(e4.code).toBe("TJ403");
       });
 
+      it("tj_forbid_update (0016 -> 0018): jedna funkcja, auth_events i note_revisions odrzucaja UPDATE tym samym kodem TJ409", async () => {
+        const [{ ile }] = await sql`SELECT count(*)::int AS ile FROM pg_proc WHERE proname = 'tj_forbid_update'`;
+        expect(ile).toBe(1); // CREATE OR REPLACE w 0018 nie zrobil drugiej, osobnej funkcji
+        await sql`INSERT INTO auth_events (kind, detail) VALUES ('login_ok', '{}'::jsonb)`;
+        const e1 = await blad(sql`UPDATE auth_events SET ip = 'x'`);
+        expect(e1.code).toBe("TJ409");
+        const nid = await nowaNotatka(sql, unik("Forbid"), { kind: "concept" });
+        await sql`UPDATE notes SET body_md = 'v2' WHERE id = ${nid}`;
+        const e2 = await blad(sql`UPDATE note_revisions SET title = 'x' WHERE note_id = ${nid}`);
+        expect(e2.code).toBe("TJ409");
+        // oba triggery wskazuja te sama funkcje
+        const trigery = await sql`SELECT tgrelid::regclass::text AS tabela FROM pg_trigger WHERE tgfoid = 'public.tj_forbid_update'::regproc AND NOT tgisinternal ORDER BY 1`;
+        expect(trigery.map((t) => t.tabela)).toEqual(expect.arrayContaining(["auth_events", "note_revisions"]));
+      });
+
+      it("auth_events.token_id ma klucz obcy do api_tokens (0019, NO ACTION): token z wpisami nie da sie skasowac", async () => {
+        const [t] = await sql`INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via)
+          VALUES ('fk', 'fkfkfk01', ${sha256Node("fk-token")}, ARRAY['read'], 'ui') RETURNING id`;
+        await sql`INSERT INTO auth_events (kind, token_id) VALUES ('token_created', ${t.id})`;
+        expect((await blad(sql`INSERT INTO auth_events (kind, token_id) VALUES ('token_created', 999999999)`)).code).toBe("23503");
+        expect((await blad(sql`DELETE FROM api_tokens WHERE id = ${t.id}`)).code).toBe("23503");
+        await sql`DELETE FROM auth_events WHERE token_id = ${t.id}`;
+        await sql`DELETE FROM api_tokens WHERE id = ${t.id}`;
+      });
+
       it("api_tokens: zakresu 'approve' nie da sie zapisac; device_codes pilnuja stanow", async () => {
         const wstaw = (scopes: string[], prefix: string) =>
           sql`INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via)
@@ -839,15 +868,20 @@ if (!TEST_URL) {
 
     /* ------------------------------------------------------------------ (e) */
     describe("(e) odwracalnosc", () => {
-      it("0018_down i 0017_down przywracaja stan sprzed, a ponowne migracje daja identyczny katalog", async () => {
+      it("0019_down, 0018_down i 0017_down przywracaja stan sprzed, a ponowne migracje daja identyczny katalog", async () => {
         const przed = await odcisk();
         const admin = postgres(url, { max: 1, onnotice: () => {} });
         try {
           const down18 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0018_down.sql"), "utf8");
           const down17 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0017_down.sql"), "utf8");
+          const down19 = readFileSync(path.join(ROOT, "docs", "v2", "rollback", "0019_down.sql"), "utf8");
+          // kolejnosc odwrotna do nakladania: FK auth_events -> api_tokens (0019) schodzi pierwszy
           await admin.begin(async (tx) => {
+            await tx.unsafe(down19);
             await tx.unsafe(down18);
           });
+          const fk19 = await admin`SELECT 1 FROM pg_constraint WHERE conname = 'auth_events_token_id_fkey'`;
+          expect(fk19.length).toBe(0);
           const tabele18 = await admin`
             SELECT relname FROM pg_class WHERE relkind = 'r' AND relnamespace = 'public'::regnamespace
               AND relname IN ('notes', 'note_revisions', 'note_links', 'user_words', 'hypotheses', 'rules', 'rule_versions')`;

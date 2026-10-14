@@ -235,7 +235,7 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
   // ...a ktos bez sesji zostaje zawrocony na logowanie. Bez `maxRedirects`
   // Playwright poszedlby za przekierowaniem i zobaczyl 200 na stronie logowania.
   const czysty = await browser.newContext({ storageState: undefined });
-  const bezSesji = await czysty.request.get(`http://localhost:3000${adres}`, { maxRedirects: 0 });
+  const bezSesji = await czysty.request.get(new URL(adres as string, process.env.E2E_URL ?? "http://localhost:3000").toString(), { maxRedirects: 0 });
   expect(bezSesji.status()).toBe(307);
   expect(bezSesji.headers().location).toContain("/login");
   await czysty.close();

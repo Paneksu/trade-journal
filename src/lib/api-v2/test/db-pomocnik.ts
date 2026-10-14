@@ -114,6 +114,7 @@ export async function sprzatnijPoTokenach(sql: Sql, ids: number[]): Promise<void
   await sql`delete from hypotheses where note_id in (select id from notes where created_by_token_id = any(${ids}))`;
   await sql`delete from user_words where created_by_token_id = any(${ids})`;
   await sql`delete from notes where created_by_token_id = any(${ids})`;
+  await sql`delete from auth_events where token_id = any(${ids})`;
   await sql`delete from device_codes where token_id = any(${ids})`;
   await sql`delete from api_tokens where id = any(${ids})`;
 }

@@ -1,5 +1,9 @@
 import type { NextConfig } from "next";
 
+// HSTS wylacznie na produkcji: wysylany z serwera deweloperskiego zapisalby w przegladarce
+// trwala regule "localhost zawsze przez https" i popsul inne lokalne serwisy.
+const dev = process.env.NODE_ENV !== "production";
+
 const nextConfig: NextConfig = {
   // Standalone: obraz dockerowy dla Coolify nie wlecze calego node_modules.
   output: "standalone",
@@ -21,6 +25,11 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
           { key: "X-Frame-Options", value: "DENY" },
+          // ADR-031: bez includeSubDomains i bez preload - pozostale subdomeny panekweb.pl
+          // nie naleza do tej aplikacji i nie wolno ich zmuszac do HTTPS jej naglowkiem.
+          ...(dev
+            ? []
+            : [{ key: "Strict-Transport-Security", value: "max-age=31536000" }]),
         ],
       },
     ];

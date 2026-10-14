@@ -34,8 +34,14 @@ describe("lista urządzeń nie ujawnia kodów oczekujących żądań", () => {
     expect(komponent).toContain("podało samo urządzenie");
     expect(komponent).toContain("czyInnyAdres");
   });
-  it("akcja zatwierdzenia ma jawny TODO sudo jako warunek scalenia", () => {
-    expect(zrodlo("../actions/devices.ts")).toMatch(/WARUNEK SCALENIA[\s\S]*sudo/);
+  it("akcje zatwierdzenia i tworzenia tokenu importu wymagają potwierdzenia (sudo albo hasło) i zostawiają wpis w auth_events", () => {
+    const akcje = zrodlo("../actions/devices.ts");
+    expect(akcje).not.toMatch(/WARUNEK SCALENIA/); // TODO z fazy 2 zamknięte
+    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, String\(d\.get\("haslo"\)/);
+    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, haslo\)/);
+    for (const rodzaj of ["device_approved", "device_denied", "token_created", "token_revoked"]) {
+      expect(akcje, rodzaj).toContain(`"${rodzaj}"`);
+    }
   });
 });
 

@@ -2,6 +2,7 @@ import { DeviceStartSchema } from "@/lib/api-v2/contract/v2";
 import { adresPolaczenia, rozpocznijUrzadzenie } from "@/lib/api-v2/device";
 import { adresKlienta, blad, odpowiedz } from "@/lib/api-v2/http";
 import { wczytajCialo } from "@/lib/api-v2/walidacja";
+import { zapiszZdarzenie } from "@/lib/auth/second-factor";
 import { withPublicApi } from "@/lib/api-v2/with-api";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,12 @@ export const POST = withPublicApi(
 
     const start = await rozpocznijUrzadzenie(w.dane.clientName, w.dane.scopes, adresKlienta(request));
     if (!start.ok) return blad(429, start.kod, start.komunikat, { retryInS: 600 }, { "Retry-After": "600" });
+    // Wpis bez kodow: tylko kto prosi, skad i o co (dziennik zdarzen bezpieczenstwa, ADR-031).
+    await zapiszZdarzenie("device_requested", {
+      ip: adresKlienta(request),
+      userAgent: request.headers.get("user-agent"),
+      detail: { clientName: w.dane.clientName, zakresy: w.dane.scopes },
+    });
     return odpowiedz({
       deviceCode: start.deviceCode,
       userCode: start.userCode,

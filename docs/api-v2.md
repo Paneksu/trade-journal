@@ -66,7 +66,7 @@ Unieważnienie: Ustawienia → Urządzenia → „Unieważnij”. Działa od raz
 |---|---|---|
 | `GET /meta` | read | słownik + `contractHash`, `rulesVersion`, zakresy, limity |
 | `GET /trades`, `POST /trades` | read, write | jak w `docs/api-ingest.md`; zapis przez `persistTrade`/`computeTrade` |
-| `POST /trades/:id/reviews` | write | ocena AI z regułami (do migracji 0020: podmiana, ADR-028) |
+| `POST /trades/:id/reviews` | write | ocena AI z regułami (do migracji 0021: podmiana, ADR-028) |
 | `POST /trades/:id/screenshots` | write | multipart; zastępuje zrzuty tego samego pochodzenia |
 | `POST /backtest-sessions`, `POST /skips` | write | jak w ingest |
 | `GET /days/:date`, `PUT /days/:date` | read, write | notatka dnia, trade'y, słowa i notatki przypięte do dnia |
@@ -140,8 +140,10 @@ Trade'y: każda pozycja paczki we własnej transakcji (błąd bazy w jednej nie 
 Lista urządzeń nie pokazuje kodów oczekujących żądań (tylko liczbę, adres i czas). Ekran zatwierdzenia
 oznacza nazwę jako podaną przez urządzenie i ostrzega, gdy adres żądania różni się od adresu przeglądarki.
 Globalny limit: 20 niezatwierdzonych żądań naraz (`429 too_many_pending`); wygasłe żądania są sprzątane po
-10 minutach. **Warunek publicznego wystawienia: sudo (hasło + TOTP) przy zatwierdzaniu z fazy 1.**
-Do tego czasu `DEVICE_LOGIN_DISABLED=1` zamyka `device/start`.
+10 minutach. Zatwierdzenie urządzenia i utworzenie tokenu importu wymagają **sudo** (kod TOTP lub zapasowy, 10 min)
+albo, przy wyłączonym 2FA, hasła (ADR-031); odrzucenie i unieważnienie nie wymagają. Każda decyzja zostawia wpis w
+`auth_events` (`device_requested`, `device_approved`, `device_denied`, `token_created`, `token_revoked`; bez kodów i haseł).
+`DEVICE_LOGIN_DISABLED=1` zamyka `device/start` (np. na czas awarii).
 
 ## Zmienne środowiskowe
 

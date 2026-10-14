@@ -21,6 +21,8 @@ const EKRANY = [
   { nazwa: "galeria", adres: "/galeria" },
   { nazwa: "ustawienia", adres: "/settings" },
   { nazwa: "pola własne", adres: "/settings/fields" },
+  { nazwa: "urządzenia (tokeny API)", adres: "/settings/devices" },
+  { nazwa: "połącz urządzenie", adres: "/urzadzenia/polacz" },
   { nazwa: "dzień w kalendarzu", adres: "/calendar?miesiac=2020-03&dzien=2020-03-03" },
 ];
 

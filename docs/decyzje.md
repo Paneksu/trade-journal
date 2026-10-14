@@ -1450,6 +1450,26 @@ na telefonie, a TOTP daje 2FA od razu); SMS i e-mail jako drugi składnik (słab
 dostawcy); Cloudflare Access albo VPN przed aplikacją (PWA na telefonie i `tj` z dowolnego
 urządzenia muszą działać bez klienta VPN).
 
+**Doprecyzowania z wdrożenia fazy 1 (2026-10-14, decyzje gustu, odwracalne).**
+- **Biblioteki:** `otpauth` 9.5.2 (MIT, jedna zależność `@noble/hashes`, wydana 3.09.2026) do TOTP
+  i `qrcode` 1.5.4 (MIT) do kodu QR **po stronie serwera**: sekret nie trafia do żadnego zewnętrznego
+  generatora QR. Kod sprawdzony wektorami RFC 6238 (dodatek B).
+- **Klucze:** z jednego `TOTP_ENC_KEY` HKDF-SHA256 wyprowadza dwa osobne klucze (szyfrowanie sekretu,
+  HMAC kodów zapasowych). Sekret w trakcie włączania (QR pokazany, kod jeszcze niepotwierdzony) czeka
+  w ciasteczku zaszyfrowanym tym samym kluczem, bo CHECK z 0016 nie dopuszcza sekretu bez daty włączenia.
+- **Włączenie 2FA podbija `session_version`:** sesje sprzed włączenia (także skradzione) przestają działać;
+  bieżąca przeglądarka dostaje nową od razu.
+- **Sudo bez 2FA nie istnieje:** gdy 2FA jest wyłączone, nie ma czym podnieść uprawnień, więc akcje wymagające
+  sudo sprawdzają stan (`nie_dotyczy`) i same żądają hasła (zmiana hasła). Pełny eksport wymaga sudo,
+  gdy 2FA jest włączone (zgodnie z listą w tym ADR).
+- **Blokada:** jeden licznik na adres obejmuje hasło, kod TOTP, kod zapasowy i sudo (8 błędów, 10 min);
+  poprawne hasło go **nie** zeruje, gdy czeka drugi krok. Dodatkowo globalny licznik 30 błędnych kodów
+  na 10 min zatrzymuje zgadywanie z wielu adresów (dotrzeć do drugiego kroku może tylko znający hasło).
+- **Adres klienta** do blokad logowania to ostatni wpis `X-Forwarded-For` (jak w `withIngest`). Wcześniej
+  logowanie brało pierwszy wpis, który klient może podstawić, więc po wystawieniu aplikacji do internetu
+  blokada 8 prób dawała się omijać jednym nagłówkiem.
+- **Kopia lokalnej bazy:** `npm run db:backup` robi `pg_dump` tylko, gdy `DATABASE_URL` jest lokalny.
+
 ---
 
 ## ADR-032 — łącznik `Paneksu/tj-connector` jako plugin Claude Code; AI steruje wykresem, nigdy nie składa zleceń (2026-10-14)
@@ -1647,9 +1667,10 @@ Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `doc
 - **Tytuły notatek unikalne globalnie** (także zarchiwizowane i między rodzajami), bo `[[Tytuł]]` rozwiązuje się po tytule; kolizja to 409 ze wskazaniem istniejącej notatki.
 - **Evidence propozycji reguły** jest obiektem JSON (nie tablicą). Import z sejfu: `externalRef` daje idempotencję, `vaultStatus` ląduje w `notes.meta.vault_status` i nigdy nie zatwierdza.
 - **Kody własne baz**: `TJ409` (niezmienność), `TJ403` (zatwierdzenie spoza UI), `TJ422` (próg n); API mapuje je na 409/403/422 bez parsowania komunikatu.
-- **Werdykt z `as_of`** stanie się niezmienny dopiero w migracji 0020 (faza 2b); do tego czasu `reviews` zachowuje się jak w ADR-028.
+- **Werdykt z `as_of`** stanie się niezmienny dopiero w migracji 0021 (faza 2b); do tego czasu `reviews` zachowuje się jak w ADR-028.
 - **TODO po scaleniu z fazą 1**: sudo + TOTP przed zatwierdzeniem urządzenia, wpisy w `auth_events`, FK `auth_events.token_id`.
 - **Poprawki po audycie (15.10.2026), decyzje użytkownika:** «Walidacja danych» (próg n: `nImported` tylko z `vault:`, `progN` przez API ≥ 20, ścisłe `evidence` mentora, `vault-import` bez `vault:` jak `ai`) oraz «Wymóg zostaje, poprawiamy» (wszystkie zapisy v2 z `tj.actor`; `persistTrade` dostaje opcjonalny `tx`).
 - **Phishing kodem urządzenia:** lista bez kodów, globalny limit 20 żądań, sprzątanie po 10 min, ostrzeżenie o innym IP, osobny przełącznik `DEVICE_LOGIN_DISABLED`. Sudo przy zatwierdzaniu zostaje WARUNKIEM scalenia/publicznego wystawienia (faza 1).
 - **Wspólna funkcja tokenu v2** (`sprawdzTokenV2`) obsługuje `withApi` i `withIngest`: `API_V2_DISABLED=1` odcina też `/api/ingest/**` dla tokenów v2.
 - **Zakres `import` (2026-10-15, Słowa użytkownika: «Osobny zakres „import”»; rozstrzyga ustalenie N1 z ponownego audytu):** pochodzenie `vault-import` (z `nImported` i `vaultStatus`) oraz `mentor` wolno zadeklarować tylko tokenem z zakresem `import`; bez niego 403. Zakres jest dodatkowy (sam nic nie otwiera), nadaje go wyłącznie użytkownik ręcznie w UI (przycisk „token importu”, pokazywany raz, domyślnie 24 h), nigdy logowanie kodem urządzenia (`device/start` odrzuca go 400, CHECK `device_codes_requested_scopes` bez `import`). CHECK `api_tokens_scopes` rozszerzony do czterech zakresów (migracja 0017, jeszcze niewdrożona, więc edytowana w miejscu). Zakresu „zatwierdź” nadal nie ma. TODO(faza 1): sudo przed utworzeniem tokenu importu.
+- **Scalenie z faza 1 (2026-10-15):** zatwierdzenie urzadzenia i utworzenie tokenu importu wymagaja sudo (ADR-031) albo hasla przy wylaczonym 2FA, z wpisami w `auth_events`; FK `auth_events.token_id` -> `api_tokens` przez osobna migracje 0019 (0016 i 0017 sa w historii i nie sa edytowane); plan fazy 2b przesuniety o jeden numer (0020-0027); `tj_forbid_update`: 0018 zastepuje definicje z 0016 (to samo zachowanie TJ409).

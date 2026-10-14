@@ -97,7 +97,7 @@ export default async function GaleriaPage({
           {filtry.withShots === true && (
             <>
               Domyślnie widać tylko trade&apos;y ze zrzutem —{" "}
-              <Link href={linkStrony(filtry, 1, null)} className="text-accent hover:underline">
+              <Link href={linkStrony(filtry, 1, null)} className="text-accent underline underline-offset-2">
                 pokaż także te bez zdjęcia
               </Link>
             </>

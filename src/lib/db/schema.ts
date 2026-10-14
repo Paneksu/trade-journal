@@ -679,12 +679,85 @@ export const settings = pgTable(
      po obu stronach (patrz lib/domain/outcome.ts). */
   beProgRMille: integer().notNull().default(100), // 100 = 0,100 R
   beProgNaKontrakt: bigint({ mode: "number" }).notNull().default(200), // centy = 2,00 USD
+  /* Drugi skladnik logowania (ADR-031, migracja 0016). Sekret zaszyfrowany
+     AES-256-GCM kluczem z TOTP_ENC_KEY; NULL = 2FA wylaczone. */
+  totpSecretEnc: text(),
+  totpEnabledAt: timestamp({ withTimezone: true }),
+  /* Numer ostatnio przyjetego kroku 30 s: kod z tego samego albo starszego kroku to powtorka. */
+  totpLastStep: bigint({ mode: "number" }),
   /* Numer zestawu regul (migracja 0018, ADR-033). Podbija go wylacznie akcja
      zatwierdzenia w UI, w tej samej transakcji co zmiana statusu wersji reguly. */
   rulesetVersion: integer().notNull().default(0),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  check("settings_totp_zgodne", sql`(${t.totpSecretEnc} is null) = (${t.totpEnabledAt} is null)`),
+  check("settings_totp_krok", sql`${t.totpSecretEnc} is not null or ${t.totpLastStep} is null`),
+  check("settings_ruleset_version", sql`${t.rulesetVersion} >= 0`),
+]);
+
+/* --- Kody zapasowe 2FA (migracja 0016) ---------------------------------------
+   W bazie HMAC-SHA256 kodu, nigdy sam kod. Nowa paczka kasuje stara. */
+
+export const authBackupCodes = pgTable(
+  "auth_backup_codes",
+  {
+    id: serial().primaryKey(),
+    codeHmac: text().notNull().unique("auth_backup_codes_code_hmac_unique"),
+    batch: integer().notNull(),
+    usedAt: timestamp({ withTimezone: true }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [check("settings_ruleset_version", sql`${t.rulesetVersion} >= 0`)],
+  (t) => [
+    check("auth_backup_codes_hmac_format", sql`${t.codeHmac} ~ '^[0-9a-f]{64}$'`),
+    index("auth_backup_codes_batch_idx").on(t.batch).where(sql`${t.usedAt} is null`),
+  ],
+);
+
+/* --- Dziennik zdarzen bezpieczenstwa (migracja 0016) --------------------------
+   Tylko dopisywanie: trigger tj_forbid_update odrzuca kazdy UPDATE. */
+
+export const AUTH_EVENT_KINDS = [
+  "login_ok",
+  "login_fail",
+  "totp_ok",
+  "totp_fail",
+  "backup_code_used",
+  "sudo",
+  "totp_enabled",
+  "totp_disabled",
+  "backup_codes_regenerated",
+  "password_changed",
+  "device_requested",
+  "device_approved",
+  "device_denied",
+  "token_created",
+  "token_revoked",
+  "logout_all",
+] as const;
+export type AuthEventKind = (typeof AUTH_EVENT_KINDS)[number];
+
+export const authEvents = pgTable(
+  "auth_events",
+  {
+    id: serial().primaryKey(),
+    at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    kind: text().$type<AuthEventKind>().notNull(),
+    ip: text(),
+    userAgent: text(),
+    /* FK do api_tokens dodaje migracja 0019 (0016 powstalo bez tabeli tokenow, 0017 juz po niej).
+       NO ACTION: tokenow sie nie kasuje, tylko uniewaznia, a ten dziennik jest tylko do dopisywania. */
+    tokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+    detail: jsonb().$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+  },
+  (t) => [
+    check(
+      "auth_events_kind",
+      sql.raw(`"kind" in (${AUTH_EVENT_KINDS.map((k) => `'${k}'`).join(", ")})`),
+    ),
+    index("auth_events_at_idx").on(t.at.desc()),
+    index("auth_events_kind_at_idx").on(t.kind, t.at.desc()),
+    index("auth_events_token_idx").on(t.tokenId).where(sql`${t.tokenId} is not null`),
+  ],
 );
 
 /* ==========================================================================
@@ -1112,6 +1185,7 @@ export type CustomFieldRow = typeof customFields.$inferSelect;
 export type TradeRow = typeof trades.$inferSelect;
 export type Screenshot = typeof screenshots.$inferSelect;
 export type TradeExit = typeof tradeExits.$inferSelect;
+export type AuthEvent = typeof authEvents.$inferSelect;
 export type DayNote = typeof dayNotes.$inferSelect;
 export type SavedView = typeof savedViews.$inferSelect;
 export type Settings = typeof settings.$inferSelect;

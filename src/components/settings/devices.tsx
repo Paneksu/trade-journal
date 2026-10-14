@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button, Checkbox, ErrorMessage, Input, Label, SuccessMessage } from "@/components/ui/base";
-import { odrzucOczekujace, uniewaznUrzadzenie, utworzTokenImportuAkcja, type TokenImportuState, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
+import { type Potwierdzenie, odrzucOczekujace, uniewaznUrzadzenie, utworzTokenImportuAkcja, type TokenImportuState, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
 import { czyInnyAdres } from "@/lib/api-v2/adres";
 import { dateTime } from "@/lib/format";
 
@@ -62,6 +62,20 @@ export function PolaczUrzadzenie() {
             <Checkbox key={s} name="scope" value={s} defaultChecked label={s} hint={OPISY_ZAKRESOW[s]} />
           ))}
         </fieldset>
+        {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "haslo" && (
+          <div className="max-w-xs space-y-1">
+            <Label htmlFor="haslo" hint="2FA jest wyłączone, więc nadanie dostępu potwierdzasz hasłem (włącz 2FA w Ustawienia → Bezpieczeństwo)">
+              Hasło
+            </Label>
+            <Input id="haslo" name="haslo" type="password" autoComplete="current-password" />
+          </div>
+        )}
+        {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "sudo" && (
+          <p role="status" className="text-xs text-muted">
+            Zatwierdzenie wymaga trybu sudo (kod z aplikacji albo kod zapasowy). Wejdź w{" "}
+            <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>, potem wróć i zatwierdź. Odrzucenie nie wymaga sudo.
+          </p>
+        )}
         {decyzja.error && <ErrorMessage>{decyzja.error}</ErrorMessage>}
         <div className="flex gap-2">
           <Button type="submit" name="decyzja" value="zatwierdz" variant="primary" size="m">
@@ -147,11 +161,24 @@ export function OdrzucOczekujacePrzycisk() {
   );
 }
 
-export function TokenImportuPrzycisk() {
+export function TokenImportuPrzycisk({ potwierdzenie }: { potwierdzenie: Potwierdzenie }) {
   const [pending, start] = useTransition();
   const [stan, ustawStan] = useState<TokenImportuState>({});
+  const [haslo, ustawHaslo] = useState("");
+  const wymagane = stan.potwierdzenie ?? potwierdzenie;
   return (
     <div className="space-y-2">
+      {wymagane === "haslo" && (
+        <div className="max-w-xs">
+          <Label htmlFor="haslo-importu" hint="2FA jest wyłączone: potwierdź hasłem">Hasło</Label>
+          <Input id="haslo-importu" type="password" autoComplete="current-password" value={haslo} onChange={(e) => ustawHaslo(e.target.value)} />
+        </div>
+      )}
+      {wymagane === "sudo" && (
+        <p className="text-xs text-muted">
+          Tworzenie tokenu importu wymaga trybu sudo: <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>.
+        </p>
+      )}
       <Button
         type="button"
         variant="secondary"
@@ -159,7 +186,11 @@ export function TokenImportuPrzycisk() {
         disabled={pending}
         onClick={() => {
           if (!window.confirm("Utworzyć token importu? Ma zakres »import« (pochodzenie vault-import i mentor), ważny 24 godziny. Pokażę go tylko raz.")) return;
-          start(async () => ustawStan(await utworzTokenImportuAkcja()));
+          start(async () => {
+            const w = await utworzTokenImportuAkcja(haslo);
+            ustawHaslo("");
+            ustawStan(w);
+          });
         }}
       >
         Utwórz token importu (24 h)

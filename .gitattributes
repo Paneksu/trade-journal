@@ -1,1 +1,6 @@
+# Migracje liczone skrotem SHA-256 z bajtow: koncowki linii musza byc LF na kazdym systemie (docs/v2/model-danych.md, pkt 5).
 *.sql text eol=lf
+# Skrypty powloki w obrazie Dockera: CRLF psuje shebang i `set -e`.
+*.sh text eol=lf
+# Reszta zrodel: LF w repo, a w katalogu roboczym wg ustawien systemu.
+* text=auto

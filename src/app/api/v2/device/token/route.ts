@@ -1,7 +1,8 @@
 import { DeviceTokenSchema } from "@/lib/api-v2/contract/v2";
 import { odpytajUrzadzenie } from "@/lib/api-v2/device";
-import { blad, odpowiedz } from "@/lib/api-v2/http";
+import { adresKlienta, blad, odpowiedz } from "@/lib/api-v2/http";
 import { wczytajCialo } from "@/lib/api-v2/walidacja";
+import { zapiszZdarzenie } from "@/lib/auth/second-factor";
 import { withPublicApi } from "@/lib/api-v2/with-api";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,12 @@ export const POST = withPublicApi(
     if (!wynik.ok) {
       return blad(wynik.status, wynik.kod, wynik.komunikat, wynik.kod === "slow_down" ? { interval: 5 } : {});
     }
+    await zapiszZdarzenie("token_created", {
+      ip: adresKlienta(request),
+      userAgent: request.headers.get("user-agent"),
+      tokenId: wynik.tokenId,
+      detail: { via: "device_code", zakresy: wynik.scopes },
+    });
     return odpowiedz({ accessToken: wynik.accessToken, tokenType: "Bearer", tokenId: wynik.tokenId, scopes: wynik.scopes });
   },
 );

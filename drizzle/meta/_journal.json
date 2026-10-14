@@ -115,6 +115,13 @@
       "breakpoints": true
     },
     {
+      "idx": 16,
+      "version": "7",
+      "when": 1787610000000,
+      "tag": "0016_totp",
+      "breakpoints": true
+    },
+    {
       "idx": 17,
       "version": "7",
       "when": 1787620000000,
@@ -126,6 +133,13 @@
       "version": "7",
       "when": 1787630000000,
       "tag": "0018_notatki",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787640000000,
+      "tag": "0019_auth_events_token_fk",
       "breakpoints": true
     }
   ]

@@ -3,20 +3,23 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
-import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
+import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, ZAKRESY_TOKENU_IMPORTU, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
+import { verifyPassword } from "@/lib/auth/password";
+import { KOMUNIKAT_SUDO, sprawdzBlokade, stanSudo, wyczyscBlokade, zapiszNiepowodzenie, zdarzenie } from "@/lib/auth/zadanie";
+import type { Settings } from "@/lib/db/schema";
 
 /*
  * Akcje strony Urzadzenia (ADR-030). Wszystkie za sesja. Zatwierdzenie
  * urzadzenia NIE nadaje nic ponad to, o co urzadzenie poprosilo, a zakresu
  * "zatwierdzaj" nie ma - agent z tokenem nigdy nie zatwierdzi reguly.
  *
- * !!! WARUNEK SCALENIA / PUBLICZNEGO WYSTAWIENIA (krytyczne z audytu):
- * TODO(faza 1): tryb sudo (ponowne haslo + TOTP) przed zatwierdzeniem urzadzenia
- * (`zatwierdzUrzadzenie`) i wpisy w `auth_events` (device_approved / device_denied /
- * token_revoked). Faza 1 jest na osobnej galezi, wiec tutaj tego nie ma. Do czasu sudo
- * `device/start` mozna zamknac zmienna DEVICE_LOGIN_DISABLED=1.
+ * SUDO (ADR-031, domkniete po scaleniu z faza 1): zatwierdzenie urzadzenia i utworzenie tokenu
+ * importu wymagaja trybu sudo (kod TOTP albo zapasowy, 10 minut). Gdy 2FA jest wylaczone, nie ma
+ * czym podniesc uprawnien, wiec akcja sama zada hasla (stan "nie_dotyczy", jak zmiana hasla).
+ * Odrzucenie i uniewaznienie sudo NIE wymagaja: odcinanie dostepu ma byc latwiejsze niz jego nadanie.
+ * Kazda decyzja zostawia wpis w auth_events (bez kodow i hasel).
  */
 
 export type KodWidok = {
@@ -29,7 +32,34 @@ export type KodWidok = {
   expiresAt: string;
 };
 
+/** Czego akcja zada przed nadaniem dostepu: sudo juz aktywne, haslo (2FA wylaczone) albo wejscie w sudo. */
+export type Potwierdzenie = "aktywne" | "haslo" | "sudo";
+
+async function rodzajPotwierdzenia(s: Pick<Settings, "totpEnabledAt" | "sessionVersion">): Promise<Potwierdzenie> {
+  const st = await stanSudo(s);
+  return st.stan === "aktywny" ? "aktywne" : st.stan === "wymagany" ? "sudo" : "haslo";
+}
+
+/** `null` = wolno; w przeciwnym razie komunikat dla uzytkownika. Liczy bledy hasla do wspolnej blokady. */
+async function wymagajPotwierdzenia(s: Settings, haslo: string): Promise<string | null> {
+  const rodzaj = await rodzajPotwierdzenia(s);
+  if (rodzaj === "aktywne") return null;
+  if (rodzaj === "sudo") return KOMUNIKAT_SUDO;
+  if (haslo === "") return "Podaj hasło, żeby potwierdzić nadanie dostępu.";
+  const blokada = await sprawdzBlokade(false);
+  if (blokada.zablokowany) return blokada.komunikat;
+  if (!s.passwordHash || !(await verifyPassword(haslo, s.passwordHash))) {
+    await zapiszNiepowodzenie(false);
+    await zdarzenie("login_fail", { kontekst: "potwierdzenie_urzadzenia" });
+    return "Nieprawidłowe hasło.";
+  }
+  await wyczyscBlokade();
+  return null;
+}
+
 export type PolaczState = {
+  /** Czego zada zatwierdzenie (pole hasla, wejscie w sudo albo nic). */
+  potwierdzenie?: Potwierdzenie;
   kod?: KodWidok;
   /** Adres przegladarki, w ktorej siedzi uzytkownik; do porownania z adresem urzadzenia. */
   ipPrzegladarki?: string;
@@ -52,7 +82,7 @@ async function ipPrzegladarki(): Promise<string> {
 const KLUCZ_PROB = "device-approve";
 
 export async function znajdzKod(_p: PolaczState, d: FormData): Promise<PolaczState> {
-  await requireSession();
+  const sesja = await requireSession();
   const blokada = checkRateLimit(KLUCZ_PROB);
   if (!blokada.allowed) {
     return { error: `Za dużo błędnych kodów. Spróbuj ponownie za ${blokada.retryInS} s.` };
@@ -66,6 +96,7 @@ export async function znajdzKod(_p: PolaczState, d: FormData): Promise<PolaczSta
   clearAttempts(KLUCZ_PROB);
   const k = wynik.kod;
   return {
+    potwierdzenie: await rodzajPotwierdzenia(sesja),
     ipPrzegladarki: await ipPrzegladarki(),
     kod: {
       id: k.id,
@@ -80,20 +111,25 @@ export async function znajdzKod(_p: PolaczState, d: FormData): Promise<PolaczSta
 }
 
 export async function zatwierdzUrzadzenie(_p: PolaczState, d: FormData): Promise<PolaczState> {
-  await requireSession();
+  const sesja = await requireSession();
   const id = Number(d.get("id"));
   if (!Number.isInteger(id) || id < 1) return { error: "Brak identyfikatora żądania." };
 
   if (d.get("decyzja") === "odrzuc") {
     const w = await odrzucKod(id);
     if (!w.ok) return { error: w.komunikat };
+    await zdarzenie("device_denied", { zadanieId: id });
     revalidatePath("/settings/devices");
     return { ok: true, wynik: "Urządzenie odrzucone. Terminal dostanie odmowę." };
   }
 
+  const brak = await wymagajPotwierdzenia(sesja, String(d.get("haslo") ?? ""));
+  if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
+
   const zakresy = d.getAll("scope").map(String);
   const w = await zatwierdzKod(id, zakresy);
   if (!w.ok) return { error: w.komunikat };
+  await zdarzenie("device_approved", { zadanieId: id, zakresy: w.scopes });
   revalidatePath("/settings/devices");
   return { ok: true, wynik: `Urządzenie połączone z zakresami: ${w.scopes.join(", ")}. Terminal odbierze token w ciągu kilku sekund.` };
 }
@@ -102,6 +138,7 @@ export async function uniewaznUrzadzenie(id: number): Promise<{ ok?: boolean; er
   await requireSession();
   const w = await uniewaznToken(id, "ui");
   if (!w.ok) return { error: w.komunikat };
+  await zdarzenie("token_revoked", { tokenId: id });
   revalidatePath("/settings/devices");
   return { ok: true };
 }
@@ -110,20 +147,24 @@ export async function uniewaznUrzadzenie(id: number): Promise<{ ok?: boolean; er
 export async function odrzucOczekujace(): Promise<{ ok?: boolean; error?: string; odrzucono?: number }> {
   await requireSession();
   const ile = await odrzucWszystkieOczekujace();
+  await zdarzenie("device_denied", { zbiorczo: true, odrzucono: ile });
   revalidatePath("/settings/devices");
   return { ok: true, odrzucono: ile };
 }
 
-export type TokenImportuState = { token?: string; prefix?: string; expiresAt?: string; error?: string };
+export type TokenImportuState = { token?: string; prefix?: string; expiresAt?: string; error?: string; potwierdzenie?: Potwierdzenie };
 
 /**
  * Jedyna droga do zakresu "import" (Slowa uzytkownika 15.10.2026): reczny przycisk w UI, za sesja.
  * Token (24 h) jest pokazywany RAZ w odpowiedzi tej akcji i nigdzie nie jest zapisany w jawnej postaci.
- * TODO(faza 1): sudo przed utworzeniem tokenu importu, tak jak przy zatwierdzaniu urzadzen.
+ * Wymaga sudo (albo hasla przy wylaczonym 2FA), tak jak zatwierdzenie urzadzenia.
  */
-export async function utworzTokenImportuAkcja(): Promise<TokenImportuState> {
-  await requireSession();
+export async function utworzTokenImportuAkcja(haslo = ""): Promise<TokenImportuState> {
+  const sesja = await requireSession();
+  const brak = await wymagajPotwierdzenia(sesja, haslo);
+  if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
   const t = await utworzTokenImportu();
+  await zdarzenie("token_created", { tokenId: t.id, via: "ui", zakresy: ZAKRESY_TOKENU_IMPORTU, tokenImportu: true });
   revalidatePath("/settings/devices");
   return { token: t.token, prefix: t.prefix, expiresAt: t.expiresAt.toISOString() };
 }

@@ -91,7 +91,7 @@ kind text NOT NULL CHECK (kind IN ('login_ok','login_fail','totp_ok','totp_fail'
   'sudo','totp_enabled','totp_disabled','backup_codes_regenerated','password_changed',
   'device_requested','device_approved','device_denied','token_created','token_revoked','logout_all')),
 ip text, user_agent text,
-token_id integer NULL,        -- bez FK w 0016 (api_tokens powstaje w 0017); FK NO ACTION dokladany w 0017
+token_id integer NULL,        -- bez FK w 0016 (api_tokens powstaje w 0017); FK NO ACTION dokladany w 0019 (po scaleniu faz 1 i 2)
 detail jsonb NOT NULL DEFAULT '{}'
 -- indeks: (at DESC), (kind, at DESC)
 ```
@@ -346,9 +346,9 @@ leży tylko decyzja człowieka (`tj_require_ui_actor` na zmianie `decision`). Se
 
 ---
 
-## 5. Faza 2b — rdzeń MUST (migracje 0019+)
+## 5. Faza 2b — rdzeń MUST (migracje 0020+)
 
-### 5.1 Plan zamrożony: `trade_plans`, `trade_plan_addenda` (0020)
+### 5.1 Plan zamrożony: `trade_plans`, `trade_plan_addenda` (0021)
 
 ```sql
 CREATE TABLE trade_plans (
@@ -394,7 +394,7 @@ CREATE TABLE trade_plan_addenda (       -- tylko dopisywanie: tj_forbid_update
 Plan jest migawką: ryzyko zapisane w chwili decyzji nie może się zmienić po zmianie katalogu
 instrumentów, dlatego to jeden z niewielu zapisanych wyników obliczeń.
 
-### 5.2 Werdykt AI niezmienny: zmiany w `trade_reviews`, `trade_rule_checks` (0020)
+### 5.2 Werdykt AI niezmienny: zmiany w `trade_reviews`, `trade_rule_checks` (0021)
 
 | Zmiana | Szczegół |
 |---|---|
@@ -414,7 +414,7 @@ Triggery: na `trade_reviews` `tj_guard_columns(...)` wszystkich kolumn werdyktu,
 `user_override` + `user_verdict = 'disagree'` — wyliczana. Flaga „model mógł znać ten dzień”
 — wyliczana (ADR-033), bez kolumny.
 
-### 5.3 Proces i playbook (0019)
+### 5.3 Proces i playbook (0020)
 
 **`trades` (dokładane):**
 
@@ -510,7 +510,7 @@ tylko zatwierdzone”) **nie wymagają zmiany** — w tabelach docelowych nie ma
 `trade_tags` dostaje tylko `origin text NOT NULL DEFAULT 'user' CHECK (origin IN ('user','ai'))`
 do pokazania pochodzenia.
 
-### 5.4 Kolejka AI i dopiski: `ai_suggestions`, `note_additions` (0019)
+### 5.4 Kolejka AI i dopiski: `ai_suggestions`, `note_additions` (0020)
 
 ```sql
 CREATE TABLE ai_suggestions (
@@ -548,7 +548,7 @@ CREATE TABLE note_additions (           -- dopiski AI i mentora do notatek strat
   trade_id integer NULL REFERENCES trades ON DELETE SET NULL,
   evidence jsonb NULL,
   suggestion_id integer NULL REFERENCES ai_suggestions ON DELETE SET NULL,
-  -- mentor_claim_id dokladany w 0026 (mentor_claims powstaje pozniej)
+  -- mentor_claim_id dokladany w 0027 (mentor_claims powstaje pozniej)
   created_at timestamptz NOT NULL DEFAULT now(),
   reverted_at timestamptz NULL,
   CHECK (origin <> 'ai' OR (trade_id IS NOT NULL AND (quote_words_id IS NOT NULL OR evidence IS NOT NULL)))
@@ -560,7 +560,7 @@ CREATE TABLE note_additions (           -- dopiski AI i mentora do notatek strat
 `n` hipotezy = `n_imported` + liczba `trade_note_links (role='hypothesis')` do jej notatki, tylko
 trade'y `closed` (bariera `closedOnly` z ADR-024). Zapisane linki są z definicji zatwierdzone.
 
-### 5.5 Hipotezy: warianty i progi (0021)
+### 5.5 Hipotezy: warianty i progi (0022)
 
 ```sql
 CREATE TABLE hypothesis_variants (
@@ -600,7 +600,7 @@ Zapisuje go trigger `AFTER UPDATE OF prog_n, thresholds ON hypotheses` (liczy `n
 log, o którym nie da się zapomnieć w nowej ścieżce zapisu. Progi setupu nie potrzebują logu:
 zmiana progu to nowa wersja setupu, a wersje są niezmienne.
 
-### 5.6 Moduł prop (0022, dane w 0023)
+### 5.6 Moduł prop (0023, dane w 0024)
 
 ```sql
 CREATE TABLE prop_firm_presets (
@@ -655,10 +655,10 @@ CREATE TABLE prop_ledger (
 Bufory, ostrzeżenia 50/75/90%, consistency, bufor „gdy trafi SL” i łączna ekspozycja NQ liczy
 `lib/domain/prop.ts` z `prop_rules`, `accounts.starting_balance`, `trades.pnl` i ryzyka planu
 (wszystko w centach). Tabeli stanu konta nie ma — stan to funkcja historii. Presety (9 firm z planu)
-wpisuje migracja danych 0023 dopiero po weryfikacji `market-researcher` w oficjalnych regulaminach;
+wpisuje migracja danych 0024 dopiero po weryfikacji `market-researcher` w oficjalnych regulaminach;
 wartości są danymi, więc ich zmiana to zwykła edycja, nie wydanie.
 
-### 5.7 Przegląd tygodnia i rytuał dnia (0024, 0020)
+### 5.7 Przegląd tygodnia i rytuał dnia (0025, 0021)
 
 ```sql
 CREATE TABLE weekly_reviews (
@@ -677,14 +677,14 @@ CREATE TABLE weekly_reviews (
 -- trigger: tj_require_ui_actor na przejsciu w 'approved'
 ```
 
-`day_notes` (0020): `bias text NULL CHECK (bias IN ('long','short','neutral'))`,
+`day_notes` (0021): `bias text NULL CHECK (bias IN ('long','short','neutral'))`,
 `max_trades smallint NULL CHECK (max_trades BETWEEN 1 AND 20)`, `sleep smallint NULL CHECK (sleep BETWEEN 1 AND 5)`.
 Unieważnienie dnia → `user_words (role='day.invalidation', day=…)`. Przy okazji CHECK 1–5 na
 istniejących `mood`, `energy`, `day_rating` — jako `NOT VALID`, potem `VALIDATE CONSTRAINT`
 (dane historyczne zapisywała akcja z tym samym zakresem, ale walidacja w przeglądarce nie jest
 zabezpieczeniem).
 
-### 5.8 Wykres, słownik, poprawki (0025)
+### 5.8 Wykres, słownik, poprawki (0026)
 
 ```sql
 CREATE TABLE chart_annotations (
@@ -744,7 +744,7 @@ Poprawka idzie jedną transakcją: wiersz w `interpretation_corrections` + nowa 
 `user_words.ai_interpretation` (jedyna zmienna kolumna tamtej tabeli). Miara spadku poprawek
 jest wyliczana, bez kolumny.
 
-### 5.9 Mentor i luki (0026)
+### 5.9 Mentor i luki (0027)
 
 ```sql
 CREATE TABLE mentor_sources (
@@ -901,16 +901,17 @@ reguł i setupów użytych w werdyktach nie da się skasować.
 | Plik | Faza / wydanie | Zawartość | Zależy od |
 |---|---|---|---|
 | `0016_totp.sql` | **1 / R1** | `settings.totp_*`, `auth_backup_codes`, `auth_events`, funkcja `tj_forbid_update` | — |
-| `0017_api_tokens.sql` | **2 / R2** | `api_tokens`, `device_codes`, FK `auth_events.token_id` | 0016 |
+| `0017_api_tokens.sql` | **2 / R2** | `api_tokens`, `device_codes` | 0016 |
 | `0018_notatki.sql` | **2 / R2** | rozszerzenia, `f_unaccent`, `tj_guard_columns`, `tj_require_ui_actor`, `tj_user_words_hash`, `tj_note_revision`; `notes`, `note_revisions`, `note_links`, `user_words`, `hypotheses`, `rules`, `rule_versions`; `screenshots.note_id/sha256/captured_at/chart_state` + nowy `screenshots_owner`; `settings.ruleset_version` | 0017 |
-| `0019_proces_playbook.sql` | **2b / R2b** | `trades.process_grade/process_graded_at/setup_id/setup_version_id/ruleset_version/day_known/search`, `trade_tags.origin`; `setups`, `setup_versions`, `setup_examples`, `trade_note_links`, `ai_suggestions`, `note_additions` | 0018 |
-| `0020_plan_werdykt.sql` | 2b | `trade_plans` (+`tj_plan_guard`), `trade_plan_addenda`; zmiany `trade_reviews`, `trade_rule_checks`; `day_notes.bias/max_trades/sleep` + CHECK-i `NOT VALID` | 0019 |
-| `0021_hipotezy_warianty.sql` | 2b | `hypothesis_variants`, `threshold_changes` + trigger logu | 0019 |
-| `0022_prop.sql` | 2b | `prop_firm_presets`, `prop_rules`, `prop_ledger` | — |
-| `0023_prop_presety.sql` | 2b (po weryfikacji regulaminów) | **tylko dane**: presety 9 firm z URL, `read_on`, `needs_verification` | 0022 |
-| `0024_przeglad_tygodnia.sql` | 2b | `weekly_reviews` | 0018 |
-| `0025_profil_wykres.sql` | 2b (potrzebne fazie 3) | `chart_annotations`, `profile_terms`, `profile_term_sources`, `interpretation_corrections` | 0018 |
-| `0026_mentor_luki.sql` | 2b (przed fazą 4b) | `mentor_sources`, `mentor_claims`, `note_additions.mentor_claim_id`, `strategy_gaps` | 0019 |
+| `0019_auth_events_token_fk.sql` | **2 / R2** (po scaleniu z fazą 1) | FK `auth_events.token_id` → `api_tokens` (NO ACTION) + indeks częściowy; osobna migracja, bo 0016 i 0017 są już w historii i nie wolno ich edytować | 0016, 0017 |
+| `0020_proces_playbook.sql` | **2b / R2b** | `trades.process_grade/process_graded_at/setup_id/setup_version_id/ruleset_version/day_known/search`, `trade_tags.origin`; `setups`, `setup_versions`, `setup_examples`, `trade_note_links`, `ai_suggestions`, `note_additions` | 0018 |
+| `0021_plan_werdykt.sql` | 2b | `trade_plans` (+`tj_plan_guard`), `trade_plan_addenda`; zmiany `trade_reviews`, `trade_rule_checks`; `day_notes.bias/max_trades/sleep` + CHECK-i `NOT VALID` | 0020 |
+| `0022_hipotezy_warianty.sql` | 2b | `hypothesis_variants`, `threshold_changes` + trigger logu | 0020 |
+| `0023_prop.sql` | 2b | `prop_firm_presets`, `prop_rules`, `prop_ledger` | — |
+| `0024_prop_presety.sql` | 2b (po weryfikacji regulaminów) | **tylko dane**: presety 9 firm z URL, `read_on`, `needs_verification` | 0023 |
+| `0025_przeglad_tygodnia.sql` | 2b | `weekly_reviews` | 0018 |
+| `0026_profil_wykres.sql` | 2b (potrzebne fazie 3) | `chart_annotations`, `profile_terms`, `profile_term_sources`, `interpretation_corrections` | 0018 |
+| `0027_mentor_luki.sql` | 2b (przed fazą 4b) | `mentor_sources`, `mentor_claims`, `note_additions.mentor_claim_id`, `strategy_gaps` | 0020 |
 
 Każde wydanie: kopia bazy w Coolify przed scaleniem (STOP z planu), migracje sprawdzone oboma
 migratorami na świeżej bazie lokalnej (`127.0.0.1:55433`), test „migracje od zera vs `schema.ts`”.
@@ -953,7 +954,7 @@ Po instalacji lokalnie (nie na produkcji): `SELECT public.f_unaccent('Zarządzan
 
 ## 12. Odstępstwa od szkicu w migracjach 0017-0018
 
-Migracje: `drizzle/0017_api_tokens.sql`, `drizzle/0018_notatki.sql`; cofnięcie: `docs/v2/rollback/`;
+Migracje: `drizzle/0017_api_tokens.sql`, `drizzle/0018_notatki.sql`, `drizzle/0019_auth_events_token_fk.sql`; cofnięcie: `docs/v2/rollback/`;
 dowód: `src/lib/db/migracje-v2.db.test.ts` (41 testów na prawdziwej bazie, `TEST_DATABASE_URL`).
 Wszystko poniżej to odstępstwa od SQL-a w sekcjach 2 i 4, który był szkicem kształtu.
 
@@ -964,7 +965,7 @@ Wszystko poniżej to odstępstwa od SQL-a w sekcjach 2 i 4, który był szkicem 
 | 3 | Funkcje triggerów nie mają parametrów w deklaracji; kolumny i stany podaje `CREATE TRIGGER … EXECUTE FUNCTION f('a','b')` (`TG_ARGV`). `tj_guard_columns` odrzuca nazwę nieistniejącej kolumny przy pierwszym `UPDATE`. | W plpgsql trigger nie ma parametrów. Literówka w nazwie kolumny nie może po cichu wyłączyć ochrony (porównanie `NULL` z `NULL` zawsze przechodzi). |
 | 4 | `tj_require_ui_actor('kolumna', 'stan', …)` strzeże wejścia w stan **i wyjścia z niego**, także przy `INSERT`. Na `rule_versions` strzeżone: `approved`, `rejected`, **`superseded`** (szkic: dwa pierwsze). Na `hypotheses.decision` dwa triggery: `UPDATE` przy każdej zmianie, `INSERT` gdy `decision <> 'active'`. | Agent nie może ani wstawić od razu zatwierdzonej wersji, ani cofnąć zatwierdzenia, ani wyłączyć obowiązującej wersji przez `superseded`. UI robi `superseded` w tej samej transakcji co zatwierdzenie (aktor `ui`). |
 | 5 | Trzeci SQLSTATE: `TJ422` (bramka progu `n` dla `origin = 'ai'`). | Ani 409, ani 403 nie opisują „za mało danych”. API mapuje na 422. |
-| 6 | `n` hipotezy liczy `tj_hypothesis_n(id)`, która pyta o `trade_note_links` dynamicznie (`to_regclass`). | `trade_note_links` powstaje w 0019. Dopóki jej nie ma: `n = n_imported`. Po 0019 ta sama funkcja liczy linki (tylko `closed`, `role = 'hypothesis'`) **bez redefinicji**, więc nie ma ukrytego sprzężenia migracji ani ryzyka zapomnianego `CREATE OR REPLACE`. 0019 musi zachować kolumny `trade_id`, `note_id`, `role`. |
+| 6 | `n` hipotezy liczy `tj_hypothesis_n(id)`, która pyta o `trade_note_links` dynamicznie (`to_regclass`). | `trade_note_links` powstaje w 0020. Dopóki jej nie ma: `n = n_imported`. Po 0020 ta sama funkcja liczy linki (tylko `closed`, `role = 'hypothesis'`) **bez redefinicji**, więc nie ma ukrytego sprzężenia migracji ani ryzyka zapomnianego `CREATE OR REPLACE`. 0020 musi zachować kolumny `trade_id`, `note_id`, `role`. |
 | 7 | `user_words.sha256`, `byte_len` i `notes.content_hash` mają `DEFAULT ''` / `0`. | Trigger i tak nadpisuje (klient nie ustala skrótu); `DEFAULT` pozwala pominąć kolumnę w `INSERT` i tak ma typ w drizzle. Bez triggera `CHECK` odrzuci pusty ciąg. Trigger **nie ufa** skrótowi od klienta; niezgodność wykrywa API przed `INSERT`-em. |
 | 8 | `tj_guard_columns` na `user_words` obejmuje też `id`, `role`, `created_at`. Dodane: CHECK `byte_len > 0`, indeks `(backtest_session_id)`. | `role` zmienia znaczenie dowodu, `created_at` jest dowodem czasu. Indeks na `backtest_session_id` potrzebny kaskadzie z kasowania sesji. |
 | 9 | Brak osobnego indeksu `(status) WHERE status = 'proposed'` na `rule_versions`. | Kolejkę „Do decyzji” obsługuje już unikat `rule_versions_proposed_idx (rule_id) WHERE status = 'proposed'`; indeks na stałej kolumnie byłby bezużyteczny. |
@@ -980,3 +981,14 @@ nowej wersji reguły w UI musi w jednej transakcji najpierw ustawić poprzednią
 `superseded`, potem nową na `approved` (unikaty częściowe sprawdzane po każdej instrukcji);
 (d) bardzo duży `body_md` (ponad ok. 1 MB unikalnych słów) przekroczy limit `tsvector`
 (błąd 54000) — API powinno ograniczyć rozmiar treści.
+
+## 13. Scalenie z fazą 1 (15.10.2026)
+
+- Numeracja: 0016 (faza 1) → 0017 → 0018 → **0019 (FK `auth_events.token_id`)**. Plan fazy 2b przesunięty o jeden
+  numer (0020 proces i playbook … 0027 mentor i luki); sekcje 5 i 9 poprawione.
+- `tj_forbid_update`: 0016 tworzy ją (`CREATE FUNCTION`), 0018 zastępuje wersją `CREATE OR REPLACE` o tym samym
+  zachowaniu (`TJ409`), z dopiskiem `TABLE` w błędzie i dłuższym komunikatem. Po wszystkich migracjach obowiązuje
+  definicja z 0018; test `migracje-v2.db.test.ts` sprawdza, że `auth_events` i `note_revisions` odrzucają UPDATE
+  tym samym kodem. 0016 nie wolno edytować (może być już wdrożona), dlatego nie ma tu ujednolicenia treści.
+- Sudo przy zatwierdzaniu urządzenia i przy tworzeniu tokenu importu oraz wpisy w `auth_events`
+  (`device_requested`, `device_approved`, `device_denied`, `token_created`, `token_revoked`) działają od scalenia.

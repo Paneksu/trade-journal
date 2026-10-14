@@ -17,7 +17,9 @@
     "seed": "tsx src/lib/db/seed.ts",
     "db:backup": "tsx scripts/backup.ts",
     "api:kontrakt": "tsx scripts/generuj-openapi-v2.ts",
-    "test:db": "node scripts/test-db.mjs"
+    "test:db": "node scripts/test-db.mjs",
+    "test:local": "node --env-file=.env.local ./node_modules/vitest/vitest.mjs run",
+    "test:e2e:local": "node --env-file=.env.local ./node_modules/@playwright/test/cli.js test"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
@@ -37,7 +39,9 @@
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.33.0",
     "next": "16.3.1",
+    "otpauth": "9.5.2",
     "postgres": "^3.4.9",
+    "qrcode": "1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "^3.10.1",
@@ -52,6 +56,7 @@
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "axe-core": "^4.13.0",

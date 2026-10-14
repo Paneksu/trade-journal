@@ -99,7 +99,7 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
   }
 
   if (typy.includes("trades")) {
-    // Ten sam wyrazenie co kolumna `trades.search` z migracji 0019 (faza 2b); do tego czasu bez indeksu.
+    // Ten sam wyrazenie co kolumna `trades.search` z migracji 0020 (faza 2b); do tego czasu bez indeksu.
     const wiersze = await db.execute<Wiersz>(sql`
       select t.id,
              greatest(coalesce(ts_rank(to_tsvector('simple', public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))), ${zapytanie}), 0), 0.05) as rank,

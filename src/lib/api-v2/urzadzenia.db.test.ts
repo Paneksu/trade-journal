@@ -23,6 +23,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("device code: start, zatwierdzenie, token raz (
   });
   afterAll(async () => {
     if (stworzoneTokeny.length > 0) {
+      await sql`delete from auth_events where token_id = any(${stworzoneTokeny})`;
       await sql`delete from device_codes where token_id = any(${stworzoneTokeny})`;
       await sql`delete from api_tokens where id = any(${stworzoneTokeny})`;
     }

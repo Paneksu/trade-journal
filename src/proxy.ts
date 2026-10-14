@@ -28,7 +28,10 @@ export function proxy(request: NextRequest) {
   const target = new URL("/login", request.url);
   if (pathname !== "/") target.searchParams.set("wroc", pathname + request.nextUrl.search);
   const response = NextResponse.redirect(target);
-  response.cookies.delete(SESSION_COOKIE);
+  // Kasujemy tylko ciasteczko, ktore przyszlo i jest niewazne. Przy SameSite=Strict wejscie z
+  // zewnetrznego linku (Gmail, TradingView) nie niesie ciasteczka wcale; kasowanie "na slepo"
+  // wylogowaloby uzytkownika zamiast pozwolic mu kliknac jeszcze raz (ADR-031).
+  if (token) response.cookies.delete(SESSION_COOKIE);
   return response;
 }
 

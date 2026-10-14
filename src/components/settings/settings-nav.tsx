@@ -11,6 +11,7 @@ const LINKS = [
   { href: "/settings/instruments", label: "Instrumenty" },
   { href: "/settings/tags", label: "Tagi" },
   { href: "/settings/fields", label: "Pola własne" },
+  { href: "/settings/security", label: "Bezpieczeństwo" },
   { href: "/settings/devices", label: "Urządzenia" },
   { href: "/settings/data", label: "Dane i kopia" },
 ];

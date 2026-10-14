@@ -8,12 +8,11 @@
 --
 -- Zaleznosci: 0017 (api_tokens) - FK created_by_token_id. 0016 NIE jest potrzebne.
 --
--- !!! RYZYKO SCALENIA Z FAZA 1 !!!
--- Funkcja tj_forbid_update() ma wg modelu (sekcja 9) powstac w 0016 (galaz fazy 1).
--- Ta galaz nie ma 0016, a 0018 jej potrzebuje (note_revisions), wiec jest tu
--- zdefiniowana przez CREATE OR REPLACE FUNCTION. Po scaleniu z 0016 obie definicje
--- musza miec to samo cialo (tu: ponizej). CREATE OR REPLACE jest idempotentne i
--- bezpieczne w obu kolejnosciach, ale zostanie ta, ktora wykona sie pozniej.
+-- Funkcja tj_forbid_update() powstala w 0016 (faza 1, auth_events) jako CREATE FUNCTION. Ta migracja
+-- potrzebuje jej dla note_revisions i NADPISUJE ja przez CREATE OR REPLACE wersja o tym samym
+-- zachowaniu (kod TJ409), z dopiskiem TABLE w bledzie. Po 0016 -> 0018 obowiazuje ta definicja;
+-- bez 0016 (swieza galaz fazy 2) CREATE OR REPLACE po prostu ja tworzy. Test migracje-v2.db.test.ts
+-- pilnuje, ze oba triggery (auth_events, note_revisions) odrzucaja UPDATE tym samym kodem.
 --
 -- Konwencje wspolnych funkcji triggerow (SQLSTATE wlasne, API mapuje je bez parsowania tekstu):
 --   TJ409 - naruszenie niezmiennosci (-> HTTP 409)
@@ -414,11 +413,11 @@ CREATE UNIQUE INDEX "rule_versions_proposed_idx" ON "rule_versions" ("rule_id") 
 
 -- n hipotezy = n_imported + liczba trade'ow zamknietych podpietych do jej notatki
 -- (trade_note_links, role = 'hypothesis'; bariera closedOnly z ADR-024).
--- trade_note_links powstaje dopiero w 0019, wiec funkcja pyta o nia dynamicznie: dopoki
--- tabeli nie ma, n = n_imported + 0. Po 0019 ta sama funkcja zaczyna liczyc linki bez
--- zadnej redefinicji (zalecane zamiast CREATE OR REPLACE w 0019: brak ukrytego sprzezenia
+-- trade_note_links powstaje dopiero w 0020, wiec funkcja pyta o nia dynamicznie: dopoki
+-- tabeli nie ma, n = n_imported + 0. Po 0020 ta sama funkcja zaczyna liczyc linki bez
+-- zadnej redefinicji (zalecane zamiast CREATE OR REPLACE w 0020: brak ukrytego sprzezenia
 -- migracji i brak ryzyka, ze zapomniana redefinicja po cichu zablokuje propozycje AI).
--- Jesli 0019 nada tej tabeli inne nazwy kolumn niz w modelu (trade_id, note_id, role),
+-- Jesli 0020 nada tej tabeli inne nazwy kolumn niz w modelu (trade_id, note_id, role),
 -- trzeba ja zmienic tutaj, a test migracje-v2.db.test.ts to wykryje.
 CREATE FUNCTION public.tj_hypothesis_n(p_hypothesis_id integer) RETURNS integer
   LANGUAGE plpgsql STABLE
