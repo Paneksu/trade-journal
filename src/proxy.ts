@@ -33,14 +33,15 @@ export function proxy(request: NextRequest) {
 }
 
 /*
- * `api/ingest/` jest WYLACZONE z proxy (ADR-026), z dwoch powodow:
+ * `api/ingest/` i `api/v2/` sa WYLACZONE z proxy (ADR-026, ADR-030), z dwoch powodow:
  *  1. proxy buforuje i obcina cialo zapytania powyzej 10 MB, a multipart ze
  *     zrzutami ma limit 11 MB liczony na strumieniu w samej trasie;
  *  2. te trasy nie uzywaja ciasteczka sesji, tylko naglowka Authorization:
  *     Bearer - bez wykluczenia proxy przekierowalby kazde zapytanie klienta
- *     na /login. Cala brama (token, blokada, limity) siedzi w `withIngest`,
- *     a test-straznik pilnuje, zeby zadna trasa jej nie ominela.
+ *     na /login. Cala brama (token, blokada, limity) siedzi w `withIngest`
+ *     (ingest) i `withApi` / `withPublicApi` (v2), a testy-straznicy pilnuja,
+ *     zeby zadna trasa jej nie ominela.
  */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/ingest/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/ingest/|api/v2/).*)"],
 };

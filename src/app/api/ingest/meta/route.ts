@@ -1,5 +1,5 @@
-import { odpowiedz } from "@/lib/ingest/http";
-import { zbierzMeta } from "@/lib/ingest/meta";
+import { odpowiedz } from "@/lib/api-v2/http";
+import { zbierzMeta } from "@/lib/api-v2/meta";
 import { withIngest } from "@/lib/ingest/with-ingest";
 
 /** Slownik: konta, instrumenty, tagi, interwaly, limity. Klient dopasowuje sie do niego. */

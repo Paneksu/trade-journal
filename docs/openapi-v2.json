@@ -1,0 +1,3262 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dziennik tradingowy API v2",
+    "version": "2.0.0",
+    "description": "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose; zakresu zatwierdzania nie ma."
+  },
+  "servers": [
+    {
+      "url": "/api/v2"
+    }
+  ],
+  "paths": {
+    "/meta": {
+      "get": {
+        "operationId": "getMeta",
+        "summary": "Slownik: konta, instrumenty, tagi, interwaly, limity, zakresy i contractHash kontraktu.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/trades": {
+      "get": {
+        "operationId": "getTrades",
+        "summary": "Trady zapisane przez API ze skrotem tresci i znacznikiem edycji w aplikacji.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "refs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "tradingview",
+                "fxreplay"
+              ]
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "post": {
+        "operationId": "postTrades",
+        "summary": "Zapis paczki trade'ow (max 50) przez persistTrade/computeTrade. Wynik per pozycja.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dryRun": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "default": "create",
+                    "type": "string",
+                    "enum": [
+                      "create",
+                      "update"
+                    ]
+                  },
+                  "trades": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {}
+                  }
+                },
+                "required": [
+                  "trades"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trades/{id}/reviews": {
+      "post": {
+        "operationId": "postTradesIdReviews",
+        "summary": "Ocena AI trade'a z regulami; jedna na podstawe (chart | history), ponowne wyslanie podmienia.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Utworzona nowa ocena (200 przy podmianie).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "404": {
+            "description": "Trade nie istnieje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "basis": {
+                    "type": "string",
+                    "enum": [
+                      "chart",
+                      "history"
+                    ]
+                  },
+                  "setupType": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "summaryMd": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lesson": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 4000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "brainVerdict": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "wejdz",
+                          "czekaj",
+                          "odpusc"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "brainPlan": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "entry": {
+                            "type": "number"
+                          },
+                          "stopLoss": {
+                            "type": "number"
+                          },
+                          "takeProfit": {
+                            "type": "number"
+                          },
+                          "interwalWejscia": {
+                            "type": "string",
+                            "maxLength": 20
+                          },
+                          "interwalyKontekstu": {
+                            "maxItems": 10,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 20
+                            }
+                          }
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "brainVersion": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 80
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "evidenceCutoff": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "ruleChecks": {
+                    "default": [],
+                    "maxItems": 200,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "ruleId": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9._-]{1,40}$"
+                        },
+                        "ruleText": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 2000
+                        },
+                        "verdict": {
+                          "type": "string",
+                          "enum": [
+                            "pass",
+                            "fail",
+                            "na",
+                            "unclear"
+                          ]
+                        },
+                        "evidence": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 4000
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ruleId",
+                        "ruleText",
+                        "verdict"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "basis"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trades/{id}/screenshots": {
+      "post": {
+        "operationId": "postTradesIdScreenshots",
+        "summary": "Zrzuty (multipart: shot, interval, origin). Zastepuja zrzuty tego samego pochodzenia.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "404": {
+            "description": "Trade nie istnieje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Za duze cialo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Plik odrzucony.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "shot": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "description": "Plik; powtarzalne, do 8."
+                  },
+                  "interval": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Interwal; po jednym na plik, w tej samej kolejnosci."
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "tradingview",
+                      "fxreplay"
+                    ]
+                  }
+                },
+                "required": [
+                  "shot"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backtest-sessions": {
+      "post": {
+        "operationId": "postBacktest-sessions",
+        "summary": "Tworzy sesje backtestu/forward albo odnajduje ja po externalRef (idempotentne).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Utworzona nowa sesja (200 przy istniejacej).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "externalRef": {
+                    "type": "string",
+                    "pattern": "^(tv|fxr):[A-Za-z0-9._:\\-]{1,120}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "kind": {
+                    "default": "backtest",
+                    "type": "string",
+                    "enum": [
+                      "backtest",
+                      "forward"
+                    ]
+                  },
+                  "symbol": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "interval": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "30s",
+                          "1m",
+                          "2m",
+                          "3m",
+                          "4m",
+                          "5m",
+                          "15m",
+                          "30m",
+                          "1h",
+                          "4h",
+                          "D",
+                          "W",
+                          "M"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dataFrom": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dataTo": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "startingBalance": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "riskPerTrade": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "targetTrades": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "assumptions": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 10000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "externalRef",
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skips": {
+      "post": {
+        "operationId": "postSkips",
+        "summary": "Oznacza wpisy, ktorych klient nie chce w dzienniku.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skips": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "externalRef": {
+                          "type": "string",
+                          "pattern": "^(tv|fxr):[A-Za-z0-9._:\\-]{1,120}$"
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 500
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "externalRef"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "skips"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/days/{date}": {
+      "get": {
+        "operationId": "getDaysDate",
+        "summary": "Dzien: notatka dnia, liczba trade'ow, slowa uzytkownika i notatki przypiete do dnia.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "put": {
+        "operationId": "putDaysDate",
+        "summary": "Zapis notatki dnia (nadpisuje podane pola; konto albo sesja backtestu wskazane w ciele).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Dzien ma trade'y, wiec nie moze byc oznaczony jako bez transakcji.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "sessionId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "preSession": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "postSession": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 20000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "mood": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "energy": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dayRating": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "noTrade": {
+                    "type": "boolean"
+                  },
+                  "noTradeReason": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 40
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notes": {
+      "get": {
+        "operationId": "getNotes",
+        "summary": "Lista notatek (bez tresci); filtry kind, slug, externalRef, day, tradeId.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "system",
+                "concept",
+                "rule",
+                "decision_proc",
+                "trade_note",
+                "session",
+                "hypothesis",
+                "mistake",
+                "strength",
+                "brain_decision",
+                "learning",
+                "profile",
+                "strategy",
+                "setup"
+              ]
+            }
+          },
+          {
+            "name": "slug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "name": "externalRef",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "tradeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "includeArchived",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "post": {
+        "operationId": "postNotes",
+        "summary": "Tworzy notatke. Link [[Tytul]] do nieistniejacej notatki jest dozwolony.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "system",
+                        "concept",
+                        "rule",
+                        "decision_proc",
+                        "trade_note",
+                        "session",
+                        "hypothesis",
+                        "mistake",
+                        "strength",
+                        "brain_decision",
+                        "learning",
+                        "profile",
+                        "strategy",
+                        "setup"
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "bodyMd": {
+                      "type": "string"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "origin": {
+                      "type": "string"
+                    },
+                    "rev": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backtestSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "day": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "externalRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "slug",
+                    "title",
+                    "bodyMd",
+                    "meta",
+                    "origin",
+                    "rev",
+                    "contentHash",
+                    "tradeId",
+                    "backtestSessionId",
+                    "day",
+                    "externalRef",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Tytul, slug albo externalRef zajety (odpowiedz wskazuje istniejaca notatke).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "system",
+                      "concept",
+                      "rule",
+                      "decision_proc",
+                      "trade_note",
+                      "session",
+                      "hypothesis",
+                      "mistake",
+                      "strength",
+                      "brain_decision",
+                      "learning",
+                      "profile",
+                      "strategy",
+                      "setup"
+                    ]
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "bodyMd": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 200000
+                  },
+                  "meta": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "origin": {
+                    "default": "ai",
+                    "type": "string",
+                    "enum": [
+                      "ai",
+                      "mentor",
+                      "vault-import"
+                    ]
+                  },
+                  "slug": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9-]{0,119}$"
+                  },
+                  "tradeId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "backtestSessionId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "day": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "externalRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "kind",
+                  "title"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notes/{id}": {
+      "get": {
+        "operationId": "getNotesId",
+        "summary": "Notatka z trescia, rewizja (rev, tez w ETag), linkami i backlinkami.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchNotesId",
+        "summary": "Zmiana notatki z optymistyczna wspolbieznoscia: wymagany naglowek If-Match: <rev>. Brak kasowania; archived=true odklada do archiwum.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": true,
+            "description": "Numer rewizji (rev) z ostatniego odczytu notatki.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "system",
+                        "concept",
+                        "rule",
+                        "decision_proc",
+                        "trade_note",
+                        "session",
+                        "hypothesis",
+                        "mistake",
+                        "strength",
+                        "brain_decision",
+                        "learning",
+                        "profile",
+                        "strategy",
+                        "setup"
+                      ]
+                    },
+                    "slug": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "bodyMd": {
+                      "type": "string"
+                    },
+                    "meta": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "origin": {
+                      "type": "string"
+                    },
+                    "rev": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "contentHash": {
+                      "type": "string"
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backtestSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "day": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "externalRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "archivedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "slug",
+                    "title",
+                    "bodyMd",
+                    "meta",
+                    "origin",
+                    "rev",
+                    "contentHash",
+                    "tradeId",
+                    "backtestSessionId",
+                    "day",
+                    "externalRef",
+                    "archivedAt",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Nieaktualny rev; odpowiedz zawiera biezaca tresc.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Brak naglowka If-Match.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "bodyMd": {
+                    "type": "string",
+                    "maxLength": 200000
+                  },
+                  "meta": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "archived": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "operationId": "getSearch",
+        "summary": "Wyszukiwanie w notatkach, slowach uzytkownika i trade'ach (bez polskich znakow, rozmyte).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "types",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/rules": {
+      "get": {
+        "operationId": "getRules",
+        "summary": "Reguly ze statusem wyliczonym z wersji i rulesVersion (numer zestawu).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "proposed",
+                "active",
+                "retired",
+                "rejected"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/rules/proposals": {
+      "post": {
+        "operationId": "postRulesProposals",
+        "summary": "Propozycja reguly lub nowej wersji. Zatwierdza wylacznie uzytkownik w aplikacji; zakresu approve nie ma.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "propose"
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Regula ma juz oczekujaca propozycje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Hipoteza ponizej progu n (tylko propozycje AI).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ruleCode": {
+                    "type": "string",
+                    "pattern": "^R-\\d{3,}$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "textMd": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000
+                  },
+                  "hard": {
+                    "type": "boolean"
+                  },
+                  "origin": {
+                    "type": "string",
+                    "enum": [
+                      "ai",
+                      "mentor",
+                      "vault-import"
+                    ]
+                  },
+                  "counterargument": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  },
+                  "evidence": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "hypothesisId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "vaultStatus": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  },
+                  "externalRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "textMd",
+                  "origin"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/hypotheses": {
+      "get": {
+        "operationId": "getHypotheses",
+        "summary": "Hipotezy z n (n_imported + zamkniete trade'y podpiete), progiem i faza (zbieranie | do oceny).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "post": {
+        "operationId": "postHypotheses",
+        "summary": "Zaklada hipoteze (notatka kind=hypothesis + wiersz hypotheses, decyzja 'active').",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "bodyMd": {
+                    "default": "",
+                    "type": "string",
+                    "maxLength": 200000
+                  },
+                  "progN": {
+                    "default": 20,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "thresholds": {
+                    "default": {},
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "nImported": {
+                    "default": 0,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  },
+                  "origin": {
+                    "default": "ai",
+                    "type": "string",
+                    "enum": [
+                      "ai",
+                      "mentor",
+                      "vault-import"
+                    ]
+                  },
+                  "externalRef": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user-words": {
+      "get": {
+        "operationId": "getUser-words",
+        "summary": "Slowa uzytkownika doslownie (text + sha256 + interpretacja AI osobno).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "tradeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "noteId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "backtestSessionId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 60
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": {}
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "post": {
+        "operationId": "postUser-words",
+        "summary": "Zapis slow uzytkownika bajt w bajt. Klient podaje sha256 z bajtow UTF-8; niezgodnosc = 400. Ponowne wyslanie tego samego wpisu jest idempotentne.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Taki wpis juz istnieje (zwrocony bez duplikatu).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "byteLen": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "noteId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backtestSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "day": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "capturedAt": {
+                      "type": "string"
+                    },
+                    "aiInterpretation": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "interpretationModel": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supersedesId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "text",
+                    "sha256",
+                    "byteLen",
+                    "source",
+                    "role",
+                    "tradeId",
+                    "noteId",
+                    "backtestSessionId",
+                    "day",
+                    "capturedAt",
+                    "aiInterpretation",
+                    "interpretationModel",
+                    "supersedesId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 50000
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "chat",
+                      "note",
+                      "chart",
+                      "mobile",
+                      "vault-import"
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_.]{0,59}$"
+                  },
+                  "tradeId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "noteId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "backtestSessionId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "day": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "capturedAt": {
+                    "type": "string"
+                  },
+                  "aiInterpretation": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "interpretationModel": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "text",
+                  "sha256",
+                  "source",
+                  "capturedAt"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/user-words/{id}": {
+      "patch": {
+        "operationId": "patchUser-wordsId",
+        "summary": "ZAWSZE 409: slowa uzytkownika sa niezmienne, poprawia je uzytkownik w aplikacji.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      },
+      "put": {
+        "operationId": "putUser-wordsId",
+        "summary": "ZAWSZE 409: slowa uzytkownika sa niezmienne, poprawia je uzytkownik w aplikacji.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/user-words/{id}/interpretation": {
+      "put": {
+        "operationId": "putUser-wordsIdInterpretation",
+        "summary": "Jedyna zmienna czesc slow: interpretacja AI, ustawiana raz (poprawke zapisuje uzytkownik w aplikacji).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "byteLen": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "noteId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backtestSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "day": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "capturedAt": {
+                      "type": "string"
+                    },
+                    "aiInterpretation": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "interpretationModel": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supersedesId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "text",
+                    "sha256",
+                    "byteLen",
+                    "source",
+                    "role",
+                    "tradeId",
+                    "noteId",
+                    "backtestSessionId",
+                    "day",
+                    "capturedAt",
+                    "aiInterpretation",
+                    "interpretationModel",
+                    "supersedesId",
+                    "createdAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "Interpretacja jest juz ustawiona.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 20000
+                  },
+                  "model": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "text",
+                  "model"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/start": {
+      "post": {
+        "operationId": "postDeviceStart",
+        "summary": "Poczatek logowania kodem urzadzenia; zwraca user_code do przepisania w aplikacji. Bez tokenu, limit 10 na godzine na adres.",
+        "security": [],
+        "x-scopes": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deviceCode": {
+                      "type": "string"
+                    },
+                    "userCode": {
+                      "type": "string"
+                    },
+                    "verificationUri": {
+                      "type": "string"
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "interval": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "deviceCode",
+                    "userCode",
+                    "verificationUri",
+                    "expiresIn",
+                    "interval"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "scopes": {
+                    "minItems": 1,
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "read",
+                        "write",
+                        "propose"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "clientName",
+                  "scopes"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/device/token": {
+      "post": {
+        "operationId": "postDeviceToken",
+        "summary": "Odpytywanie o token co 5 s; token wraca dokladnie raz. Bez tokenu.",
+        "security": [],
+        "x-scopes": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "tokenType": {
+                      "type": "string",
+                      "const": "Bearer"
+                    },
+                    "tokenId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "scopes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "read",
+                          "write",
+                          "propose"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accessToken",
+                    "tokenType",
+                    "tokenId",
+                    "scopes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "authorization_pending | slow_down | expired_token | invalid_grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "access_denied (uzytkownik odrzucil)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "deviceCode": {
+                    "type": "string",
+                    "minLength": 20,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "deviceCode"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "tj_<prefiks>_<sekret>"
+      }
+    }
+  }
+}

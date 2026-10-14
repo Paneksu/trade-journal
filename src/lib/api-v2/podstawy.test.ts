@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { czytajBajty, czytajJson, czytajMultipart, LIMIT_JSON, LIMIT_MULTIPART } from "./body";
 import { adresKlienta, czyHttps } from "./http";
 import { przepusc, wyczyscLimiter } from "./limiter";
-import { skrotTokenu, tokenPasuje, tokenZNaglowka, wczytajSkrot } from "./token";
+import { skrotTokenu, tokenPasuje, tokenZNaglowka, wczytajSkrot } from "@/lib/ingest/token";
 
 /** Zapytanie z cialem podawanym jako strumien, bez Content-Length - jak klient chunked. */
 function zapytanieStrumien(kawalki: Uint8Array[], naglowki: Record<string, string> = {}): Request {
@@ -164,7 +164,7 @@ describe("adres klienta i HTTPS", () => {
 
 describe("withIngest: kolejnosc bramek", () => {
   const TOKEN = "tj_ingest_testowy_token_0123456789abcdef";
-  let withIngest: typeof import("./with-ingest").withIngest;
+  let withIngest: typeof import("@/lib/ingest/with-ingest").withIngest;
   const ok = async () => Response.json({ ok: true });
 
   function zadanie(naglowki: Record<string, string> = {}) {
@@ -177,7 +177,7 @@ describe("withIngest: kolejnosc bramek", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     wyczyscLimiter();
-    ({ withIngest } = await import("./with-ingest"));
+    ({ withIngest } = await import("@/lib/ingest/with-ingest"));
   });
   afterEach(() => {
     vi.unstubAllEnvs();

@@ -7,7 +7,7 @@ import {
   SesjaSchema,
   TradeSchema,
   zrodloZRef,
-} from "./schema";
+} from "./schemas";
 
 function poprawny(nadpisz: Record<string, unknown> = {}) {
   return {

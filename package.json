@@ -15,7 +15,9 @@
     "db:migrate": "tsx src/lib/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
     "seed": "tsx src/lib/db/seed.ts",
-    "db:backup": "tsx scripts/backup.ts"
+    "db:backup": "tsx scripts/backup.ts",
+    "api:kontrakt": "tsx scripts/generuj-openapi-v2.ts",
+    "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {
     "@date-fns/tz": "^1.5.0",

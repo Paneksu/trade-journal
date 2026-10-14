@@ -8,15 +8,19 @@ import { STATUSY } from "@/lib/domain/status";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 
 import { LIMIT_JSON, LIMIT_MULTIPART } from "./body";
-import { LIMIT_NA_MINUTE } from "./with-ingest";
-import { MAX_REGUL, MAX_TRADOW_NA_ZAPYTANIE } from "./schema";
+import { LIMIT_NA_MINUTE } from "@/lib/ingest/with-ingest";
+import { contractHash, WERSJA_KONTRAKTU } from "./contract/endpoints";
+import { numerZestawu } from "./reguly";
+import { SCOPES } from "./scopes";
+import { LIMIT_NA_MINUTE_V2 } from "./with-api";
+import { MAX_REGUL, MAX_TRADOW_NA_ZAPYTANIE } from "./contract/schemas";
 
 /**
  * Opis tego, co aplikacja wie i akceptuje - klient (mozg tradingowy) dopasowuje
  * sie do niego zamiast zgadywac identyfikatory. Bez danych o wynikach: to jest
  * slownik, nie eksport.
  */
-export async function zbierzMeta() {
+export async function zbierzMeta(wersja: 1 | 2 = 1) {
   const [kontaRows, instrRows, tagRows, kategorieRows, sesjeRows, poleRows] = await Promise.all([
     db.select().from(accounts).orderBy(asc(accounts.sortOrder), asc(accounts.id)),
     db.select().from(instruments).where(eq(instruments.active, true)).orderBy(asc(instruments.sortOrder)),
@@ -40,8 +44,19 @@ export async function zbierzMeta() {
     db.select().from(customFields).orderBy(asc(customFields.sortOrder)),
   ]);
 
+  const v2 =
+    wersja === 2
+      ? {
+          contractHash: contractHash(),
+          contractVersion: WERSJA_KONTRAKTU,
+          scopes: SCOPES,
+          rulesVersion: await numerZestawu(db),
+        }
+      : {};
+
   return {
-    apiVersion: 1,
+    apiVersion: wersja,
+    ...v2,
     serverTime: new Date().toISOString(),
     accounts: kontaRows.map((k) => ({
       id: k.id,
@@ -81,7 +96,7 @@ export async function zbierzMeta() {
       maxRuleChecksPerReview: MAX_REGUL,
       jsonBodyBytes: LIMIT_JSON,
       multipartBodyBytes: LIMIT_MULTIPART,
-      requestsPerMinute: LIMIT_NA_MINUTE,
+      requestsPerMinute: wersja === 2 ? LIMIT_NA_MINUTE_V2 : LIMIT_NA_MINUTE,
     },
     conventions: {
       timeFormat: "ISO 8601 z offsetem lub Z, np. 2026-03-10T09:35:00-04:00",

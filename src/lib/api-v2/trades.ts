@@ -16,7 +16,7 @@ import type { TradeDraft } from "@/lib/domain/trade-draft";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 import { persistTrade, type PodgladZapisu } from "@/lib/trades/persist";
 
-import { KopertaTradowSchema, opiszBledyZod, TradeSchema, zrodloZRef, type IngestTrade } from "./schema";
+import { KopertaTradowSchema, opiszBledyZod, TradeSchema, zrodloZRef, type IngestTrade } from "./contract/schemas";
 import type { z } from "zod";
 
 /**

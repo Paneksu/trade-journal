@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
@@ -10,6 +10,7 @@ import { deleteDayDir, deleteScreenshot, saveScreenshot } from "@/lib/screenshot
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
 import { czyInterwal } from "@/lib/domain/interwaly";
 import { bladLimitu } from "@/lib/screenshots-limit";
+import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 import { countTradesOnDay, countSessionTradesOnDay } from "@/lib/queries/journal";
 import type { ActionState } from "./settings";
 
@@ -31,29 +32,6 @@ function reason(d: FormData, k: string): NoTradeReason | null {
 }
 
 /* --- Dziennik dnia -------------------------------------------------------- */
-
-/**
- * Konflikt trafia w jeden z trzech czesciowych indeksow, zaleznie od tego,
- * czy dzien nalezy do sesji backtestu, do konta, czy do zadnego z nich.
- * W Postgresie NULL != NULL, wiec kazdy przypadek potrzebuje wlasnego celu.
- */
-function konflikt(accountId: number | null, sessionId: number | null) {
-  if (sessionId) {
-    return {
-      target: [dayNotes.day, dayNotes.backtestSessionId],
-      targetWhere: isNotNull(dayNotes.backtestSessionId),
-    };
-  }
-  return accountId
-    ? {
-        target: [dayNotes.day, dayNotes.accountId],
-        targetWhere: isNull(dayNotes.backtestSessionId),
-      }
-    : {
-        target: dayNotes.day,
-        targetWhere: and(isNull(dayNotes.accountId), isNull(dayNotes.backtestSessionId)),
-      };
-}
 
 function positiveInt(d: FormData, k: string): number | null {
   const n = Number(d.get(k));
@@ -94,7 +72,7 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
   await db
     .insert(dayNotes)
     .values(values)
-    .onConflictDoUpdate({ ...konflikt(accountId, null), set: values });
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, null), set: values });
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -112,7 +90,7 @@ async function ensureDayNote(
   const [row] = await db
     .insert(dayNotes)
     .values({ day, accountId: sessionId ? null : accountId, backtestSessionId: sessionId })
-    .onConflictDoUpdate({ ...konflikt(accountId, sessionId), set: { updatedAt: new Date() } })
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, sessionId), set: { updatedAt: new Date() } })
     .returning({ id: dayNotes.id });
   return row.id;
 }
@@ -148,7 +126,7 @@ export async function saveBacktestDayNote(_p: ActionState, d: FormData): Promise
   await db
     .insert(dayNotes)
     .values(values)
-    .onConflictDoUpdate({ ...konflikt(null, sessionId), set: values });
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, sessionId), set: values });
 
   revalidatePath("/backtest", "layout");
   return { ok: true };

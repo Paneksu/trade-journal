@@ -5,7 +5,7 @@ import type { z } from "zod";
 import { db } from "@/lib/db";
 import { tradeReviews, tradeRuleChecks, trades } from "@/lib/db/schema";
 
-import type { OcenaSchema } from "./schema";
+import type { OcenaSchema } from "./contract/schemas";
 
 /**
  * Ocena trade'a przez AI (ADR-028). Jedna ocena na podstawe (`chart` albo

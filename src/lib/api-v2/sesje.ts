@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { backtestSessions, instruments } from "@/lib/db/schema";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 
-import type { SesjaSchema } from "./schema";
+import type { SesjaSchema } from "./contract/schemas";
 
 /**
  * Sesja backtestu albo forward testu z FX Replay (ADR-026, ADR-027). "Utworz
