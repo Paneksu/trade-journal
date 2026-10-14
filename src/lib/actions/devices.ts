@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
-import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
+import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
 
@@ -112,4 +112,18 @@ export async function odrzucOczekujace(): Promise<{ ok?: boolean; error?: string
   const ile = await odrzucWszystkieOczekujace();
   revalidatePath("/settings/devices");
   return { ok: true, odrzucono: ile };
+}
+
+export type TokenImportuState = { token?: string; prefix?: string; expiresAt?: string; error?: string };
+
+/**
+ * Jedyna droga do zakresu "import" (Slowa uzytkownika 15.10.2026): reczny przycisk w UI, za sesja.
+ * Token (24 h) jest pokazywany RAZ w odpowiedzi tej akcji i nigdzie nie jest zapisany w jawnej postaci.
+ * TODO(faza 1): sudo przed utworzeniem tokenu importu, tak jak przy zatwierdzaniu urzadzen.
+ */
+export async function utworzTokenImportuAkcja(): Promise<TokenImportuState> {
+  await requireSession();
+  const t = await utworzTokenImportu();
+  revalidatePath("/settings/devices");
+  return { token: t.token, prefix: t.prefix, expiresAt: t.expiresAt.toISOString() };
 }

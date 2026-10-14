@@ -4,8 +4,8 @@ import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apiTokens, deviceCodes } from "@/lib/db/schema";
 
-import { czyScope, type Scope } from "./scopes";
-import { normalizujKodUzytkownika } from "./token";
+import { czyScope, czyScopeUrzadzenia, type Scope } from "./scopes";
+import { normalizujKodUzytkownika, wygenerujToken } from "./token";
 
 /**
  * Strona aplikacji dla urzadzen (Ustawienia -> Urzadzenia, /urzadzenia/polacz).
@@ -131,7 +131,7 @@ export async function zatwierdzKod(
   if (!w) return { ok: false, komunikat: "Nie ma takiego żądania." };
   const zadane = new Set<string>(w.requestedScopes);
   const unikalne = [...new Set(nadane)];
-  const zly = unikalne.find((s) => !czyScope(s) || !zadane.has(s));
+  const zly = unikalne.find((s) => !czyScopeUrzadzenia(s) || !zadane.has(s));
   if (zly !== undefined) {
     return {
       ok: false,
@@ -199,4 +199,32 @@ export async function odrzucWszystkieOczekujace(): Promise<number> {
     .where(and(isNull(deviceCodes.approvedAt), isNull(deviceCodes.deniedAt), isNull(deviceCodes.consumedAt), gt(deviceCodes.expiresAt, sql`now()`)))
     .returning({ id: deviceCodes.id });
   return zmienione.length;
+}
+
+/** Token importu: czas zycia domyslnie 24 h (Slowa uzytkownika 15.10.2026). */
+export const WAZNOSC_TOKENU_IMPORTU_H = 24;
+
+export const ZAKRESY_TOKENU_IMPORTU: Scope[] = ["read", "write", "propose", "import"];
+
+/**
+ * Jedyna droga do zakresu `import`: uzytkownik klika w UI (akcja za sesja). Zwraca JAWNY token
+ * tylko tutaj - w bazie zostaje skrot, wiec pokazac go mozna dokladnie raz.
+ */
+export async function utworzTokenImportu(
+  teraz: Date = new Date(),
+): Promise<{ id: number; token: string; prefix: string; expiresAt: Date }> {
+  const nowy = wygenerujToken();
+  const expiresAt = new Date(teraz.getTime() + WAZNOSC_TOKENU_IMPORTU_H * 3600 * 1000);
+  const [w] = await db
+    .insert(apiTokens)
+    .values({
+      name: `token importu ${teraz.toISOString().slice(0, 16).replace("T", " ")}`,
+      prefix: nowy.prefix,
+      tokenSha256: nowy.sha256,
+      scopes: ZAKRESY_TOKENU_IMPORTU,
+      createdVia: "ui",
+      expiresAt,
+    })
+    .returning({ id: apiTokens.id });
+  return { id: w.id, token: nowy.token, prefix: nowy.prefix, expiresAt };
 }

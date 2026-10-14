@@ -703,7 +703,7 @@ const tsvector = customType<{ data: string }>({
   },
 });
 
-export type ApiScope = "read" | "write" | "propose";
+export type ApiScope = "read" | "write" | "propose" | "import";
 export type Origin = "user" | "ai" | "mentor" | "vault-import";
 
 /* --- Tokeny urzadzen (0017, ADR-030) -------------------------------------- */
@@ -736,7 +736,7 @@ export const apiTokens = pgTable(
     check("api_tokens_sha256", sql`${t.tokenSha256} ~ '^[0-9a-f]{64}$'`),
     check(
       "api_tokens_scopes",
-      sql`cardinality(${t.scopes}) between 1 and 3 and ${t.scopes} <@ array['read', 'write', 'propose']`,
+      sql`cardinality(${t.scopes}) between 1 and 4 and ${t.scopes} <@ array['read', 'write', 'propose', 'import']`,
     ),
     check("api_tokens_created_via", sql`${t.createdVia} in ('device_code', 'ui')`),
     unique("api_tokens_prefix_uq").on(t.prefix),

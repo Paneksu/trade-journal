@@ -9,7 +9,7 @@ import { opiszBladBazy } from "./bledy-bazy";
 import { adresKlienta, blad, czyHttps, noweIdZapytania } from "./http";
 import { przepusc } from "./limiter";
 import type { Scope } from "./scopes";
-import { czyScope } from "./scopes";
+import { czyScope, originWymagaImportu } from "./scopes";
 import { zapisZAktorem, type Transakcja } from "./zapis";
 import { skrotTokenuV2, skrotyRowne, tokenV2ZNaglowka } from "./token";
 
@@ -307,4 +307,22 @@ export function withPublicApi<C = unknown>(
       return odpowiedzNaWyjatek(e, idZapytania, request, naglowki);
     }
   };
+}
+
+/**
+ * Zakres `import` jest wymagany do zadeklarowania pochodzenia `vault-import` albo `mentor`
+ * (Slowa uzytkownika 15.10.2026). Sprawdzamy DEKLAROWANE pochodzenie z ciala, takze gdy serwer
+ * i tak potraktowalby je jak `ai`: agent bez zakresu nie ma w ogole podawac tych wartosci.
+ * `null` = wolno.
+ */
+export function wymagajImportuDlaOrigin(api: KontekstApi, origin: string | undefined): Response | null {
+  if (origin === undefined || !originWymagaImportu(origin)) return null;
+  if (api.token.scopes.includes("import")) return null;
+  return blad(
+    403,
+    "insufficient_scope",
+    `Pochodzenie »${origin}« wymaga zakresu »import«, a token „${api.token.name}” ma: ${api.token.scopes.join(", ")}. Zakres import nadaje tylko użytkownik ręcznie w aplikacji (Ustawienia → Urządzenia → token importu, ważny 24 h); logowanie urządzenia go nie daje. Bez niego wysyłaj origin »ai«.`,
+    { missingScope: "import", requiredScopes: ["import"], origin },
+    { "x-request-id": api.requestId },
+  );
 }

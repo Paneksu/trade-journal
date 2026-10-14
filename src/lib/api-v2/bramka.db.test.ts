@@ -67,7 +67,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("withApi: brama tokenów (baza lokalna)", () =>
     const dane = await res.json();
     expect(dane.apiVersion).toBe(2);
     expect(dane.contractHash).toBe(contractHash());
-    expect(dane.scopes).toEqual(["read", "write", "propose"]);
+    expect(dane.scopes).toEqual(["read", "write", "propose", "import"]);
     expect(typeof dane.rulesVersion).toBe("number");
     expect(dane.limits.requestsPerMinute).toBe(120);
   });
@@ -195,7 +195,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("withApi: brama tokenów (baza lokalna)", () =>
   });
 
   it("trigger TJ403 z bazy wychodzi jako 403 approval_forbidden: błąd we własnym kodzie nie zatwierdzi reguły", async () => {
-    const t = await tok(["read", "write", "propose"]);
+    const t = await tok(["read", "write", "propose", "import"]);
     // Reguła i jej wersja 'proposed' założone legalnie (jak robi POST /rules/proposals).
     const { POST } = await import("@/app/api/v2/rules/proposals/route");
     const utworzona = await POST(

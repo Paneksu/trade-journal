@@ -2,7 +2,7 @@ import { PropozycjaReguly } from "@/lib/api-v2/contract/v2";
 import { blad, odpowiedz } from "@/lib/api-v2/http";
 import { zaproponujRegule } from "@/lib/api-v2/reguly";
 import { wczytajCialo } from "@/lib/api-v2/walidacja";
-import { withApi } from "@/lib/api-v2/with-api";
+import { withApi, wymagajImportuDlaOrigin } from "@/lib/api-v2/with-api";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 export const POST = withApi({ scopes: ["propose"] }, async (request, api) => {
   const w = await wczytajCialo(request, PropozycjaReguly, "Nieprawidłowa propozycja reguły");
   if (!w.ok) return w.odpowiedz;
+
+  const bezImportu = wymagajImportuDlaOrigin(api, w.dane.origin);
+  if (bezImportu) return bezImportu;
 
   const wynik = await api.zapis((tx) => zaproponujRegule(tx, api, w.dane));
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat, wynik.dodatkowe ?? {});

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { czyImportZSejfu, MIN_PROG_N_API, originEfektywny } from "@/lib/domain/reguly";
 
-import { SCOPES } from "../scopes";
+import { SCOPES, SCOPES_URZADZEN } from "../scopes";
 import { czas } from "./schemas";
 
 /**
@@ -13,6 +13,14 @@ import { czas } from "./schemas";
  */
 
 export const ScopeSchema = z.enum(SCOPES);
+
+/** Logowanie urzadzenia nie moze prosic o `import` (zakres nadaje tylko uzytkownik recznie w UI). */
+export const ScopeUrzadzeniaSchema = z.enum(SCOPES_URZADZEN, {
+  error: (i) =>
+    typeof i.input === "string" && i.input === "import"
+      ? "zakres »import« nie jest dostępny przez logowanie urządzenia: nadaje go użytkownik ręcznie w aplikacji (Ustawienia → Urządzenia → token importu)"
+      : "dozwolone zakresy logowania urządzenia: read, write, propose",
+});
 
 const REGEX_DATA = /^\d{4}-\d{2}-\d{2}$/;
 export const DataSchema = z
@@ -35,7 +43,7 @@ export const IdSchema = idDodatnie;
 export const DeviceStartSchema = z
   .strictObject({
     clientName: z.string().trim().min(1).max(80),
-    scopes: z.array(ScopeSchema).min(1).max(3),
+    scopes: z.array(ScopeUrzadzeniaSchema).min(1).max(3),
   })
   .superRefine((d, ctx) => {
     if (new Set(d.scopes).size !== d.scopes.length) {
@@ -59,7 +67,7 @@ export const DeviceTokenOdpowiedz = z.object({
   accessToken: z.string(),
   tokenType: z.literal("Bearer"),
   tokenId: z.number().int(),
-  scopes: z.array(ScopeSchema),
+  scopes: z.array(ScopeUrzadzeniaSchema),
 });
 
 /* --- Notatki ------------------------------------------------------------- */

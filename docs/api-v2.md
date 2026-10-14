@@ -17,6 +17,14 @@ SHA-256 całego tokenu. Każde zapytanie: `Authorization: Bearer <token>`.
 | `read` | wszystkie `GET`, wyszukiwanie, `/meta` |
 | `write` | trade'y, zrzuty, oceny, sesje, pominięcia, notatki, słowa użytkownika, hipotezy, dzień |
 | `propose` | propozycje reguł (`POST /rules/proposals`) |
+| `import` | **dodatkowy**: tylko z nim wolno zadeklarować `origin: "vault-import"` (z `nImported`, `vaultStatus`) i `origin: "mentor"`; sam nic nie otwiera |
+
+**Zakres `import`** (Słowa użytkownika 15.10.2026: «Osobny zakres „import”»): token bez niego, który w `POST /notes`,
+`POST /rules/proposals` albo `POST /hypotheses` zadeklaruje `vault-import` lub `mentor`, dostaje `403 insufficient_scope`
+(`missingScope: "import"`), także gdy serwer i tak potraktowałby wpis jak `ai`. Zakres nadaje **wyłącznie
+użytkownik ręcznie** w Ustawienia → Urządzenia → „Utwórz token importu (24 h)”: token (read, write, propose,
+import) jest pokazywany raz i wygasa po 24 godzinach. `device/start` nie może go żądać (`400`), a CHECK w bazie
+(`device_codes.requested_scopes`) jest drugim zabezpieczeniem.
 
 **Zakresu „zatwierdź” nie ma.** Reguły zatwierdza wyłącznie użytkownik w aplikacji, po jednej.
 Pilnują tego trzy niezależne warstwy: brak zakresu (CHECK w bazie), brak trasy zatwierdzającej

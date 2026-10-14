@@ -2,7 +2,7 @@ import { HipotezaUtworzSchema } from "@/lib/api-v2/contract/v2";
 import { blad, odpowiedz } from "@/lib/api-v2/http";
 import { listaHipotez, zalozHipoteze } from "@/lib/api-v2/reguly";
 import { wczytajCialo } from "@/lib/api-v2/walidacja";
-import { withApi } from "@/lib/api-v2/with-api";
+import { withApi, wymagajImportuDlaOrigin } from "@/lib/api-v2/with-api";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,9 @@ export const GET = withApi({ scopes: ["read"] }, async () => odpowiedz(await lis
 export const POST = withApi({ scopes: ["write"] }, async (request, api) => {
   const w = await wczytajCialo(request, HipotezaUtworzSchema, "Nieprawidłowa hipoteza");
   if (!w.ok) return w.odpowiedz;
+
+  const bezImportu = wymagajImportuDlaOrigin(api, w.dane.origin);
+  if (bezImportu) return bezImportu;
 
   const wynik = await api.zapis((tx) => zalozHipoteze(tx, api, w.dane));
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat, wynik.dodatkowe ?? {});

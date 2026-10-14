@@ -71,6 +71,8 @@ export type Endpoint = {
   /** Inne kody, ktore trasa zwraca z powodu reguly biznesowej (documentacja, nie walidacja). */
   bledy?: Record<number, string>;
   ifMatch?: boolean;
+  /** Deklarowane pochodzenie vault-import / mentor wymaga dodatkowo zakresu `import` (403 bez niego). */
+  wymagaImportuDlaOrigin?: boolean;
 };
 
 const luzna = z.looseObject({});
@@ -89,17 +91,17 @@ export const ENDPOINTS: Endpoint[] = [
   { metoda: "put", sciezka: "/days/{date}", zakresy: ["write"], opis: "Zapis notatki dnia (nadpisuje podane pola; konto albo sesja backtestu wskazane w ciele).", parametrySciezki: ["date"], cialo: DzienZapisSchema, odpowiedz: luzna, bledy: { 409: "Dzien ma trade'y, wiec nie moze byc oznaczony jako bez transakcji." } },
 
   { metoda: "get", sciezka: "/notes", zakresy: ["read"], opis: "Lista notatek (bez tresci); filtry kind, slug, externalRef, day, tradeId.", query: NotatkiListaQuery, odpowiedz: luzna },
-  { metoda: "post", sciezka: "/notes", zakresy: ["write"], opis: "Tworzy notatke. Link [[Tytul]] do nieistniejacej notatki jest dozwolony.", cialo: NotatkaUtworzSchema, odpowiedz: NotatkaOdpowiedz, status: 201, bledy: { 409: "Tytul, slug albo externalRef zajety (odpowiedz wskazuje istniejaca notatke)." } },
+  { metoda: "post", sciezka: "/notes", zakresy: ["write"], wymagaImportuDlaOrigin: true, opis: "Tworzy notatke. Link [[Tytul]] do nieistniejacej notatki jest dozwolony.", cialo: NotatkaUtworzSchema, odpowiedz: NotatkaOdpowiedz, status: 201, bledy: { 409: "Tytul, slug albo externalRef zajety (odpowiedz wskazuje istniejaca notatke)." } },
   { metoda: "get", sciezka: "/notes/{id}", zakresy: ["read"], opis: "Notatka z trescia, rewizja (rev, tez w ETag), linkami i backlinkami.", parametrySciezki: ["id"], odpowiedz: luzna },
   { metoda: "patch", sciezka: "/notes/{id}", zakresy: ["write"], opis: "Zmiana notatki z optymistyczna wspolbieznoscia: wymagany naglowek If-Match: <rev>. Brak kasowania; archived=true odklada do archiwum.", parametrySciezki: ["id"], cialo: NotatkaZmienSchema, odpowiedz: NotatkaOdpowiedz, ifMatch: true, bledy: { 409: "Nieaktualny rev; odpowiedz zawiera biezaca tresc.", 428: "Brak naglowka If-Match." } },
 
   { metoda: "get", sciezka: "/search", zakresy: ["read"], opis: "Wyszukiwanie w notatkach, slowach uzytkownika i trade'ach (bez polskich znakow, rozmyte).", query: SzukajQuery, odpowiedz: luzna },
 
   { metoda: "get", sciezka: "/rules", zakresy: ["read"], opis: "Reguly ze statusem wyliczonym z wersji i rulesVersion (numer zestawu).", query: ReguliListaQuery, odpowiedz: luzna },
-  { metoda: "post", sciezka: "/rules/proposals", zakresy: ["propose"], opis: "Propozycja reguly lub nowej wersji. Zatwierdza wylacznie uzytkownik w aplikacji; zakresu approve nie ma.", cialo: PropozycjaReguly, odpowiedz: luzna, status: 201, bledy: { 409: "Regula ma juz oczekujaca propozycje.", 422: "Hipoteza ponizej progu n (tylko propozycje AI)." } },
+  { metoda: "post", sciezka: "/rules/proposals", zakresy: ["propose"], wymagaImportuDlaOrigin: true, opis: "Propozycja reguly lub nowej wersji. Zatwierdza wylacznie uzytkownik w aplikacji; zakresu approve nie ma.", cialo: PropozycjaReguly, odpowiedz: luzna, status: 201, bledy: { 409: "Regula ma juz oczekujaca propozycje.", 422: "Hipoteza ponizej progu n (tylko propozycje AI)." } },
 
   { metoda: "get", sciezka: "/hypotheses", zakresy: ["read"], opis: "Hipotezy z n (n_imported + zamkniete trade'y podpiete), progiem i faza (zbieranie | do oceny).", odpowiedz: luzna },
-  { metoda: "post", sciezka: "/hypotheses", zakresy: ["write"], opis: "Zaklada hipoteze (notatka kind=hypothesis + wiersz hypotheses, decyzja 'active').", cialo: HipotezaUtworzSchema, odpowiedz: luzna, status: 201 },
+  { metoda: "post", sciezka: "/hypotheses", zakresy: ["write"], wymagaImportuDlaOrigin: true, opis: "Zaklada hipoteze (notatka kind=hypothesis + wiersz hypotheses, decyzja 'active').", cialo: HipotezaUtworzSchema, odpowiedz: luzna, status: 201 },
 
   { metoda: "get", sciezka: "/user-words", zakresy: ["read"], opis: "Slowa uzytkownika doslownie (text + sha256 + interpretacja AI osobno).", query: SlowaListaQuery, odpowiedz: luzna },
   { metoda: "post", sciezka: "/user-words", zakresy: ["write"], opis: "Zapis slow uzytkownika bajt w bajt. Klient podaje sha256 z bajtow UTF-8; niezgodnosc = 400. Ponowne wyslanie tego samego wpisu jest idempotentne.", cialo: SlowaUtworzSchema, odpowiedz: SlowaOdpowiedz, status: 201, bledy: { 200: "Taki wpis juz istnieje (zwrocony bez duplikatu)." } },
@@ -146,6 +148,7 @@ export function zbudujOpenApi(): Record<string, unknown> {
       summary: e.opis,
       security: e.zakresy === null ? [] : [{ bearer: [] }],
       "x-scopes": e.zakresy ?? [],
+      ...(e.wymagaImportuDlaOrigin ? { "x-import-scope-required-for-origins": ["vault-import", "mentor"] } : {}),
       parameters: parametry,
       responses: {
         [String(e.status ?? 200)]: {
@@ -186,7 +189,7 @@ export function zbudujOpenApi(): Record<string, unknown> {
       title: "Dziennik tradingowy API v2",
       version: WERSJA_KONTRAKTU,
       description:
-        "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose; zakresu zatwierdzania nie ma.",
+        "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); zakresu zatwierdzania nie ma.",
     },
     servers: [{ url: "/api/v2" }],
     paths,

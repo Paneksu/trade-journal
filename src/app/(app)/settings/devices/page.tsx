@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { OdrzucOczekujacePrzycisk, UniewaznPrzycisk } from "@/components/settings/devices";
+import { OdrzucOczekujacePrzycisk, TokenImportuPrzycisk, UniewaznPrzycisk } from "@/components/settings/devices";
 import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { listaTokenow, oczekujaceKody, DNI_NIEAKTYWNOSCI } from "@/lib/api-v2/urzadzenia";
 import { requireSession } from "@/lib/auth/guard";
@@ -29,6 +29,12 @@ export default async function DevicesSettingsPage() {
           </Link>
         }
       >
+        <div className="border-b border-line px-4 py-3">
+          <TokenImportuPrzycisk />
+          <p className="mt-1 text-xs text-faint">
+            Token importu to jedyny sposób na zakres »import« (pochodzenie vault-import i mentor). Urządzenia go nie dostają.
+          </p>
+        </div>
         {oczekujace.length > 0 && (
           <p className="border-b border-line px-4 py-2 text-xs text-muted">
             Czeka na decyzję: {oczekujace.length} {oczekujace.length === 1 ? "żądanie" : "żądań"} (adresy:{" "}

@@ -110,8 +110,9 @@ CREATE TABLE api_tokens (
   name text NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
   prefix text NOT NULL UNIQUE CHECK (prefix ~ '^[a-z0-9]{8}$'),
   token_sha256 text NOT NULL UNIQUE CHECK (token_sha256 ~ '^[0-9a-f]{64}$'),
-  scopes text[] NOT NULL CHECK (cardinality(scopes) BETWEEN 1 AND 3
-                                AND scopes <@ ARRAY['read','write','propose']),  -- zakresu "approve" nie ma
+  scopes text[] NOT NULL CHECK (cardinality(scopes) BETWEEN 1 AND 4
+                                AND scopes <@ ARRAY['read','write','propose','import']),  -- zakresu "approve" nie ma;
+                                -- "import" (15.10.2026) tylko z UI, nigdy z device_codes
   created_via text NOT NULL CHECK (created_via IN ('device_code','ui')),
   created_at timestamptz NOT NULL DEFAULT now(),
   last_used_at timestamptz, last_used_ip text,     -- zapis najwyzej raz na minute

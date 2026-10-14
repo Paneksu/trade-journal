@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button, Checkbox, ErrorMessage, Input, Label, SuccessMessage } from "@/components/ui/base";
-import { odrzucOczekujace, uniewaznUrzadzenie, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
+import { odrzucOczekujace, uniewaznUrzadzenie, utworzTokenImportuAkcja, type TokenImportuState, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
 import { czyInnyAdres } from "@/lib/api-v2/adres";
 import { dateTime } from "@/lib/format";
 
@@ -144,5 +144,34 @@ export function OdrzucOczekujacePrzycisk() {
       </Button>
       {info && <span className="text-xs text-muted">{info}</span>}
     </span>
+  );
+}
+
+export function TokenImportuPrzycisk() {
+  const [pending, start] = useTransition();
+  const [stan, ustawStan] = useState<TokenImportuState>({});
+  return (
+    <div className="space-y-2">
+      <Button
+        type="button"
+        variant="secondary"
+        size="s"
+        disabled={pending}
+        onClick={() => {
+          if (!window.confirm("Utworzyć token importu? Ma zakres »import« (pochodzenie vault-import i mentor), ważny 24 godziny. Pokażę go tylko raz.")) return;
+          start(async () => ustawStan(await utworzTokenImportuAkcja()));
+        }}
+      >
+        Utwórz token importu (24 h)
+      </Button>
+      {stan.error && <ErrorMessage>{stan.error}</ErrorMessage>}
+      {stan.token && (
+        <div className="space-y-1 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 p-3 text-sm">
+          <p className="text-text">Skopiuj token teraz. Nie pokażę go drugi raz.</p>
+          <code className="block break-all font-mono text-xs text-text" data-testid="token-importu">{stan.token}</code>
+          <p className="text-xs text-faint">Ważny do {dateTime(stan.expiresAt)}. Zakresy: read, write, propose, import.</p>
+        </div>
+      )}
+    </div>
   );
 }

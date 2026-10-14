@@ -649,14 +649,20 @@ if (!TEST_URL) {
         expect((await blad(wstaw(["read", "approve"], "zzzz0001"))).constraint_name).toBe("api_tokens_scopes");
         expect((await blad(wstaw(["approve"], "zzzz0002"))).constraint_name).toBe("api_tokens_scopes");
         expect((await blad(wstaw([], "zzzz0003"))).constraint_name).toBe("api_tokens_scopes");
-        expect((await blad(wstaw(["read", "write", "propose", "read"], "zzzz0004"))).constraint_name).toBe("api_tokens_scopes");
+        expect((await blad(wstaw(["read", "write", "propose", "import", "read"], "zzzz0004"))).constraint_name).toBe("api_tokens_scopes");
         await wstaw(["read", "write", "propose"], "zzzz0005");
+        // «import» (Slowa uzytkownika 15.10.2026) jest czwartym, dodatkowym zakresem tokenu
+        await wstaw(["read", "write", "propose", "import"], "zzzz0006");
 
         const kod = (u: string) =>
           sql`INSERT INTO device_codes (device_code_sha256, user_code, client_name, requested_scopes, expires_at)
               VALUES (${sha256Node(u)}, ${u}, 'tj', ARRAY['read'], now() + interval '10 minutes')`;
         expect((await blad(kod("KTWM-4HQP"))).constraint_name).toBe("device_codes_user_code");
         await kod("KTWM-HQPB");
+        // logowanie urzadzenia nigdy nie zna zakresu import: CHECK jest drugim zabezpieczeniem obok API
+        const zImportem = await blad(sql`INSERT INTO device_codes (device_code_sha256, user_code, client_name, requested_scopes, expires_at)
+          VALUES (${sha256Node("import-kod")}, 'BBBB-DDDD', 'tj', ARRAY['read', 'import'], now() + interval '10 minutes')`);
+        expect(zImportem.constraint_name).toBe("device_codes_requested_scopes");
         // granted_scopes bez approved_at oraz consumed bez tokenu odpadaja
         const e1 = await blad(sql`UPDATE device_codes SET granted_scopes = ARRAY['read'] WHERE user_code = 'KTWM-HQPB'`);
         expect(e1.constraint_name).toBe("device_codes_granted_when_approved");

@@ -22,7 +22,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
     await zapewnijPodstawy(sql);
     rw = await nowyToken(sql, ["read", "write"]);
     ro = await nowyToken(sql, ["read"]);
-    pr = await nowyToken(sql, ["read", "write", "propose"]);
+    pr = await nowyToken(sql, ["read", "write", "propose", "import"]);
   });
   afterAll(async () => {
     await sprzatnijPoTokenach(sql, [rw.id, ro.id, pr.id]);

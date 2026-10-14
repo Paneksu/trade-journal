@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SCOPES } from "./scopes";
+import { SCOPES, SCOPES_URZADZEN } from "./scopes";
 import {
   normalizujKodUzytkownika,
   REGEX_TOKEN_V2,
@@ -47,8 +47,9 @@ describe("token v2: tj_<prefix>_<sekret>", () => {
     expect(tokenV2ZNaglowka(null)).toBeNull();
   });
 
-  it("zakresy: read, write, propose, a zatwierdzania nie ma", () => {
-    expect([...SCOPES]).toEqual(["read", "write", "propose"]);
+  it("zakresy: read, write, propose, import, a zatwierdzania nie ma; urządzenia nie znają import", () => {
+    expect([...SCOPES]).toEqual(["read", "write", "propose", "import"]);
+    expect([...SCOPES_URZADZEN]).toEqual(["read", "write", "propose"]);
     expect(SCOPES as readonly string[]).not.toContain("approve");
   });
 

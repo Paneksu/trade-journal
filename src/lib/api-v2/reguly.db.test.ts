@@ -25,7 +25,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("reguły, hipotezy i zakaz zatwierdzania przez 
   beforeAll(async () => {
     sql = polacz();
     await zapewnijPodstawy(sql);
-    pelny = await nowyToken(sql, ["read", "write", "propose"]);
+    pelny = await nowyToken(sql, ["read", "write", "propose", "import"]);
     bezPropose = await nowyToken(sql, ["read", "write"]);
     ro = await nowyToken(sql, ["read"]);
   });

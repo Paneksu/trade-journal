@@ -48,8 +48,11 @@ CREATE TABLE "api_tokens" (
   CONSTRAINT "api_tokens_prefix" CHECK ("prefix" ~ '^[a-z0-9]{8}$'),
   CONSTRAINT "api_tokens_sha256" CHECK ("token_sha256" ~ '^[0-9a-f]{64}$'),
   -- Zakresu "approve" nie ma i nie moze byc dopisany bez migracji (ADR-030, warstwa 1).
+  -- Zakres "import" (Slowa uzytkownika 15.10.2026: «Osobny zakres „import”») pozwala deklarowac
+  -- pochodzenie vault-import i mentor. Nadaje go TYLKO uzytkownik recznie w UI (created_via = 'ui');
+  -- device_codes.requested_scopes go nie zna (nizej), wiec logowanie urzadzenia nigdy go nie da.
   CONSTRAINT "api_tokens_scopes" CHECK (
-    cardinality("scopes") BETWEEN 1 AND 3 AND "scopes" <@ ARRAY['read', 'write', 'propose']
+    cardinality("scopes") BETWEEN 1 AND 4 AND "scopes" <@ ARRAY['read', 'write', 'propose', 'import']
   ),
   CONSTRAINT "api_tokens_created_via" CHECK ("created_via" IN ('device_code', 'ui')),
   CONSTRAINT "api_tokens_prefix_uq" UNIQUE ("prefix"),
@@ -81,6 +84,7 @@ CREATE TABLE "device_codes" (
     "user_code" ~ '^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$'
   ),
   CONSTRAINT "device_codes_client_name" CHECK (length("client_name") BETWEEN 1 AND 80),
+  -- Celowo BEZ 'import': CHECK jest drugim zabezpieczeniem obok walidacji w API.
   CONSTRAINT "device_codes_requested_scopes" CHECK ("requested_scopes" <@ ARRAY['read', 'write', 'propose']),
   CONSTRAINT "device_codes_granted_scopes" CHECK ("granted_scopes" IS NULL OR "granted_scopes" <@ "requested_scopes"),
   CONSTRAINT "device_codes_decision" CHECK ("approved_at" IS NULL OR "denied_at" IS NULL),

@@ -67,7 +67,7 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
 
   it("zakres approve nie istnieje w zadnym wpisie", () => {
     const wszystkie = new Set(ENDPOINTS.flatMap((e) => e.zakresy ?? []));
-    expect([...wszystkie].sort()).toEqual(["propose", "read", "write"]);
+    expect([...wszystkie].sort()).toEqual(["propose", "read", "write"]); // import to zakres dodatkowy, nie zakres trasy
     expect(JSON.stringify(zbudujOpenApi())).not.toMatch(/"approve"/);
   });
 
@@ -116,6 +116,32 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
     expect(doc.paths["/device/start"].post.responses["403"]).toBeDefined();
     // a nie 400 «slow_down»: kod HTTP w kontrakcie zgadza się z handlerem
     expect(String((ENDPOINTS.find((e) => e.sciezka === "/device/token")?.bledy ?? {})[400])).not.toContain("slow_down");
+  });
+
+  it("trasy oznaczone w kontrakcie jako wymagające import wołają wymagajImportuDlaOrigin (i tylko one)", () => {
+    const oznaczone = new Set(ENDPOINTS.filter((e) => e.wymagaImportuDlaOrigin).map((e) => katalogTrasy(e.sciezka)));
+    expect([...oznaczone].sort()).toEqual(["hypotheses", "notes", "rules/proposals"]);
+    const wolajace = new Set<string>();
+    const idz = (katalog: string) => {
+      for (const nazwa of readdirSync(katalog)) {
+        const pelna = path.join(katalog, nazwa);
+        if (statSync(pelna).isDirectory()) idz(pelna);
+        else if (nazwa === "route.ts" && /wymagajImportuDlaOrigin\(/.test(readFileSync(pelna, "utf8"))) {
+          wolajace.add(path.relative(TRASY, path.dirname(pelna)).replaceAll("\\", "/"));
+        }
+      }
+    };
+    idz(TRASY);
+    expect([...wolajace].sort()).toEqual([...oznaczone].sort());
+    const doc = JSON.stringify(zbudujOpenApi());
+    expect(doc).toContain("x-import-scope-required-for-origins");
+  });
+
+  it("device/start w kontrakcie nie oferuje zakresu import", () => {
+    const e = ENDPOINTS.find((x) => x.sciezka === "/device/start");
+    const doc = zbudujOpenApi() as { paths: Record<string, { post: { requestBody: { content: { "application/json": { schema: { properties: { scopes: { items: { enum: string[] } } } } } } } } }> };
+    expect(e).toBeDefined();
+    expect(doc.paths["/device/start"].post.requestBody.content["application/json"].schema.properties.scopes.items.enum).toEqual(["read", "write", "propose"]);
   });
 
   it("PATCH notatki wymaga If-Match i opisuje 409 oraz 428", () => {

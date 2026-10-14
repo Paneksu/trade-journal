@@ -3,7 +3,7 @@
   "info": {
     "title": "Dziennik tradingowy API v2",
     "version": "2.0.0",
-    "description": "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose; zakresu zatwierdzania nie ma."
+    "description": "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); zakresu zatwierdzania nie ma."
   },
   "servers": [
     {
@@ -1312,6 +1312,10 @@
         "x-scopes": [
           "write"
         ],
+        "x-import-scope-required-for-origins": [
+          "vault-import",
+          "mentor"
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -2030,6 +2034,10 @@
         "x-scopes": [
           "propose"
         ],
+        "x-import-scope-required-for-origins": [
+          "vault-import",
+          "mentor"
+        ],
         "parameters": [],
         "responses": {
           "201": {
@@ -2224,6 +2232,10 @@
         ],
         "x-scopes": [
           "write"
+        ],
+        "x-import-scope-required-for-origins": [
+          "vault-import",
+          "mentor"
         ],
         "parameters": [],
         "responses": {

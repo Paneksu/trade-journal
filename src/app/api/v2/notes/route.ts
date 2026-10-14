@@ -2,7 +2,7 @@ import { NotatkaUtworzSchema, NotatkiListaQuery } from "@/lib/api-v2/contract/v2
 import { blad, odpowiedz } from "@/lib/api-v2/http";
 import { listaNotatek, odeslanieDlaKindu, utworzNotatke, zNotatki } from "@/lib/api-v2/notatki";
 import { wczytajCialo, wczytajQuery } from "@/lib/api-v2/walidacja";
-import { withApi } from "@/lib/api-v2/with-api";
+import { withApi, wymagajImportuDlaOrigin } from "@/lib/api-v2/with-api";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,9 @@ export const GET = withApi({ scopes: ["read"] }, async (request) => {
 export const POST = withApi({ scopes: ["write"] }, async (request, api) => {
   const w = await wczytajCialo(request, NotatkaUtworzSchema, "Nieprawidłowa notatka");
   if (!w.ok) return w.odpowiedz;
+
+  const bezImportu = wymagajImportuDlaOrigin(api, w.dane.origin);
+  if (bezImportu) return bezImportu;
 
   const odeslanie = odeslanieDlaKindu(w.dane.kind);
   if (odeslanie) {
