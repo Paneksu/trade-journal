@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 
 import { odrzucKod, uniewaznToken, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
@@ -11,9 +12,11 @@ import { requireSession } from "@/lib/auth/guard";
  * urzadzenia NIE nadaje nic ponad to, o co urzadzenie poprosilo, a zakresu
  * "zatwierdzaj" nie ma - agent z tokenem nigdy nie zatwierdzi reguly.
  *
- * TODO(faza 1, po scaleniu): tryb sudo (ponowne haslo + TOTP) przed zatwierdzeniem
- * urzadzenia i wpisy w `auth_events` (device_approved / device_denied / token_revoked).
- * Faza 1 jest na osobnej galezi, wiec tutaj tego nie ma.
+ * !!! WARUNEK SCALENIA / PUBLICZNEGO WYSTAWIENIA (krytyczne z audytu):
+ * TODO(faza 1): tryb sudo (ponowne haslo + TOTP) przed zatwierdzeniem urzadzenia
+ * (`zatwierdzUrzadzenie`) i wpisy w `auth_events` (device_approved / device_denied /
+ * token_revoked). Faza 1 jest na osobnej galezi, wiec tutaj tego nie ma. Do czasu sudo
+ * `device/start` mozna zamknac zmienna DEVICE_LOGIN_DISABLED=1.
  */
 
 export type KodWidok = {
@@ -26,7 +29,24 @@ export type KodWidok = {
   expiresAt: string;
 };
 
-export type PolaczState = { kod?: KodWidok; error?: string; ok?: boolean; wynik?: string };
+export type PolaczState = {
+  kod?: KodWidok;
+  /** Adres przegladarki, w ktorej siedzi uzytkownik; do porownania z adresem urzadzenia. */
+  ipPrzegladarki?: string;
+  error?: string;
+  ok?: boolean;
+  wynik?: string;
+};
+
+async function ipPrzegladarki(): Promise<string> {
+  const h = await headers();
+  const xff = h.get("x-forwarded-for");
+  if (xff) {
+    const wpisy = xff.split(",").map((x) => x.trim()).filter(Boolean);
+    if (wpisy.length > 0) return wpisy[wpisy.length - 1];
+  }
+  return h.get("x-real-ip")?.trim() || "nieznany";
+}
 
 /** Zgadywanie kodow: osiem blednych prob w 10 minut blokuje to okno (jak logowanie). */
 const KLUCZ_PROB = "device-approve";
@@ -46,6 +66,7 @@ export async function znajdzKod(_p: PolaczState, d: FormData): Promise<PolaczSta
   clearAttempts(KLUCZ_PROB);
   const k = wynik.kod;
   return {
+    ipPrzegladarki: await ipPrzegladarki(),
     kod: {
       id: k.id,
       userCode: k.userCode,

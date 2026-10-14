@@ -42,9 +42,16 @@ export type PersistResult =
   | { ok: true; id: number; podglad?: PodgladZapisu }
   | { ok: false; error: string; fieldErrors?: Record<string, string> };
 
+export type PersistTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export type PersistOpcje = {
   /** Suchy bieg: cala walidacja i liczenie, zero zapisow (ADR-026). */
   dryRun?: boolean;
+  /**
+   * Transakcja z bramy API (ADR-030: kazdy zapis v2 z tj.actor). Gdy podana, zapis
+   * idzie w niej zamiast we wlasnej; formularz UI jej nie podaje.
+   */
+  tx?: PersistTx;
 };
 
 export async function persistTrade(
@@ -243,7 +250,7 @@ export async function persistTrade(
   /* Zapis calego trade'a - wiersz, tagi i wyjscia czastkowe - w jednej
      transakcji. `trades.pnl` i zawartosc `trade_exits` musza sie zgadzac
      zawsze; rozjazd miedzy nimi byłby cichym klamstwem w statystykach. */
-  const savedId = await db.transaction(async (tx) => {
+  const zapisz = async (tx: PersistTx): Promise<number> => {
     let sid: number;
     if (szkic.id) {
       await tx.update(trades).set(row).where(eq(trades.id, szkic.id));
@@ -283,7 +290,8 @@ export async function persistTrade(
     }
 
     return sid;
-  });
+  };
+  const savedId = opcje.tx ? await zapisz(opcje.tx) : await db.transaction(zapisz);
 
   return { ok: true, id: savedId };
 }

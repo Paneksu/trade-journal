@@ -8,5 +8,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // Testy na wspolnej, lokalnej bazie (npm run test:db) dziela stan globalny (limit zadan
+    // urzadzen, tokeny, kolejki), wiec pliki idą po kolei. Calosc i tak trwa kilka sekund.
+    fileParallelism: false,
   },
 });

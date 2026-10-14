@@ -8,6 +8,8 @@ import { bladPliku, deleteScreenshot } from "@/lib/screenshots";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { policzZrzuty, wgrajZrzuty, type OriginZrzutu } from "@/lib/trades/screenshots-db";
 
+import type { Zapis } from "./zapis";
+
 /**
  * Zrzuty z API (ADR-026): ZASTEPUJA wszystkie zrzuty tego samego pochodzenia
  * (`origin`) na tym trade'cie, a zrzutow recznych (`manual`) i cudzego
@@ -32,6 +34,7 @@ export async function zastapZrzuty(
   origin: OriginAPI,
   pliki: File[],
   interwaly: string[],
+  zapis: Zapis,
 ): Promise<WynikZrzutow> {
   if (pliki.length === 0) {
     return { ok: false, status: 400, error: "Brak plików. Wyślij pola »shot« (jedno na zrzut) w multipart/form-data." };
@@ -81,6 +84,7 @@ export async function zastapZrzuty(
     tradeId,
     sparujZInterwalami(pliki, interwaly).map((p) => ({ file: p.plik, interval: p.interval })),
     origin,
+    zapis,
   );
   if (bladZapisu) {
     // Czesc nowych plikow mogla juz wejsc; ponowienie zapytania zastapi je razem ze starymi.
@@ -93,7 +97,7 @@ export async function zastapZrzuty(
 
   // Dopiero po udanym zapisie nowych kasujemy stare (wiersze i pliki).
   if (stare.length > 0) {
-    await db.delete(screenshots).where(inArray(screenshots.id, stare.map((s) => s.id)));
+    await zapis((tx) => tx.delete(screenshots).where(inArray(screenshots.id, stare.map((s) => s.id))));
     for (const s of stare) await deleteScreenshot(s.file, s.thumbnail);
   }
 

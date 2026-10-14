@@ -11,6 +11,6 @@ type Ctx = { params: Promise<{ id: string }> };
  * wyslaniu, korekta = user_override); do czasu migracji 0020 obowiazuje zasada
  * z ADR-028 - jedna ocena na podstawe, ponowne wyslanie podmienia.
  */
-export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, _api, { params }) =>
-  obsluzOcene(request, (await params).id),
+export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { params }) =>
+  obsluzOcene(request, (await params).id, api.zapis),
 );

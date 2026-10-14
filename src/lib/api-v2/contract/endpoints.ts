@@ -107,8 +107,8 @@ export const ENDPOINTS: Endpoint[] = [
   { metoda: "put", sciezka: "/user-words/{id}", zakresy: ["write"], opis: "ZAWSZE 409: slowa uzytkownika sa niezmienne, poprawia je uzytkownik w aplikacji.", parametrySciezki: ["id"], odpowiedz: BladOdpowiedz, status: 409 },
   { metoda: "put", sciezka: "/user-words/{id}/interpretation", zakresy: ["write"], opis: "Jedyna zmienna czesc slow: interpretacja AI, ustawiana raz (poprawke zapisuje uzytkownik w aplikacji).", parametrySciezki: ["id"], cialo: InterpretacjaSchema, odpowiedz: SlowaOdpowiedz, bledy: { 409: "Interpretacja jest juz ustawiona." } },
 
-  { metoda: "post", sciezka: "/device/start", zakresy: null, opis: "Poczatek logowania kodem urzadzenia; zwraca user_code do przepisania w aplikacji. Bez tokenu, limit 10 na godzine na adres.", cialo: DeviceStartSchema, odpowiedz: DeviceStartOdpowiedz },
-  { metoda: "post", sciezka: "/device/token", zakresy: null, opis: "Odpytywanie o token co 5 s; token wraca dokladnie raz. Bez tokenu.", cialo: DeviceTokenSchema, odpowiedz: DeviceTokenOdpowiedz, bledy: { 400: "authorization_pending | slow_down | expired_token | invalid_grant", 403: "access_denied (uzytkownik odrzucil)" } },
+  { metoda: "post", sciezka: "/device/start", zakresy: null, opis: "Poczatek logowania kodem urzadzenia; zwraca user_code do przepisania w aplikacji. Bez tokenu, limit 10 na godzine na adres.", cialo: DeviceStartSchema, odpowiedz: DeviceStartOdpowiedz, bledy: { 403: "device_login_disabled (przelacznik DEVICE_LOGIN_DISABLED=1)", 429: "limit startow na adres albo too_many_pending (20 niezatwierdzonych zadan)" } },
+  { metoda: "post", sciezka: "/device/token", zakresy: null, opis: "Odpytywanie o token co 5 s; token wraca dokladnie raz. Bez tokenu.", cialo: DeviceTokenSchema, odpowiedz: DeviceTokenOdpowiedz, bledy: { 400: "authorization_pending | expired_token | invalid_grant", 403: "access_denied (uzytkownik odrzucil)", 429: "slow_down (odpytywanie czesciej niz co 5 s) albo limit zapytan na adres" } },
 ];
 
 /** Sciezka OpenAPI -> sciezka pliku trasy Next (`/notes/{id}` -> `notes/[id]`). */

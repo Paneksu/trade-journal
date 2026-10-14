@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { czyImportZSejfu, MIN_PROG_N_API, originEfektywny } from "@/lib/domain/reguly";
+
 import { SCOPES } from "../scopes";
 import { czas } from "./schemas";
 
@@ -207,6 +209,17 @@ export const ReguliListaQuery = z.strictObject({
   status: StatusRegulyFiltr.default("all"),
 });
 
+/**
+ * Dowod propozycji mentora (scisly): film, znacznik czasu i doslowny cytat, wszystkie
+ * niepuste. Propozycja mentora nie ma progu n, wiec dowod jest jedyna podstawa
+ * (Slowa uzytkownika 15.10.2026: «Walidacja danych»).
+ */
+export const DowodMentora = z.strictObject({
+  video: z.string().trim().min(1).max(200),
+  t: z.union([z.number().int().min(0), z.string().trim().min(1).max(40)]),
+  quote: z.string().trim().min(1).max(4_000),
+});
+
 export const PropozycjaReguly = z
   .strictObject({
     /** Istniejaca regula, do ktorej dokladamy nowa wersje; brak = nowa regula. */
@@ -231,7 +244,11 @@ export const PropozycjaReguly = z
     if (p.ruleCode === undefined && p.title === undefined) {
       ctx.addIssue({ code: "custom", path: ["title"], message: "nowa reguła (bez ruleCode) wymaga title" });
     }
-    if (p.origin === "ai") {
+    const origin = originEfektywny(p.origin, p.externalRef);
+    if (p.vaultStatus !== undefined && !czyImportZSejfu(p.origin, p.externalRef)) {
+      ctx.addIssue({ code: "custom", path: ["vaultStatus"], message: "vaultStatus wolno podać tylko przy origin »vault-import« z externalRef »vault:…«" });
+    }
+    if (origin === "ai") {
       for (const pole of ["counterargument", "evidence", "hypothesisId"] as const) {
         if (p[pole] === undefined) {
           ctx.addIssue({
@@ -242,10 +259,23 @@ export const PropozycjaReguly = z
         }
       }
     }
-    if (p.origin === "mentor" && p.evidence === undefined) {
-      ctx.addIssue({ code: "custom", path: ["evidence"], message: "propozycja mentora wymaga evidence: cytatu z filmu (video, t=)" });
+    if (origin === "mentor") {
+      if (p.evidence === undefined) {
+        ctx.addIssue({ code: "custom", path: ["evidence"], message: "propozycja mentora wymaga evidence: {video, t, quote}, wszystkie niepuste" });
+      } else {
+        const dowod = DowodMentora.safeParse(p.evidence);
+        if (!dowod.success) {
+          for (const i of dowod.error.issues) {
+            ctx.addIssue({
+              code: "custom",
+              path: ["evidence", ...i.path],
+              message: i.code === "unrecognized_keys" ? "evidence mentora ma tylko pola video, t, quote" : i.message,
+            });
+          }
+        }
+      }
     }
-    if (p.origin !== "ai" && p.hypothesisId !== undefined) {
+    if (origin !== "ai" && p.hypothesisId !== undefined) {
       ctx.addIssue({
         code: "custom",
         path: ["hypothesisId"],
@@ -254,17 +284,34 @@ export const PropozycjaReguly = z
     }
   });
 
-export const HipotezaUtworzSchema = z.strictObject({
+export const HipotezaUtworzSchema = z
+  .strictObject({
   title: z.string().min(1).max(200),
   bodyMd: z.string().max(200_000).default(""),
-  progN: z.number().int().min(1).max(10_000).default(20),
+  /** Nie mniej niz 20 przez API; nizszy prog ustawia tylko uzytkownik w aplikacji (15.10.2026). */
+  progN: z
+    .number()
+    .int()
+    .min(MIN_PROG_N_API, { message: `próg n przez API nie może być niższy niż ${MIN_PROG_N_API}; niższy ustawia tylko użytkownik w aplikacji` })
+    .max(10_000)
+    .default(MIN_PROG_N_API),
   /** Progi statusu ZADEKLAROWANE Z GORY (dolna granica Wilsona itp.). */
   thresholds: z.record(z.string(), z.unknown()).default({}),
   /** n z sejfu sprzed aplikacji. */
   nImported: z.number().int().min(0).max(1_000_000).default(0),
   origin: OriginApiSchema.default("ai"),
   externalRef: z.string().min(1).max(200).optional(),
-});
+  })
+  .superRefine((h, ctx) => {
+    if (h.nImported > 0 && !czyImportZSejfu(h.origin, h.externalRef)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["nImported"],
+        message:
+          "nImported (n z sejfu sprzed aplikacji) przyjmuje się tylko przy origin »vault-import« z externalRef »vault:…«; n zbierają trade'y podpięte do hipotezy",
+      });
+    }
+  });
 
 /* --- Dzien ---------------------------------------------------------------- */
 

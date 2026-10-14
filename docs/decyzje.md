@@ -1649,3 +1649,6 @@ Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `doc
 - **Kody własne baz**: `TJ409` (niezmienność), `TJ403` (zatwierdzenie spoza UI), `TJ422` (próg n); API mapuje je na 409/403/422 bez parsowania komunikatu.
 - **Werdykt z `as_of`** stanie się niezmienny dopiero w migracji 0020 (faza 2b); do tego czasu `reviews` zachowuje się jak w ADR-028.
 - **TODO po scaleniu z fazą 1**: sudo + TOTP przed zatwierdzeniem urządzenia, wpisy w `auth_events`, FK `auth_events.token_id`.
+- **Poprawki po audycie (15.10.2026), decyzje użytkownika:** «Walidacja danych» (próg n: `nImported` tylko z `vault:`, `progN` przez API ≥ 20, ścisłe `evidence` mentora, `vault-import` bez `vault:` jak `ai`) oraz «Wymóg zostaje, poprawiamy» (wszystkie zapisy v2 z `tj.actor`; `persistTrade` dostaje opcjonalny `tx`).
+- **Phishing kodem urządzenia:** lista bez kodów, globalny limit 20 żądań, sprzątanie po 10 min, ostrzeżenie o innym IP, osobny przełącznik `DEVICE_LOGIN_DISABLED`. Sudo przy zatwierdzaniu zostaje WARUNKIEM scalenia/publicznego wystawienia (faza 1).
+- **Wspólna funkcja tokenu v2** (`sprawdzTokenV2`) obsługuje `withApi` i `withIngest`: `API_V2_DISABLED=1` odcina też `/api/ingest/**` dla tokenów v2.

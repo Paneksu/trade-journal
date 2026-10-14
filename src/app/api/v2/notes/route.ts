@@ -1,6 +1,6 @@
 import { NotatkaUtworzSchema, NotatkiListaQuery } from "@/lib/api-v2/contract/v2";
 import { blad, odpowiedz } from "@/lib/api-v2/http";
-import { listaNotatek, utworzNotatke, zNotatki } from "@/lib/api-v2/notatki";
+import { listaNotatek, odeslanieDlaKindu, utworzNotatke, zNotatki } from "@/lib/api-v2/notatki";
 import { wczytajCialo, wczytajQuery } from "@/lib/api-v2/walidacja";
 import { withApi } from "@/lib/api-v2/with-api";
 import { db } from "@/lib/db";
@@ -18,6 +18,11 @@ export const GET = withApi({ scopes: ["read"] }, async (request) => {
 export const POST = withApi({ scopes: ["write"] }, async (request, api) => {
   const w = await wczytajCialo(request, NotatkaUtworzSchema, "Nieprawidłowa notatka");
   if (!w.ok) return w.odpowiedz;
+
+  const odeslanie = odeslanieDlaKindu(w.dane.kind);
+  if (odeslanie) {
+    return blad(422, "use_dedicated_endpoint", odeslanie.komunikat, { useInstead: odeslanie.sciezka });
+  }
 
   const wynik = await api.zapis((tx) => utworzNotatke(tx, api, w.dane));
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat, wynik.dodatkowe ?? {});

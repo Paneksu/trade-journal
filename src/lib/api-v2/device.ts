@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apiTokens, deviceCodes } from "@/lib/db/schema";
@@ -23,8 +23,12 @@ import {
 
 export const WAZNOSC_KODU_S = 600;
 export const INTERWAL_ODPYTYWANIA_S = 5;
-/** Wiersze starsze niz doba sprzata kolejne `device/start`. */
-const SPRZATANIE_PO = "1 day";
+/**
+ * Globalny limit niewygaslych, nierozstrzygnietych zadan. Kod urzadzenia zyje 10 minut, a
+ * zalew zadan to droga do phishingu kodem (uzytkownik zatwierdza "to, co akurat jest
+ * na liscie"), wiec nadmiar odrzucamy zamiast kolejkowac.
+ */
+export const LIMIT_OCZEKUJACYCH = 20;
 
 export type WynikStartu = {
   deviceCode: string;
@@ -33,12 +37,32 @@ export type WynikStartu = {
   interval: number;
 };
 
+export type WynikStartuLubOdmowa = ({ ok: true } & WynikStartu) | { ok: false; kod: "too_many_pending"; komunikat: string };
+
 export async function rozpocznijUrzadzenie(
   nazwaKlienta: string,
   zakresy: Scope[],
   adresKlienta: string,
-): Promise<WynikStartu> {
-  await db.delete(deviceCodes).where(lt(deviceCodes.createdAt, sql`now() - ${SPRZATANIE_PO}::interval`));
+): Promise<WynikStartuLubOdmowa> {
+  // Sprzatanie po 10 minutach (czas zycia kodu), nie po dobie: wygasle zadania nie maja po co lezec w bazie.
+  await db.delete(deviceCodes).where(lt(deviceCodes.expiresAt, sql`now()`));
+
+  // Limit sprawdzany pod blokada, zeby rownolegle starty nie przekroczyly go razem.
+  const odmowa = await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tj.device.pending'))`);
+    const [w] = await tx
+      .select({ ile: sql<number>`count(*)::int` })
+      .from(deviceCodes)
+      .where(and(isNull(deviceCodes.approvedAt), isNull(deviceCodes.deniedAt), isNull(deviceCodes.consumedAt), gt(deviceCodes.expiresAt, sql`now()`)));
+    return (w?.ile ?? 0) >= LIMIT_OCZEKUJACYCH ? (w?.ile ?? 0) : null;
+  });
+  if (odmowa !== null) {
+    return {
+      ok: false,
+      kod: "too_many_pending",
+      komunikat: `W aplikacji czeka już ${odmowa} niezatwierdzonych żądań logowania urządzeń (limit ${LIMIT_OCZEKUJACYCH}). Poczekaj do 10 minut, aż wygasną, albo odrzuć je na stronie Urządzenia. Jeśli to nie Ty je wysłałeś, ktoś próbuje wyłudzić zatwierdzenie.`,
+    };
+  }
 
   // Kolizja user_code (20^8 mozliwosci) jest praktycznie niemozliwa, ale unikat w bazie
   // jest ostateczny, wiec ponawiamy zamiast zwracac 500.
@@ -54,7 +78,7 @@ export async function rozpocznijUrzadzenie(
         requestedScopes: zakresy,
         expiresAt: sql`now() + ${WAZNOSC_KODU_S} * interval '1 second'`,
       });
-      return { deviceCode, userCode, expiresIn: WAZNOSC_KODU_S, interval: INTERWAL_ODPYTYWANIA_S };
+      return { ok: true, deviceCode, userCode, expiresIn: WAZNOSC_KODU_S, interval: INTERWAL_ODPYTYWANIA_S };
     } catch (e) {
       if (kodBleduBazy(e) === "23505") continue;
       throw e;

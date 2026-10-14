@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { wyczyscLimiter } from "./limiter";
 import { REGEX_TOKEN_V2 } from "./token";
@@ -28,6 +28,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("device code: start, zatwierdzenie, token raz (
     }
     if (nazwy.length > 0) await sql`delete from device_codes where client_name = any(${nazwy})`;
     await sql.end();
+  });
+  // Globalny limit 20 oczekujacych zadan: kazdy test sprzata swoje, zeby nie zjadac limitu nastepnym.
+  afterEach(async () => {
+    await sql`delete from device_codes where client_name = any(${nazwy}) and token_id is null`;
   });
   beforeEach(() => {
     wyczyscLimiter();

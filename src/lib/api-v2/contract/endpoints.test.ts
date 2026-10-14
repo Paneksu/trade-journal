@@ -85,6 +85,39 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
     }
   });
 
+  it("zakresy w rejestrze są identyczne z withApi({ scopes }) w plikach tras (kontrakt nie kłamie o uprawnieniach)", () => {
+    const zPlikow = new Map<string, string[] | null>();
+    const idz = (katalog: string) => {
+      for (const nazwa of readdirSync(katalog)) {
+        const pelna = path.join(katalog, nazwa);
+        if (statSync(pelna).isDirectory()) {
+          idz(pelna);
+        } else if (nazwa === "route.ts") {
+          const zrodlo = readFileSync(pelna, "utf8");
+          const kat = path.relative(TRASY, path.dirname(pelna)).replaceAll("\\", "/");
+          for (const m of zrodlo.matchAll(/^export\s+const\s+(GET|POST|PUT|PATCH)\s*=\s*(withApi|withPublicApi)(?:<[^>]*>)?\(\s*(?:\{\s*scopes:\s*\[([^\]]*)\]|\{\s*nazwa)?/gm)) {
+            const zakresy = m[2] === "withPublicApi" ? null : m[3].split(",").map((x) => x.trim().replace(/["']/g, "")).filter(Boolean);
+            zPlikow.set(`${m[1].toLowerCase()} ${kat}`, zakresy);
+          }
+        }
+      }
+    };
+    idz(TRASY);
+    expect(zPlikow.size).toBe(ENDPOINTS.length);
+    for (const e of ENDPOINTS) {
+      expect(zPlikow.get(`${e.metoda} ${katalogTrasy(e.sciezka)}`), `${e.metoda} ${e.sciezka}`).toEqual(e.zakresy);
+    }
+  });
+
+  it("trasy publiczne dokumentują 429 (limit adresu, slow_down, too_many_pending) w OpenAPI", () => {
+    const doc = zbudujOpenApi() as { paths: Record<string, Record<string, { responses: Record<string, unknown> }>> };
+    expect(doc.paths["/device/token"].post.responses["429"]).toBeDefined();
+    expect(doc.paths["/device/start"].post.responses["429"]).toBeDefined();
+    expect(doc.paths["/device/start"].post.responses["403"]).toBeDefined();
+    // a nie 400 «slow_down»: kod HTTP w kontrakcie zgadza się z handlerem
+    expect(String((ENDPOINTS.find((e) => e.sciezka === "/device/token")?.bledy ?? {})[400])).not.toContain("slow_down");
+  });
+
   it("PATCH notatki wymaga If-Match i opisuje 409 oraz 428", () => {
     const e = ENDPOINTS.find((x) => x.metoda === "patch" && x.sciezka === "/notes/{id}");
     expect(e?.ifMatch).toBe(true);

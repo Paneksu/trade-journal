@@ -7,6 +7,7 @@ import { backtestSessions, instruments } from "@/lib/db/schema";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 
 import type { SesjaSchema } from "./contract/schemas";
+import type { Zapis } from "./zapis";
 
 /**
  * Sesja backtestu albo forward testu z FX Replay (ADR-026, ADR-027). "Utworz
@@ -30,7 +31,7 @@ function kodBleduBazy(e: unknown): string | undefined {
   return x?.code ?? x?.cause?.code;
 }
 
-export async function znajdzLubUtworzSesje(s: z.output<typeof SesjaSchema>): Promise<WynikSesji> {
+export async function znajdzLubUtworzSesje(s: z.output<typeof SesjaSchema>, zapis: Zapis): Promise<WynikSesji> {
   const istniejaca = await db
     .select()
     .from(backtestSessions)
@@ -50,7 +51,8 @@ export async function znajdzLubUtworzSesje(s: z.output<typeof SesjaSchema>): Pro
   }
 
   try {
-    const [utworzona] = await db
+    const [utworzona] = await zapis((tx) =>
+      tx
       .insert(backtestSessions)
       .values({
         name: s.name,
@@ -65,7 +67,8 @@ export async function znajdzLubUtworzSesje(s: z.output<typeof SesjaSchema>): Pro
         ...(s.targetTrades == null ? {} : { targetTrades: s.targetTrades }),
         assumptions: s.assumptions ?? null,
       })
-      .returning();
+      .returning(),
+    );
     return { ok: true, id: utworzona.id, created: true, session: utworzona, warnings: [] };
   } catch (e) {
     // Wyscig: druga prosba zalozyla te sesje chwile wczesniej. Unikat w bazie

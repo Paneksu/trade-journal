@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   bramkaN,
+  czyImportZSejfu,
+  MIN_PROG_N_API,
   maOczekujacaPropozycje,
   nastepnyKodHipotezy,
   nastepnyKodReguly,
+  originEfektywny,
   statusReguly,
   type WersjaDoStatusu,
 } from "./reguly";
@@ -66,5 +69,29 @@ describe("bramkaN: poniżej progu AI nie proponuje reguły", () => {
     expect(bramkaN("mentor", 0, 20)).toEqual({ ok: true });
     expect(bramkaN("mentor", null, null)).toEqual({ ok: true });
     expect(bramkaN("vault-import", null, null)).toEqual({ ok: true });
+  });
+});
+
+describe("originEfektywny: import z sejfu poznaje się po kluczu «vault:»", () => {
+  it("vault-import z kluczem vault: zostaje importem", () => {
+    expect(originEfektywny("vault-import", "vault:Reguly/R-007.md")).toBe("vault-import");
+    expect(czyImportZSejfu("vault-import", "vault:Reguly/R-007.md")).toBe(true);
+  });
+
+  it("vault-import bez klucza albo z cudzym kluczem jest traktowany jak ai (decyzja 15.10.2026)", () => {
+    for (const ref of [undefined, null, "", "vault:", "inny:klucz", "VAULT:x", "xvault:y"]) {
+      expect(originEfektywny("vault-import", ref), String(ref)).toBe("ai");
+      expect(czyImportZSejfu("vault-import", ref), String(ref)).toBe(false);
+    }
+  });
+
+  it("ai i mentor zostają, jakie były; klucz vault: nie czyni z nich importu", () => {
+    expect(originEfektywny("ai", "vault:x")).toBe("ai");
+    expect(originEfektywny("mentor", "vault:x")).toBe("mentor");
+    expect(czyImportZSejfu("mentor", "vault:x")).toBe(false);
+  });
+
+  it("najniższy próg n przez API to 20", () => {
+    expect(MIN_PROG_N_API).toBe(20);
   });
 });

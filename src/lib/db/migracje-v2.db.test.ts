@@ -7,7 +7,9 @@
  *  (e) odwracalnosc (skrypty docs/v2/rollback/*.sql) i ponowne zastosowanie.
  *
  * Uruchamia sie WYLACZNIE, gdy ustawiona jest TEST_DATABASE_URL, np.
- *   TEST_DATABASE_URL=postgres://journal:journal@127.0.0.1:55433/tj_faza2 npx vitest run src/lib/db/migracje-v2.db.test.ts
+ *   TEST_DATABASE_URL=postgres://journal:journal@127.0.0.1:55433/tj_faza2_migracje npx vitest run src/lib/db/migracje-v2.db.test.ts
+ * albo po prostu `npm run test:db` (skrypt sam zaklada baze `<DATABASE_URL>_migracje` i ustawia zmienna).
+ * NIE wskazuj tej zmiennej na baze, z ktorej korzystaja pozostale testy db (tj_faza2): test ja skasuje.
  * Bez niej caly plik jest pominiety (describe.skip) - to NIE jest zielony wynik, tylko brak dowodu.
  *
  * !!! Test KASUJE schematy `public` i `drizzle` w bazie z TEST_DATABASE_URL i buduje je od zera.

@@ -5,6 +5,7 @@ import { useFormStatus } from "react-dom";
 
 import { Button, Checkbox, ErrorMessage, Input, Label, SuccessMessage } from "@/components/ui/base";
 import { uniewaznUrzadzenie, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
+import { czyInnyAdres } from "@/lib/api-v2/adres";
 import { dateTime } from "@/lib/format";
 
 /* Minimalny ekran urzadzen (faza 2); pelny interfejs przyjdzie w fazie 5. */
@@ -34,18 +35,26 @@ export function PolaczUrzadzenie() {
 
   if (znaleziony.kod) {
     const k = znaleziony.kod;
+    const innyAdres = czyInnyAdres(k.clientIp, znaleziony.ipPrzegladarki);
     return (
       <form action={decyduj} className="space-y-4 p-4">
         <input type="hidden" name="id" value={k.id} />
         <div className="space-y-1 text-sm">
           <p>
-            Urządzenie <strong className="text-text">{k.clientName}</strong> prosi o dostęp do dziennika.
+            Urządzenie nazwane <strong className="text-text">{k.clientName}</strong> prosi o dostęp do dziennika.
           </p>
+          <p className="text-xs text-faint">Nazwę podało samo urządzenie; nie jest sprawdzona i każdy może wpisać dowolną.</p>
           <p className="text-muted">
             Kod {k.userCode} · adres, z którego przyszło żądanie: {k.clientIp ?? "nieznany"} · ważny do{" "}
             {dateTime(k.expiresAt)}
           </p>
-          <p className="text-faint">Zatwierdź tylko wtedy, gdy to Ty właśnie uruchomiłeś `tj login`.</p>
+          {innyAdres && (
+            <p role="alert" className="rounded-[var(--radius-control)] border border-loss/40 bg-loss-dim px-3 py-2 text-loss">
+              Uwaga: żądanie przyszło z adresu {k.clientIp}, a Ty jesteś połączony z adresu {znaleziony.ipPrzegladarki}. Jeśli
+              terminal z `tj login` nie jest na tym samym łączu, co ta przeglądarka, a nie masz VPN, odrzuć to żądanie.
+            </p>
+          )}
+          <p className="text-faint">Zatwierdź tylko wtedy, gdy to Ty właśnie uruchomiłeś `tj login` i kod zgadza się z terminalem.</p>
         </div>
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold text-text">Zakresy (możesz odznaczyć)</legend>

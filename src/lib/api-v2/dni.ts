@@ -9,6 +9,7 @@ import { countSessionTradesOnDay, countTradesOnDay } from "@/lib/queries/journal
 import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 
 import type { DzienQuery, DzienZapisSchema } from "./contract/v2";
+import type { Zapis } from "./zapis";
 import { zSlow } from "./slowa";
 
 /**
@@ -16,8 +17,6 @@ import { zSlow } from "./slowa";
  * robi to samo co akcja UI `saveDayNote` / `saveBacktestDayNote` (te same
  * indeksy konfliktu, ta sama zasada "trade'y sa twardszym dowodem niz znacznik").
  */
-
-type Db = typeof db;
 
 function zakres(q: { accountId?: number | null; sessionId?: number | null }) {
   return { accountId: q.accountId ?? null, sessionId: q.sessionId ?? null };
@@ -80,7 +79,7 @@ export type WynikZapisuDnia =
   | { ok: true; id: number; utworzono: boolean }
   | { ok: false; status: 404 | 409 | 422; kod: string; komunikat: string };
 
-export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSchema>): Promise<WynikZapisuDnia> {
+export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSchema>, zapis: Zapis): Promise<WynikZapisuDnia> {
   const accountId = d.accountId ?? null;
   const sessionId = d.sessionId ?? null;
   if (accountId && sessionId) {
@@ -129,12 +128,13 @@ export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSch
   }
   const teraz = new Date();
 
-  const [wiersz] = await db
+  const [wiersz] = await zapis((tx) =>
+    tx
     .insert(dayNotes)
     .values({ day: data, accountId: sessionId ? null : accountId, backtestSessionId: sessionId, ...podane, updatedAt: teraz })
     .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, sessionId), set: { ...podane, updatedAt: teraz } })
-    .returning({ id: dayNotes.id, utworzono: sql<boolean>`(xmax = 0)` });
+    .returning({ id: dayNotes.id, utworzono: sql<boolean>`(xmax = 0)` }),
+  );
   return { ok: true, id: wiersz.id, utworzono: wiersz.utworzono };
 }
 
-export type { Db };

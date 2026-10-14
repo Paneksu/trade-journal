@@ -13,6 +13,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
   let sql: Sql;
   let rw: Par; // read + write
   let ro: Par; // tylko read
+  let pr: Par; // read + write + propose
   const znacznik = `T${Date.now().toString(36)}`;
   const t = (nazwa: string) => `${nazwa} ${znacznik}`;
 
@@ -21,9 +22,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
     await zapewnijPodstawy(sql);
     rw = await nowyToken(sql, ["read", "write"]);
     ro = await nowyToken(sql, ["read"]);
+    pr = await nowyToken(sql, ["read", "write", "propose"]);
   });
   afterAll(async () => {
-    await sprzatnijPoTokenach(sql, [rw.id, ro.id]);
+    await sprzatnijPoTokenach(sql, [rw.id, ro.id, pr.id]);
     await sql.end();
   });
   beforeEach(() => wyczyscLimiter());
@@ -225,6 +227,30 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
     expect(tabela[0].t).not.toBeNull();
   });
 
+  it("szukanie: znaki, które unaccent zamienia na składnię tsquery («⑴» -> «(1)»), nie dają 500", async () => {
+    await utworz({ kind: "concept", title: t("Punkt (1) listy"), bodyMd: "pierwszy punkt" });
+    for (const q of ["⑴", "①", "⑴⑵⑶", "½", "²", "ǅ", "ﬃ", "⒜ punkt", "㈠", "Ⅻ", "⑴ zarzadzanie", "((", "!|&:*<->", "\\"]) {
+      const res = await szukaj(q);
+      expect(res.status, `zapytanie »${q}«: ${await res.clone().text()}`).toBe(200);
+    }
+    const jeden = await (await szukaj("⑴")).json();
+    expect(Array.isArray(jeden.results)).toBe(true);
+  });
+
+  it("szukanie: przegląd kodów Unicode (litery, cyfry, znaki łączone, symbole) nigdy nie kończy się 500", async () => {
+    const kody: number[] = [];
+    for (let c = 0x20; c < 0x2fff; c += 7) kody.push(c);
+    for (let c = 0xff00; c < 0xffef; c += 3) kody.push(c);
+    const bledy: string[] = [];
+    // paczki po 40 znaków, zeby przejsc duzo kodow bez tysiaca zapytan
+    for (let i = 0; i < kody.length; i += 40) {
+      const q = String.fromCodePoint(...kody.slice(i, i + 40).filter((c) => c < 0xd800 || c > 0xdfff));
+      const res = await szukaj(q);
+      if (res.status !== 200) bledy.push(`U+${kody[i].toString(16)}: ${res.status}`);
+    }
+    expect(bledy).toEqual([]);
+  });
+
   it("lista notatek: filtr kind i paginacja kursorem", async () => {
     for (let i = 0; i < 3; i += 1) await utworz({ kind: "mistake", title: t(`Błąd ${i}`) });
     const { GET } = await import("@/app/api/v2/notes/route");
@@ -235,6 +261,53 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatki i wyszukiwanie (baza lokalna)", () => 
     expect(strona2.notes.length).toBeGreaterThan(0);
     expect(strona2.notes[0].id).toBeGreaterThan(strona1.nextAfter);
     expect(strona2.notes.every((n: { kind: string }) => n.kind === "mistake")).toBe(true);
+  });
+
+  describe("notatki reguł i hipotez mają własne trasy", () => {
+    it("POST /notes z kind rule albo hypothesis = 422 use_dedicated_endpoint z adresem właściwej trasy", async () => {
+      const r = await utworz({ kind: "rule", title: t("Reguła obejściem") });
+      expect(r.status).toBe(422);
+      const dr = await r.json();
+      expect(dr.code).toBe("use_dedicated_endpoint");
+      expect(dr.useInstead).toBe("/api/v2/rules/proposals");
+      const h = await utworz({ kind: "hypothesis", title: t("Hipoteza obejściem") });
+      expect(h.status).toBe(422);
+      expect((await h.json()).useInstead).toBe("/api/v2/hypotheses");
+      const [{ ile }] = await sql`select count(*)::int as ile from notes where title in (${t("Reguła obejściem")}, ${t("Hipoteza obejściem")})`;
+      expect(ile).toBe(0);
+    });
+
+    it("PATCH notatki reguły nie zmienia title, bodyMd ani meta (409 managed_note), a archiwizacja przechodzi", async () => {
+      const { POST } = await import("@/app/api/v2/rules/proposals/route");
+      const pr1 = await POST(zadanie("/rules/proposals", { metoda: "POST", token: pr.token, cialo: { title: t("Reguła zarządzana"), textMd: "Treść wersji.", origin: "mentor", evidence: { video: "yt", t: 1, quote: "cytat" } } }), undefined);
+      expect(pr1.status).toBe(201);
+      const noteId = (await pr1.json()).noteId as number;
+      for (const zmiana of [{ title: t("Inny tytuł") }, { bodyMd: "podmieniona treść" }, { meta: { vault_status: "zatwierdzona" } }]) {
+        const res = await zmien(noteId, zmiana, "1");
+        expect(res.status, JSON.stringify(zmiana)).toBe(409);
+        const d = await res.json();
+        expect(d.code).toBe("managed_note");
+        expect(d.useInstead).toBe("/api/v2/rules/proposals");
+      }
+      const [w] = await sql`select title, body_md, rev from notes where id = ${noteId}`;
+      expect(w).toMatchObject({ title: t("Reguła zarządzana"), body_md: "Treść wersji.", rev: 1 });
+      expect((await zmien(noteId, { archived: true }, "1")).status).toBe(200);
+    });
+
+    it("PATCH notatki hipotezy też jest zablokowany (409), choć sama hipoteza powstaje przez /hypotheses", async () => {
+      const { POST } = await import("@/app/api/v2/hypotheses/route");
+      const h = await POST(zadanie("/hypotheses", { metoda: "POST", token: rw.token, cialo: { title: t("Hipoteza zarządzana") } }), undefined);
+      expect(h.status).toBe(201);
+      const noteId = (await h.json()).noteId as number;
+      const res = await zmien(noteId, { bodyMd: "podmiana" }, "1");
+      expect(res.status).toBe(409);
+      expect((await res.json()).useInstead).toBe("/api/v2/hypotheses");
+    });
+
+    it("zwykłe rodzaje (np. strategy, concept) nadal edytuje się normalnie", async () => {
+      const n = await (await utworz({ kind: "strategy", title: t("Zwykła strategia") })).json();
+      expect((await zmien(n.id, { bodyMd: "ok" }, "1")).status).toBe(200);
+    });
   });
 
   it("walidacja po stronie serwera: nieznane pole, zły kind, pusty tytuł", async () => {

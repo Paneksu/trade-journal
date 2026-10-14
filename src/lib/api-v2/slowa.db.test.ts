@@ -147,6 +147,26 @@ describe.skipIf(!MOZNA_NA_BAZIE)("user_words: bajt w bajt (baza lokalna)", () =>
     expect(ile).toBe(1);
   });
 
+  it("RÓWNOLEGŁE ponowienia tego samego wpisu dają dokładnie jeden wiersz (jedno 201, reszta 200)", async () => {
+    // Test-only trigger wydłuża INSERT o 300 ms, żeby wyścig był deterministyczny: bez blokady
+    // doradczej każde ponowienie zdążyłoby sprawdzić «czy już jest» PRZED zapisem pierwszego.
+    await sql.unsafe(`create or replace function tj_test_opoznij() returns trigger language plpgsql as $$ begin perform pg_sleep(0.3); return new; end $$`);
+    await sql.unsafe("create trigger tj_test_opoznienie before insert on user_words for each row execute function tj_test_opoznij()");
+    try {
+      const cialo = pelne(`wyścig idempotencji ${znacznik}`, { capturedAt: "2026-10-14T10:00:00Z" });
+      const wyniki = await Promise.all(Array.from({ length: 8 }, () => wyslij(cialo)));
+      const statusy = wyniki.map((r) => r.status).sort();
+      expect(statusy).toEqual([200, 200, 200, 200, 200, 200, 200, 201]);
+      const ids = new Set((await Promise.all(wyniki.map((r) => r.json()))).map((d) => d.id));
+      expect(ids.size).toBe(1);
+      const [{ ile }] = await sql`select count(*)::int as ile from user_words where text = ${cialo.text}`;
+      expect(ile).toBe(1);
+    } finally {
+      await sql.unsafe("drop trigger if exists tj_test_opoznienie on user_words");
+      await sql.unsafe("drop function if exists tj_test_opoznij()");
+    }
+  });
+
   it("ten sam tekst w innej chwili albo przy innej kotwicy to osobny wpis", async () => {
     const tekst = `ten sam tekst ${znacznik}`;
     const a = await (await wyslij(pelne(tekst, { capturedAt: "2026-10-14T09:00:00Z" }))).json();

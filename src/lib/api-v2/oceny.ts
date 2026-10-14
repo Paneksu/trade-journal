@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { tradeReviews, tradeRuleChecks, trades } from "@/lib/db/schema";
 
 import type { OcenaSchema } from "./contract/schemas";
+import type { Zapis } from "./zapis";
 
 /**
  * Ocena trade'a przez AI (ADR-028). Jedna ocena na podstawe (`chart` albo
@@ -24,6 +25,7 @@ export type WynikOceny =
 export async function zapiszOcene(
   tradeId: number,
   o: z.output<typeof OcenaSchema>,
+  zapis: Zapis,
 ): Promise<WynikOceny> {
   const [trade] = await db.select({ id: trades.id }).from(trades).where(eq(trades.id, tradeId)).limit(1);
   if (!trade) {
@@ -34,7 +36,7 @@ export async function zapiszOcene(
     };
   }
 
-  return db.transaction(async (tx) => {
+  return zapis(async (tx) => {
     const wartosci = {
       setupType: o.setupType ?? null,
       summaryMd: o.summaryMd ?? null,

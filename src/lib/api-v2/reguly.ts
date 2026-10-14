@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { hypotheses, notes, ruleVersions, rules, settings } from "@/lib/db/schema";
 import {
   bramkaN,
+  originEfektywny,
   maOczekujacaPropozycje,
   nastepnyKodHipotezy,
   nastepnyKodReguly,
@@ -130,6 +131,8 @@ export type WynikPropozycji =
       noteId: number;
       n: number | null;
       podpis: string;
+      /** Prawdziwy status wersji, ktorej dotyczy odpowiedz (przy powtorzeniu moze byc inny niz 'proposed'). */
+      status: "proposed" | "approved" | "rejected" | "superseded";
     }
   | { ok: false; status: 404 | 409 | 422; kod: string; komunikat: string; dodatkowe?: Record<string, unknown> };
 
@@ -150,8 +153,11 @@ export async function zaproponujRegule(
   // Kody numerujemy pod blokada, zeby dwa rownolegle zapisy nie wzieły tego samego numeru.
   await tx.execute(sql`select pg_advisory_xact_lock(hashtext('tj.rules.code'))`);
 
+  // vault-import bez klucza vault: to zwykly wpis agenta (jak ai); schemat odrzuca go, gdy brakuje pol ai.
+  const origin = originEfektywny(d.origin, d.externalRef);
+
   let n: number | null = null;
-  if (d.origin === "ai") {
+  if (origin === "ai") {
     const stan = d.hypothesisId === undefined ? null : await nHipotezy(tx, d.hypothesisId);
     if (!stan) {
       return { ok: false, status: 404, kod: "hypothesis_not_found", komunikat: `pole hypothesisId: »${d.hypothesisId}« - nie ma takiej hipotezy (lista: GET /api/v2/hypotheses).` };
@@ -159,7 +165,7 @@ export async function zaproponujRegule(
     const bramka = bramkaN("ai", stan.n, stan.progN);
     if (!bramka.ok) return { ok: false, status: 422, kod: "below_threshold", komunikat: `Propozycja odrzucona: ${bramka.powod}.`, dodatkowe: { n: stan.n, progN: stan.progN } };
     n = stan.n;
-  } else if (d.origin === "mentor") {
+  } else if (origin === "mentor") {
     n = 0; // podpisane n = 0 (Slowa uzytkownika, 14.10.2026: «Bez progu, podpisane n=0»)
   }
 
@@ -185,9 +191,29 @@ export async function zaproponujRegule(
     }
     const wersje = await tx.select().from(ruleVersions).where(eq(ruleVersions.ruleId, regula.id)).orderBy(desc(ruleVersions.version));
     const najnowsza = wersje[0];
-    // Powtorny import tej samej tresci nie mnozy propozycji.
-    if (najnowsza && najnowsza.textMd === d.textMd && najnowsza.origin === d.origin) {
-      return { ok: true, utworzona: false, kodReguly: regula.code, wersja: najnowsza.version, noteId: regula.noteId, n, podpis: podpis(najnowsza.origin) };
+    // Powtorzenie tej samej tresci (ten sam origin) nie mnozy wersji. Porownujemy ze WSZYSTKIMI
+    // wersjami, nie tylko z najnowsza, i odpowiadamy prawdziwym statusem tej wersji.
+    const powtorka = wersje.find((w) => w.textMd === d.textMd && w.origin === origin);
+    if (powtorka) {
+      if (powtorka.status === "rejected") {
+        return {
+          ok: false,
+          status: 409,
+          kod: "previously_rejected",
+          komunikat: `Ta sama treść (reguła ${regula.code}, wersja ${powtorka.version}) została już odrzucona przez użytkownika${powtorka.decidedAt ? ` ${powtorka.decidedAt.toISOString()}` : ""}. Nie zgłaszam jej drugi raz: zmień treść albo przedstaw nowy argument (evidence) w innej wersji.`,
+          dodatkowe: { version: powtorka.version, decidedAt: powtorka.decidedAt?.toISOString() ?? null },
+        };
+      }
+      return {
+        ok: true,
+        utworzona: false,
+        kodReguly: regula.code,
+        wersja: powtorka.version,
+        noteId: regula.noteId,
+        n,
+        podpis: podpis(powtorka.origin),
+        status: powtorka.status,
+      };
     }
     const oczekujaca = wersje.find((w) => w.status === "proposed");
     if (oczekujaca) {
@@ -206,14 +232,14 @@ export async function zaproponujRegule(
         version: (najnowsza?.version ?? 0) + 1,
         textMd: d.textMd,
         status: "proposed",
-        origin: d.origin,
+        origin: origin,
         counterargument: d.counterargument ?? null,
         evidence: d.evidence ?? null,
         hypothesisId: d.hypothesisId ?? null,
         createdByTokenId: api.token.id,
       })
       .returning({ version: ruleVersions.version });
-    return { ok: true, utworzona: true, kodReguly: regula.code, wersja: wersja.version, noteId: regula.noteId, n, podpis: podpis(d.origin) };
+    return { ok: true, utworzona: true, kodReguly: regula.code, wersja: wersja.version, noteId: regula.noteId, n, podpis: podpis(origin), status: "proposed" };
   }
 
   // Nowa regula: notatka (kind rule) + wiersz rules + wersja 1.
@@ -227,7 +253,7 @@ export async function zaproponujRegule(
     title: tytul,
     bodyMd: d.textMd,
     meta,
-    origin: d.origin,
+    origin: origin,
     ...(d.externalRef !== undefined ? { externalRef: d.externalRef } : {}),
   });
   if (!nota.ok) return { ok: false, status: nota.status === 422 ? 422 : 409, kod: nota.kod, komunikat: nota.komunikat, dodatkowe: nota.dodatkowe };
@@ -238,13 +264,13 @@ export async function zaproponujRegule(
     version: 1,
     textMd: d.textMd,
     status: "proposed",
-    origin: d.origin,
+    origin: origin,
     counterargument: d.counterargument ?? null,
     evidence: d.evidence ?? null,
     hypothesisId: d.hypothesisId ?? null,
     createdByTokenId: api.token.id,
   });
-  return { ok: true, utworzona: true, kodReguly: kod, wersja: 1, noteId: nota.notatka.id, n, podpis: podpis(d.origin) };
+  return { ok: true, utworzona: true, kodReguly: kod, wersja: 1, noteId: nota.notatka.id, n, podpis: podpis(origin), status: "proposed" };
 }
 
 /* --- Hipotezy ------------------------------------------------------------- */
@@ -317,7 +343,7 @@ export async function zalozHipoteze(
     title: d.title,
     bodyMd: d.bodyMd,
     meta: {},
-    origin: d.origin,
+    origin: originEfektywny(d.origin, d.externalRef),
     ...(d.externalRef !== undefined ? { externalRef: d.externalRef } : {}),
   });
   if (!nota.ok) return { ok: false, status: nota.status === 422 ? 422 : 409, kod: nota.kod, komunikat: nota.komunikat, dodatkowe: nota.dodatkowe };

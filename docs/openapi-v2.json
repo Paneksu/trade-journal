@@ -2269,7 +2269,7 @@
                   "progN": {
                     "default": 20,
                     "type": "integer",
-                    "minimum": 1,
+                    "minimum": 20,
                     "maximum": 10000
                   },
                   "thresholds": {
@@ -3084,6 +3084,58 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "device_login_disabled (przelacznik DEVICE_LOGIN_DISABLED=1)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "limit startow na adres albo too_many_pending (20 niezatwierdzonych zadan)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -3174,7 +3226,7 @@
             }
           },
           "400": {
-            "description": "authorization_pending | slow_down | expired_token | invalid_grant",
+            "description": "authorization_pending | expired_token | invalid_grant",
             "content": {
               "application/json": {
                 "schema": {
@@ -3201,6 +3253,32 @@
           },
           "403": {
             "description": "access_denied (uzytkownik odrzucil)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "slow_down (odpytywanie czesciej niz co 5 s) albo limit zapytan na adres",
             "content": {
               "application/json": {
                 "schema": {

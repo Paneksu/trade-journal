@@ -4,6 +4,7 @@ import type { z } from "zod";
 
 import { backtestSessions, noteLinks, notes, trades } from "@/lib/db/schema";
 import { slugZNumerem, slugZTytulu, wyciagnijLinki } from "@/lib/domain/notatki";
+import { originEfektywny } from "@/lib/domain/reguly";
 
 import type { NotatkaUtworzSchema, NotatkaZmienSchema, NotatkiListaQuery } from "./contract/v2";
 import type { KontekstApi, Transakcja } from "./with-api";
@@ -155,7 +156,8 @@ export async function utworzNotatke(
       title: d.title,
       bodyMd: d.bodyMd,
       meta: d.meta,
-      origin: d.origin,
+      // vault-import bez klucza vault: to zwykly wpis agenta, nie import z sejfu.
+      origin: originEfektywny(d.origin, d.externalRef),
       tradeId: d.tradeId ?? null,
       backtestSessionId: d.backtestSessionId ?? null,
       day: d.day ?? null,
@@ -169,12 +171,41 @@ export async function utworzNotatke(
   return { ok: true, notatka: nowa };
 }
 
+/**
+ * Notatki typowanych encji (reguly, hipotezy) maja wlasne trasy. Zwykly POST /notes
+ * obszedlby bramki (kontrargument, prog n, jedna propozycja naraz), a zwykly PATCH
+ * zmienilby tresc reguly poza wersjami, ktore sa niezmienne.
+ */
+export const KINDY_ZARZADZANE = ["rule", "hypothesis"] as const;
+
+export function odeslanieDlaKindu(kind: string): { sciezka: string; komunikat: string } | null {
+  if (kind === "rule") {
+    return { sciezka: "/api/v2/rules/proposals", komunikat: "Notatki o rodzaju »rule« powstają wyłącznie przez POST /api/v2/rules/proposals (propozycja z wersją, kontrargumentem i dowodami; zatwierdza ją użytkownik)." };
+  }
+  if (kind === "hypothesis") {
+    return { sciezka: "/api/v2/hypotheses", komunikat: "Notatki o rodzaju »hypothesis« powstają wyłącznie przez POST /api/v2/hypotheses (z progiem n i progami zadeklarowanymi z góry)." };
+  }
+  return null;
+}
+
 export async function zmienNotatke(
   tx: Transakcja,
   id: number,
   ifMatch: number,
   d: z.output<typeof NotatkaZmienSchema>,
 ): Promise<WynikNotatki> {
+  const [obecnyRodzaj] = await tx.select({ kind: notes.kind }).from(notes).where(eq(notes.id, id)).limit(1);
+  if (obecnyRodzaj && odeslanieDlaKindu(obecnyRodzaj.kind) && (d.title !== undefined || d.bodyMd !== undefined || d.meta !== undefined)) {
+    const o = odeslanieDlaKindu(obecnyRodzaj.kind)!;
+    return {
+      ok: false,
+      status: 409,
+      kod: "managed_note",
+      komunikat: `Notatka #${id} jest częścią typowanej encji (»${obecnyRodzaj.kind}«), więc jej tytułu, treści i meta nie zmienia się zwykłym PATCH. ${o.komunikat} Przez PATCH można ją tylko zarchiwizować (archived).`,
+      dodatkowe: { useInstead: o.sciezka },
+    };
+  }
+
   if (d.title !== undefined) {
     const [zajety] = await tx
       .select({ id: notes.id, slug: notes.slug })

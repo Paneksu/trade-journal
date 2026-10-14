@@ -32,13 +32,13 @@ export const GET = withApi<Ctx>({ scopes: ["read"] }, async (request, _api, { pa
  * PUT /api/v2/days/2026-10-14: zapis notatki dnia (nadpisuje tylko podane pola).
  * Konto albo sesja backtestu w ciele. Dzien z trade'ami nie moze byc dniem bez transakcji.
  */
-export const PUT = withApi<Ctx>({ scopes: ["write"] }, async (request, _api, { params }) => {
+export const PUT = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { params }) => {
   const d = dataZAdresu((await params).date);
   if (!d.ok) return d.odpowiedz;
   const w = await wczytajCialo(request, DzienZapisSchema, "Nieprawidłowy zapis dnia");
   if (!w.ok) return w.odpowiedz;
 
-  const wynik = await zapiszDzien(d.data, w.dane);
+  const wynik = await zapiszDzien(d.data, w.dane, api.zapis);
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat);
   return odpowiedz({ id: wynik.id, date: d.data, created: wynik.utworzono }, wynik.utworzono ? 201 : 200);
 });

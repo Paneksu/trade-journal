@@ -4,6 +4,8 @@ import { inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { ingestSkips, trades } from "@/lib/db/schema";
 
+import type { Zapis } from "./zapis";
+
 /**
  * Pomijane wpisy (ADR-026): klient mowi "tego trade'a nie chce w dzienniku"
  * (np. pozycja otwarta przez pomylke, test). Kazde kolejne POST /trades z tym
@@ -21,6 +23,7 @@ export type WynikPominiecia = {
 
 export async function zapiszPominiecia(
   pozycje: { externalRef: string; note?: string | null }[],
+  zapis: Zapis,
 ): Promise<WynikPominiecia[]> {
   const refy = [...new Set(pozycje.map((p) => p.externalRef))];
   const istniejaceTrady = new Set(
@@ -49,10 +52,12 @@ export async function zapiszPominiecia(
       wyniki.push({ externalRef: p.externalRef, status: "already_skipped" });
       continue;
     }
-    await db
-      .insert(ingestSkips)
-      .values({ externalRef: p.externalRef, reason: "client", note: p.note ?? null })
-      .onConflictDoNothing({ target: ingestSkips.externalRef });
+    await zapis((tx) =>
+      tx
+        .insert(ingestSkips)
+        .values({ externalRef: p.externalRef, reason: "client", note: p.note ?? null })
+        .onConflictDoNothing({ target: ingestSkips.externalRef }),
+    );
     zapisane.add(p.externalRef);
     wyniki.push({ externalRef: p.externalRef, status: "recorded" });
   }

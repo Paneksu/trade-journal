@@ -10,6 +10,7 @@ import { adresKlienta, blad, czyHttps, noweIdZapytania } from "./http";
 import { przepusc } from "./limiter";
 import type { Scope } from "./scopes";
 import { czyScope } from "./scopes";
+import { zapisZAktorem, type Transakcja } from "./zapis";
 import { skrotTokenuV2, skrotyRowne, tokenV2ZNaglowka } from "./token";
 
 /**
@@ -33,8 +34,6 @@ const OKNO_MS = 60_000;
 /** Zapis `last_used_at` najwyzej raz na minute (SQL ponizej ma ten sam warunek). */
 const ODSWIEZANIE_UZYCIA = "1 minute";
 
-type Transakcja = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 export type TokenKontekst = { id: number; name: string; scopes: Scope[] };
 
 export type KontekstApi = {
@@ -54,14 +53,7 @@ export type KontekstApi = {
 type Handler<C> = (request: Request, api: KontekstApi, ctx: C) => Promise<Response>;
 
 export type { Transakcja };
-
-export function zapisZAktorem<T>(actor: string, fn: (tx: Transakcja) => Promise<T>): Promise<T> {
-  return db.transaction(async (tx) => {
-    // `true` = lokalne dla transakcji; z `false` wartosc wyciekalaby na polaczenie z puli.
-    await tx.execute(sql`select set_config('tj.actor', ${actor}, true)`);
-    return fn(tx);
-  });
-}
+export { zapisZAktorem };
 
 export type WynikUwierzytelnienia =
   | { ok: true; token: TokenKontekst }
@@ -145,6 +137,85 @@ function bramkaWstepna(request: Request, naglowki: Record<string, string>): Resp
   return null;
 }
 
+export type WynikBramkiTokenu = { ok: true; token: TokenKontekst } | { ok: false; odpowiedz: Response };
+
+/**
+ * JEDNA wspolna sciezka sprawdzania tokenu v2 dla obu bram (`withApi` i
+ * `withIngest`, poprawka z audytu 15.10.2026): wylacznik API_V2_DISABLED=1,
+ * wyjatki bazy (500 z identyfikatorem zamiast niezlapanego bledu), liczenie
+ * blednych tokenow do blokady adresu i sprawdzenie zakresow. Dzieki temu
+ * zadna brama nie moze zachowywac sie inaczej niz druga.
+ */
+export async function sprawdzTokenV2(o: {
+  request: Request;
+  idZapytania: string;
+  naglowki: Record<string, string>;
+  zakresy: Scope[];
+  realm: string;
+  klient: string;
+  kluczBlokady: string;
+}): Promise<WynikBramkiTokenu> {
+  if (process.env.API_V2_DISABLED === "1") {
+    return { ok: false, odpowiedz: blad(404, "not_found", "Nie znaleziono.", {}, o.naglowki) };
+  }
+  let uwierzytelnienie: WynikUwierzytelnienia;
+  try {
+    uwierzytelnienie = await uwierzytelnij(o.request.headers.get("authorization"));
+  } catch (e) {
+    return { ok: false, odpowiedz: odpowiedzNaWyjatek(e, o.idZapytania, o.request, o.naglowki) };
+  }
+  if (!uwierzytelnienie.ok) {
+    recordFailedAttempt(o.kluczBlokady);
+    console.warn(
+      `[api-v2 ${o.idZapytania}] odrzucony token (${uwierzytelnienie.kod}) od ${o.klient} (${o.request.method} ${new URL(o.request.url).pathname})`,
+    );
+    return {
+      ok: false,
+      odpowiedz: blad(401, uwierzytelnienie.kod, uwierzytelnienie.komunikat, {}, {
+        ...o.naglowki,
+        "WWW-Authenticate": `Bearer realm="${o.realm}"`,
+      }),
+    };
+  }
+  clearAttempts(o.kluczBlokady);
+  const token = uwierzytelnienie.token;
+
+  const brakujacy = o.zakresy.find((s) => !token.scopes.includes(s));
+  if (brakujacy) {
+    return {
+      ok: false,
+      odpowiedz: blad(
+        403,
+        "insufficient_scope",
+        `Token „${token.name}” nie ma zakresu »${brakujacy}« (ma: ${token.scopes.join(", ")}). Ta operacja wymaga: ${o.zakresy.join(", ")}. Zakresu nie da się dopisać do istniejącego tokenu; zaloguj urządzenie ponownie z potrzebnym zakresem.`,
+        { missingScope: brakujacy, requiredScopes: o.zakresy },
+        o.naglowki,
+      ),
+    };
+  }
+  return { ok: true, token };
+}
+
+/** Limit 120 zapytan na minute NA TOKEN i odswiezenie `last_used_at` (raz na minute). `null` = przepuszczone. */
+export async function limitIOdswiezUzycie(
+  token: TokenKontekst,
+  klient: string,
+  naglowki: Record<string, string>,
+): Promise<Response | null> {
+  const limit = przepusc(`api2-rate:${token.id}`, LIMIT_NA_MINUTE_V2, OKNO_MS);
+  if (!limit.allowed) {
+    return blad(
+      429,
+      "rate_limited",
+      `Przekroczony limit ${LIMIT_NA_MINUTE_V2} zapytań na minutę dla tokenu „${token.name}”. Spróbuj ponownie za ${limit.retryInS} s.`,
+      { retryInS: limit.retryInS },
+      { ...naglowki, "Retry-After": String(limit.retryInS) },
+    );
+  }
+  await odswiezUzycie(token.id, klient);
+  return null;
+}
+
 export function withApi<C = unknown>(opcje: { scopes: Scope[] }, handler: Handler<C>) {
   return async (request: Request, ctx: C): Promise<Response> => {
     const idZapytania = noweIdZapytania();
@@ -167,48 +238,20 @@ export function withApi<C = unknown>(opcje: { scopes: Scope[] }, handler: Handle
       );
     }
 
-    let uwierzytelnienie: WynikUwierzytelnienia;
-    try {
-      uwierzytelnienie = await uwierzytelnij(request.headers.get("authorization"));
-    } catch (e) {
-      return odpowiedzNaWyjatek(e, idZapytania, request, naglowki);
-    }
-    if (!uwierzytelnienie.ok) {
-      recordFailedAttempt(kluczBlokady);
-      console.warn(
-        `[api-v2 ${idZapytania}] odrzucony token (${uwierzytelnienie.kod}) od ${klient} (${request.method} ${new URL(request.url).pathname})`,
-      );
-      return blad(401, uwierzytelnienie.kod, uwierzytelnienie.komunikat, {}, {
-        ...naglowki,
-        "WWW-Authenticate": 'Bearer realm="trade-journal-api-v2"',
-      });
-    }
-    clearAttempts(kluczBlokady);
-    const token = uwierzytelnienie.token;
+    const bramka = await sprawdzTokenV2({
+      request,
+      idZapytania,
+      naglowki,
+      zakresy: opcje.scopes,
+      realm: "trade-journal-api-v2",
+      klient,
+      kluczBlokady,
+    });
+    if (!bramka.ok) return bramka.odpowiedz;
+    const token = bramka.token;
 
-    const brakujacy = opcje.scopes.find((s) => !token.scopes.includes(s));
-    if (brakujacy) {
-      return blad(
-        403,
-        "insufficient_scope",
-        `Token „${token.name}” nie ma zakresu »${brakujacy}« (ma: ${token.scopes.join(", ")}). Ta operacja wymaga: ${opcje.scopes.join(", ")}. Zakresu nie da się dopisać do istniejącego tokenu; zaloguj urządzenie ponownie z potrzebnym zakresem.`,
-        { missingScope: brakujacy, requiredScopes: opcje.scopes },
-        naglowki,
-      );
-    }
-
-    const limit = przepusc(`api2-rate:${token.id}`, LIMIT_NA_MINUTE_V2, OKNO_MS);
-    if (!limit.allowed) {
-      return blad(
-        429,
-        "rate_limited",
-        `Przekroczony limit ${LIMIT_NA_MINUTE_V2} zapytań na minutę dla tokenu „${token.name}”. Spróbuj ponownie za ${limit.retryInS} s.`,
-        { retryInS: limit.retryInS },
-        { ...naglowki, "Retry-After": String(limit.retryInS) },
-      );
-    }
-
-    await odswiezUzycie(token.id, klient);
+    const limit = await limitIOdswiezUzycie(token, klient, naglowki);
+    if (limit) return limit;
 
     const actor = `api:${token.id}`;
     const api: KontekstApi = {

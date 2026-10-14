@@ -1,0 +1,103 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { czyInnyAdres } from "./adres";
+import { wyczyscLimiter } from "./limiter";
+import { MOZNA_NA_BAZIE, polacz, unikalnyIp, zadanie, type Sql } from "./test/db-pomocnik";
+
+vi.mock("server-only", () => ({}));
+
+/* Poprawki krytyczne z audytu: phishing kodem urządzenia (ADR-030). */
+
+describe("ekran zatwierdzenia: ostrzeżenie o innym adresie (logika czysta)", () => {
+  it("ten sam adres, także IPv4 zapisany jako IPv6, nie ostrzega", () => {
+    expect(czyInnyAdres("203.0.113.9", "203.0.113.9")).toBe(false);
+    expect(czyInnyAdres("::ffff:127.0.0.1", "127.0.0.1")).toBe(false);
+  });
+  it("inny adres ostrzega; brak danych nie udaje pewności", () => {
+    expect(czyInnyAdres("203.0.113.9", "198.51.100.4")).toBe(true);
+    expect(czyInnyAdres(null, "198.51.100.4")).toBe(false);
+    expect(czyInnyAdres("203.0.113.9", "nieznany")).toBe(false);
+  });
+});
+
+describe("lista urządzeń nie ujawnia kodów oczekujących żądań", () => {
+  const zrodlo = (rel: string) => readFileSync(path.resolve(__dirname, rel), "utf8");
+  it("strona Ustawienia → Urządzenia nie odwołuje się do userCode", () => {
+    const strona = zrodlo("../../app/(app)/settings/devices/page.tsx");
+    expect(strona).not.toMatch(/userCode/);
+    expect(strona).toContain("clientIp");
+  });
+  it("ekran zatwierdzenia podpisuje nazwę jako podaną przez urządzenie i ostrzega o innym IP", () => {
+    const komponent = zrodlo("../../components/settings/devices.tsx");
+    expect(komponent).toContain("podało samo urządzenie");
+    expect(komponent).toContain("czyInnyAdres");
+  });
+  it("akcja zatwierdzenia ma jawny TODO sudo jako warunek scalenia", () => {
+    expect(zrodlo("../actions/devices.ts")).toMatch(/WARUNEK SCALENIA[\s\S]*sudo/);
+  });
+});
+
+describe.skipIf(!MOZNA_NA_BAZIE)("limit żądań, sprzątanie i wyłącznik device/start (baza lokalna)", () => {
+  let sql: Sql;
+  const nazwy: string[] = [];
+  const znacznik = Date.now().toString(36);
+  beforeAll(async () => {
+    sql = polacz();
+    // Test liczy GLOBALNY limit, więc zaczyna od pustej kolejki żądań w bazie testowej.
+    await sql`delete from device_codes where token_id is null`;
+  });
+  afterAll(async () => {
+    await sql`delete from device_codes where client_name = any(${nazwy})`;
+    await sql.end();
+  });
+  beforeEach(() => {
+    wyczyscLimiter();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+  afterAll(() => vi.unstubAllEnvs());
+
+  async function start(nazwa: string) {
+    const { POST } = await import("@/app/api/v2/device/start/route");
+    nazwy.push(nazwa);
+    return POST(zadanie("/device/start", { metoda: "POST", cialo: { clientName: nazwa, scopes: ["read"] }, ip: unikalnyIp() }), undefined);
+  }
+
+  it("21. niewygasłe żądanie jest odrzucone (429 too_many_pending), a po odrzuceniu jednego znów można", async () => {
+    for (let i = 0; i < 20; i += 1) expect((await start(`limit ${i} ${znacznik}`)).status).toBe(200);
+    const res = await start(`limit 21 ${znacznik}`);
+    expect(res.status).toBe(429);
+    const d = await res.json();
+    expect(d.code).toBe("too_many_pending");
+    expect(d.error).toContain("20");
+    expect(res.headers.get("retry-after")).toBe("600");
+    await sql`update device_codes set denied_at = now() where client_name = ${`limit 0 ${znacznik}`}`;
+    expect((await start(`limit 22 ${znacznik}`)).status).toBe(200);
+  });
+
+  it("wygasłe żądania są sprzątane przy kolejnym starcie (po 10 minutach, nie po dobie)", async () => {
+    await sql`insert into device_codes (device_code_sha256, user_code, client_name, requested_scopes, created_at, expires_at)
+              values (${"a".repeat(64)}, 'BBBB-CCCC', ${`stare ${znacznik}`}, ${["read"]}, now() - interval '11 minutes', now() - interval '1 minute')`;
+    nazwy.push(`stare ${znacznik}`);
+    await sql`update device_codes set denied_at = now() where token_id is null and client_name like ${`limit %${znacznik}`}`;
+    expect((await start(`po sprzataniu ${znacznik}`)).status).toBe(200);
+    const [{ ile }] = await sql`select count(*)::int as ile from device_codes where client_name = ${`stare ${znacznik}`}`;
+    expect(ile).toBe(0);
+  });
+
+  it("DEVICE_LOGIN_DISABLED=1 zamyka device/start (403), a bez niej działa; device/token nadal odpowiada", async () => {
+    await sql`delete from device_codes where token_id is null`;
+    vi.stubEnv("DEVICE_LOGIN_DISABLED", "1");
+    const zamkniete = await start(`wylaczone ${znacznik}`);
+    expect(zamkniete.status).toBe(403);
+    expect((await zamkniete.json()).code).toBe("device_login_disabled");
+    const [{ ile }] = await sql`select count(*)::int as ile from device_codes where client_name = ${`wylaczone ${znacznik}`}`;
+    expect(ile).toBe(0);
+    const { POST } = await import("@/app/api/v2/device/token/route");
+    const token = await POST(zadanie("/device/token", { metoda: "POST", cialo: { deviceCode: "x".repeat(43) } }), undefined);
+    expect(token.status).toBe(400); // invalid_grant: trasa żyje, nie jest wyłączona przełącznikiem startu
+    vi.unstubAllEnvs();
+    expect((await start(`wlaczone ${znacznik}`)).status).toBe(200);
+  });
+});

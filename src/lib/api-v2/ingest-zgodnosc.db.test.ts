@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { skrotTokenu } from "@/lib/ingest/token";
 import { wyczyscLimiter } from "./limiter";
@@ -35,8 +35,11 @@ describe.skipIf(!MOZNA_NA_BAZIE)("/api/ingest/** przyjmuje token v2 i stary skr�
     wyczyscLimiter();
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "info").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.stubEnv("INGEST_TOKEN_SHA256", "");
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   const meta = async (token?: string) => {
     const { GET } = await import("@/app/api/ingest/meta/route");
@@ -108,6 +111,47 @@ describe.skipIf(!MOZNA_NA_BAZIE)("/api/ingest/** przyjmuje token v2 i stary skr�
     const zablokowany = await GET(zadanie("/meta", { token: write.token, ip, baza: "http://localhost/api/ingest" }), undefined);
     expect(zablokowany.status).toBe(429);
     expect(oznaczenie(zablokowany)).toEqual(WYGASZANIE);
+  });
+
+  it("API_V2_DISABLED=1 odcina tokeny v2 także na /api/ingest/** (404 + Deprecation), a stary skrót dalej działa", async () => {
+    vi.stubEnv("INGEST_TOKEN_SHA256", skrotTokenu(STARY));
+    vi.stubEnv("API_V2_DISABLED", "1");
+    const v2 = await meta(write.token);
+    expect(v2.status).toBe(404);
+    expect(oznaczenie(v2)).toEqual(WYGASZANIE);
+    expect((await meta(STARY)).status).toBe(200);
+  });
+
+  it("token v2 przez ingest odświeża last_used_at i last_used_ip (jak w v2), najwyżej raz na minutę", async () => {
+    const t = await nowyToken(sql, ["write"]);
+    try {
+      const ip = unikalnyIp();
+      const { GET } = await import("@/app/api/ingest/meta/route");
+      expect((await GET(zadanie("/meta", { token: t.token, ip, baza: "http://localhost/api/ingest" }), undefined)).status).toBe(200);
+      const [w] = await sql`select last_used_at, last_used_ip from api_tokens where id = ${t.id}`;
+      expect(w.last_used_at).toBeInstanceOf(Date);
+      expect(w.last_used_ip).toBe(ip);
+    } finally {
+      await sprzatnijPoTokenach(sql, [t.id]);
+    }
+  });
+
+  it("awaria bazy przy sprawdzaniu tokenu v2 daje JSON 500 z requestId i Deprecation, a nie niezłapany wyjątek", async () => {
+    const t = await nowyToken(sql, ["write"]);
+    await sql`alter table api_tokens rename to api_tokens_zepsuta`;
+    try {
+      const { GET } = await import("@/app/api/ingest/meta/route");
+      const res = await GET(zadanie("/meta", { token: t.token, baza: "http://localhost/api/ingest" }), undefined);
+      expect(res.status).toBe(500);
+      const d = await res.json();
+      expect(d.code).toBe("internal_error");
+      expect(d.requestId).toBeTruthy();
+      expect(JSON.stringify(d)).not.toContain("api_tokens");
+      expect(oznaczenie(res)).toEqual(WYGASZANIE);
+    } finally {
+      await sql`alter table api_tokens_zepsuta rename to api_tokens`;
+      await sprzatnijPoTokenach(sql, [t.id]);
+    }
   });
 
   it("trasa ingest/meta zwraca to samo co v2/meta poza wersją i polami kontraktu", async () => {

@@ -14,6 +14,7 @@ import { zapiszPominiecia } from "./pominiecia";
 import { znajdzLubUtworzSesje } from "./sesje";
 import { listaTradowZApi, przetworzTrady } from "./trades";
 import { wczytajCialo, idZAdresu } from "./walidacja";
+import type { Zapis } from "./zapis";
 import { ustalOrigin, zastapZrzuty } from "./zrzuty";
 
 /**
@@ -67,11 +68,11 @@ export async function obsluzTradesGet(request: Request): Promise<Response> {
 }
 
 /** POST trades { "dryRun": false, "mode": "create" | "update", "trades": [ ... max 50 ... ] } */
-export async function obsluzTradesPost(request: Request): Promise<Response> {
+export async function obsluzTradesPost(request: Request, zapis: Zapis): Promise<Response> {
   const w = await wczytajCialo(request, KopertaTradowSchema, "Nieprawidłowa koperta zapytania");
   if (!w.ok) return w.odpowiedz;
 
-  const { summary, results } = await przetworzTrady(w.dane);
+  const { summary, results } = await przetworzTrady(w.dane, zapis);
   return odpowiedz({ dryRun: w.dane.dryRun, mode: w.dane.mode, summary, results });
 }
 
@@ -80,14 +81,14 @@ export async function obsluzTradesPost(request: Request): Promise<Response> {
  * dowod). Jedna ocena na `basis` (chart | history): ponowne wyslanie podmienia,
  * a zdanie uzytkownika o regule zostaje, jesli werdykt AI sie nie zmienil.
  */
-export async function obsluzOcene(request: Request, idRaw: string): Promise<Response> {
+export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis): Promise<Response> {
   const id = idZAdresu(idRaw, "id trade'a");
   if (!id.ok) return id.odpowiedz;
 
   const w = await wczytajCialo(request, OcenaSchema, "Nieprawidłowa ocena");
   if (!w.ok) return w.odpowiedz;
 
-  const wynik = await zapiszOcene(id.dane, w.dane);
+  const wynik = await zapiszOcene(id.dane, w.dane, zapis);
   if (!wynik.ok) return blad(wynik.status, "not_found", wynik.error);
   return odpowiedz(wynik, wynik.created ? 201 : 200);
 }
@@ -99,7 +100,7 @@ export async function obsluzOcene(request: Request, idRaw: string): Promise<Resp
  *   origin    - tradingview | fxreplay (domyslnie zrodlo trade'a)
  * Zastepuje wszystkie zrzuty tego pochodzenia na trade'cie; recznych nie rusza.
  */
-export async function obsluzZrzuty(request: Request, idRaw: string): Promise<Response> {
+export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis): Promise<Response> {
   const id = idZAdresu(idRaw, "id trade'a");
   if (!id.ok) return id.odpowiedz;
 
@@ -116,7 +117,7 @@ export async function obsluzZrzuty(request: Request, idRaw: string): Promise<Res
   const o = await ustalOrigin(id.dane, typeof origin === "string" ? origin : null);
   if (!o.ok) return blad(400, "bad_request", o.error);
 
-  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly);
+  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly, zapis);
   if (!wynik.ok) {
     const kod = wynik.status === 404 ? "not_found" : wynik.status === 500 ? "internal_error" : "validation_failed";
     return blad(wynik.status, kod, wynik.error);
@@ -125,11 +126,11 @@ export async function obsluzZrzuty(request: Request, idRaw: string): Promise<Res
 }
 
 /** POST backtest-sessions: tworzy sesje albo odnajduje ja po externalRef (201 nowa, 200 istniejaca). */
-export async function obsluzSesje(request: Request): Promise<Response> {
+export async function obsluzSesje(request: Request, zapis: Zapis): Promise<Response> {
   const w = await wczytajCialo(request, SesjaSchema, "Nieprawidłowa sesja");
   if (!w.ok) return w.odpowiedz;
 
-  const wynik = await znajdzLubUtworzSesje(w.dane);
+  const wynik = await znajdzLubUtworzSesje(w.dane, zapis);
   if (!wynik.ok) return blad(wynik.status, "validation_failed", wynik.error);
   return odpowiedz(
     {
@@ -145,8 +146,8 @@ export async function obsluzSesje(request: Request): Promise<Response> {
 }
 
 /** POST skips { "skips": [ { "externalRef": "tv:123", "note": "..." } ] } */
-export async function obsluzPominiecia(request: Request): Promise<Response> {
+export async function obsluzPominiecia(request: Request, zapis: Zapis): Promise<Response> {
   const w = await wczytajCialo(request, OminieciaSchema, "Nieprawidłowa lista pominięć");
   if (!w.ok) return w.odpowiedz;
-  return odpowiedz({ results: await zapiszPominiecia(w.dane.skips) });
+  return odpowiedz({ results: await zapiszPominiecia(w.dane.skips, zapis) });
 }

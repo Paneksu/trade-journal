@@ -108,7 +108,40 @@ odpowiedź (także błąd) niesie `Deprecation: true` i `Link: </api/v2>; rel="s
 Każde użycie starego skrótu zostawia w logu linię `DEPRECATED: uzycie starego tokenu` z licznikiem.
 Usunięcie tras i zmiennej: po fazie 3, za zgodą użytkownika.
 
+## Walidacja pochodzenia i progu n (decyzja 15.10.2026: «Walidacja danych»)
+
+- `nImported` hipotezy przyjmuje się tylko przy `origin: "vault-import"` z `externalRef` zaczynającym
+  się od `vault:`. `progN` przez API nie może być niższy niż 20; niższy ustawia tylko użytkownik w UI.
+- `origin: "mentor"`: `evidence` to ścisły obiekt `{ video, t, quote }`, wszystkie niepuste.
+- `vaultStatus` tylko przy `vault-import` z kluczem `vault:`.
+- `vault-import` bez klucza `vault:` jest traktowany jak `ai` (wymaga kontrargumentu, dowodów i hipotezy,
+  podlega progowi n, zapisuje się jako `ai`).
+- `POST /notes` z rodzajem `rule` albo `hypothesis` → `422 use_dedicated_endpoint`; `PATCH` takiej notatki
+  nie zmienia `title`, `bodyMd` ani `meta` (`409 managed_note`).
+- Powtórzenie treści odrzuconej wersji reguły → `409 previously_rejected` z `decidedAt`; powtórzenie treści
+  istniejącej wersji zwraca jej prawdziwy status.
+
+## Zapisy z `tj.actor` (ADR-030)
+
+Każdy zapis v2 (trade'y, oceny, zrzuty, sesje, pominięcia, dzień, notatki, słowa, reguły) idzie w transakcji
+z `set_config('tj.actor', 'api:<id tokenu>', true)`; stare trasy `/api/ingest/**` zapisują jako `ingest`.
+Trade'y: każda pozycja paczki we własnej transakcji (błąd bazy w jednej nie psuje reszty).
+
+## Logowanie urządzeń: ochrona przed phishingiem kodem
+
+Lista urządzeń nie pokazuje kodów oczekujących żądań (tylko liczbę, adres i czas). Ekran zatwierdzenia
+oznacza nazwę jako podaną przez urządzenie i ostrzega, gdy adres żądania różni się od adresu przeglądarki.
+Globalny limit: 20 niezatwierdzonych żądań naraz (`429 too_many_pending`); wygasłe żądania są sprzątane po
+10 minutach. **Warunek publicznego wystawienia: sudo (hasło + TOTP) przy zatwierdzaniu z fazy 1.**
+Do tego czasu `DEVICE_LOGIN_DISABLED=1` zamyka `device/start`.
+
 ## Zmienne środowiskowe
 
-Żadna nie jest wymagana. Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny), `APP_PUBLIC_URL`
+Żadna nie jest wymagana. Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny całego v2, także tokenów v2
+na `/api/ingest/**`), `DEVICE_LOGIN_DISABLED=1` (zamyka tylko logowanie nowych urządzeń), `APP_PUBLIC_URL`
 (adres w `verificationUri`; za proxy bez niej używamy `X-Forwarded-Host`).
+
+## Testy na bazie
+
+`npm run test:db` (wspólny bezpiecznik produkcji, baza `tj_*` na tej maszynie) uruchamia pełny pakiet;
+bez lokalnej bazy testy `*.db.test.ts` są POMINIĘTE (to nie jest dowód).

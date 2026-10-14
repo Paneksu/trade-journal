@@ -31,7 +31,9 @@ export default async function DevicesSettingsPage() {
       >
         {oczekujace.length > 0 && (
           <p className="border-b border-line px-4 py-2 text-xs text-muted">
-            Czeka na decyzję: {oczekujace.map((k) => `${k.clientName} (${k.userCode})`).join(", ")}.{" "}
+            Czeka na decyzję: {oczekujace.length} {oczekujace.length === 1 ? "żądanie" : "żądań"} (adresy:{" "}
+            {oczekujace.map((k) => `${k.clientIp ?? "nieznany"}, ${dateTime(k.createdAt)}`).join("; ")}). Kodów tu nie pokazujemy:
+            kod przepisujesz z terminala, który sam uruchomiłeś.{" "}
             <Link href="/urzadzenia/polacz" className="text-accent underline">
               Przepisz kod, żeby zatwierdzić
             </Link>

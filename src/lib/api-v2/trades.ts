@@ -16,6 +16,8 @@ import type { TradeDraft } from "@/lib/domain/trade-draft";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 import { persistTrade, type PodgladZapisu } from "@/lib/trades/persist";
 
+import type { Zapis } from "./zapis";
+
 import { KopertaTradowSchema, opiszBledyZod, TradeSchema, zrodloZRef, type IngestTrade } from "./contract/schemas";
 import type { z } from "zod";
 
@@ -207,6 +209,7 @@ async function przetworzPozycje(
   tryb: "create" | "update",
   dryRun: boolean,
   ctx: Kontekst,
+  zapis: Zapis,
 ): Promise<WynikPozycji> {
   const refSurowy =
     surowa !== null && typeof surowa === "object" && typeof (surowa as { externalRef?: unknown }).externalRef === "string"
@@ -282,35 +285,38 @@ async function przetworzPozycje(
   if (!rozw.ok) return { index, externalRef: t.externalRef, status: "error", error: rozw.errors[0], errors: rozw.errors };
 
   const { snapshot, ...bezSnapshotu } = t;
-  const zapis = await persistTrade(
+  // Kazda pozycja we wlasnej transakcji z tj.actor: blad bazy w jednej nie psuje reszty paczki.
+  const wynikZapisu = await zapis((tx) =>
+    persistTrade(
     rozw.szkic,
     {
       source: zrodlo,
       externalRef: t.externalRef,
       sourceSnapshot: { v: 1, hash: skrot, payload: JSON.parse(JSON.stringify(bezSnapshotu)), snapshot: snapshot ?? null },
     },
-    { dryRun },
-  );
-  if (!zapis.ok) {
+    { dryRun, tx },
+  ));
+  if (!wynikZapisu.ok) {
     return {
       index,
       externalRef: t.externalRef,
       status: "error",
-      error: zapis.error,
-      errors: zapis.fieldErrors ? Object.values(zapis.fieldErrors) : [zapis.error],
-      ...(zapis.fieldErrors ? { fieldErrors: zapis.fieldErrors } : {}),
+      error: wynikZapisu.error,
+      errors: wynikZapisu.fieldErrors ? Object.values(wynikZapisu.fieldErrors) : [wynikZapisu.error],
+      ...(wynikZapisu.fieldErrors ? { fieldErrors: wynikZapisu.fieldErrors } : {}),
     };
   }
   return {
     index,
     externalRef: t.externalRef,
     status: istniejacy ? "updated" : "created",
-    ...(dryRun ? { preview: zapis.podglad, ...(istniejacy ? { id: istniejacy.id } : {}) } : { id: zapis.id }),
+    ...(dryRun ? { preview: wynikZapisu.podglad, ...(istniejacy ? { id: istniejacy.id } : {}) } : { id: wynikZapisu.id }),
   };
 }
 
 export async function przetworzTrady(
   koperta: z.output<typeof KopertaTradowSchema>,
+  zapis: Zapis,
 ): Promise<{ summary: Record<StatusPozycji, number>; results: WynikPozycji[] }> {
   const ctx = await wczytajKontekst();
   const results: WynikPozycji[] = [];
@@ -336,7 +342,7 @@ export async function przetworzTrady(
       widziane.add(ref);
     }
     try {
-      results.push(await przetworzPozycje(i, surowa, koperta.mode, koperta.dryRun, ctx));
+      results.push(await przetworzPozycje(i, surowa, koperta.mode, koperta.dryRun, ctx, zapis));
     } catch (e) {
       // Wyścig dwóch zapytań o ten sam externalRef: unikat w bazie wygrał, więc trade już jest.
       if (kodBleduBazy(e) === "23505" && typeof ref === "string") {

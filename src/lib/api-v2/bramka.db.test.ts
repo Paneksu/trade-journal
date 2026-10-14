@@ -202,7 +202,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("withApi: brama tokenów (baza lokalna)", () =>
       zadanie("/rules/proposals", {
         metoda: "POST",
         token: t.token,
-        cialo: { title: `Bramka-test ${Date.now()}`, textMd: "Nie wchodzę po 11:00.", origin: "mentor", evidence: { video: "abc", t: 120 } },
+        cialo: { title: `Bramka-test ${Date.now()}`, textMd: "Nie wchodzę po 11:00.", origin: "mentor", evidence: { video: "abc", t: 120, quote: "after eleven you are donating" } },
       }),
       undefined,
     );

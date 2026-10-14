@@ -43,12 +43,22 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
   const tokeny = tokenyZapytania(q);
   if (tokeny.length === 0) return { results: [], tokens: [] };
 
-  // Kazde slowo jako prefiks, polaczone AND; f_unaccent zdejmuje ogonki po obu stronach.
-  const tsq = tokeny.map((t) => `${t}:*`).join(" & ");
+  // Kazde slowo jako prefiks, polaczone AND. Skladnie tsquery buduje BAZA, po unaccent: unaccent potrafi
+  // zamienic znak na nawiasy lub symbole (np. «⑴» -> «(1)»), ktore w tsquery sa skladnia i dawaly 500.
+  // Po unaccent zostawiamy wylacznie litery i cyfry; token, z ktorego nic nie zostaje, odpada.
+  const wartosciTokenow = sql.join(
+    tokeny.map((t) => sql`(${t}::text)`),
+    sql`, `,
+  );
+  const tsq = sql`coalesce((
+    select string_agg(x || ':*', ' & ')
+      from (select regexp_replace(public.f_unaccent(v.tok), '[^[:alnum:]]+', '', 'g') as x
+              from (values ${wartosciTokenow}) as v(tok)) q
+     where x <> ''), '')`;
   const wzorzec = wzorzecLike(q);
   // lower(f_unaccent(q)) liczy baza, tak samo jak indeksy - jedna definicja normalizacji.
   const qn = sql`lower(public.f_unaccent(${q.trim()}))`;
-  const zapytanie = sql`to_tsquery('simple', public.f_unaccent(${tsq}))`;
+  const zapytanie = sql`to_tsquery('simple', ${tsq})`;
   const wzorzecN = sql`lower(public.f_unaccent(${wzorzec}))`;
 
   const wyniki: WynikSzukania[] = [];

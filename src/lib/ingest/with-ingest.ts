@@ -91,21 +91,21 @@ export function withIngest<C = unknown>(handler: Handler<C>): Handler<C> {
 
     if (tokenV2) {
       // Import dynamiczny: with-api ciagnie baze i `server-only`, a stary tryb (sam skrot) nie powinien jej wymagac.
-      const { uwierzytelnij } = await import("@/lib/api-v2/with-api");
-      const wynik = await uwierzytelnij(naglowekAuth);
-      if (wynik.ok) {
-        if (!wynik.token.scopes.includes("write")) {
-          return blad(
-            403,
-            "insufficient_scope",
-            `Token „${wynik.token.name}” nie ma zakresu »write« (ma: ${wynik.token.scopes.join(", ")}), a /api/ingest/** przyjmuje zapis. Zaloguj urządzenie ponownie z zakresem write albo użyj /api/v2.`,
-            { missingScope: "write" },
-            naglowki,
-          );
-        }
-        uwierzytelniony = true;
-        kluczLimitu = `api2-rate:${wynik.token.id}`;
-      }
+      const { sprawdzTokenV2, limitIOdswiezUzycie } = await import("@/lib/api-v2/with-api");
+      const bramka = await sprawdzTokenV2({
+        request,
+        idZapytania,
+        naglowki,
+        zakresy: ["write"],
+        realm: "trade-journal-ingest",
+        klient,
+        kluczBlokady,
+      });
+      if (!bramka.ok) return bramka.odpowiedz;
+      const limitV2 = await limitIOdswiezUzycie(bramka.token, klient, naglowki);
+      if (limitV2) return limitV2;
+      uwierzytelniony = true;
+      kluczLimitu = "";
     } else if (skrot && tokenPasuje(naglowekAuth, skrot)) {
       uwierzytelniony = true;
       uzyciaStarego += 1;
@@ -128,7 +128,8 @@ export function withIngest<C = unknown>(handler: Handler<C>): Handler<C> {
     }
     clearAttempts(kluczBlokady);
 
-    const limit = przepusc(kluczLimitu, LIMIT_NA_MINUTE, OKNO_MS);
+    // Token v2 ma limit i odswiezenie uzycia juz za soba (wspolna funkcja z withApi).
+    const limit = kluczLimitu === "" ? { allowed: true, retryInS: 0 } : przepusc(kluczLimitu, LIMIT_NA_MINUTE, OKNO_MS);
     if (!limit.allowed) {
       return blad(
         429,
@@ -159,7 +160,3 @@ export function withIngest<C = unknown>(handler: Handler<C>): Handler<C> {
   };
 }
 
-/** Tylko do testow. */
-export function zerujLicznikStarego(): void {
-  uzyciaStarego = 0;
-}

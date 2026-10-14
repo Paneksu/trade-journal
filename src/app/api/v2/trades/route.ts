@@ -10,4 +10,4 @@ export const GET = withApi({ scopes: ["read"] }, async (request) => obsluzTrades
  * POST /api/v2/trades { "dryRun": false, "mode": "create" | "update", "trades": [ ... max 50 ... ] }
  * Zapis idzie przez persistTrade -> computeTrade (ADR-003); API nie liczy wyniku samo.
  */
-export const POST = withApi({ scopes: ["write"] }, async (request) => obsluzTradesPost(request));
+export const POST = withApi({ scopes: ["write"] }, async (request, api) => obsluzTradesPost(request, api.zapis));

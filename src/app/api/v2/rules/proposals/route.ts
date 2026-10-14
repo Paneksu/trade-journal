@@ -24,12 +24,15 @@ export const POST = withApi({ scopes: ["propose"] }, async (request, api) => {
     {
       rule: wynik.kodReguly,
       version: wynik.wersja,
-      status: "proposed",
+      status: wynik.status,
       noteId: wynik.noteId,
       created: wynik.utworzona,
       n: wynik.n,
       signature: wynik.podpis,
-      note: "To tylko propozycja. Zatwierdza ją użytkownik w aplikacji, po jednej naraz.",
+      note:
+        wynik.status === "proposed"
+          ? "To tylko propozycja. Zatwierdza ją użytkownik w aplikacji, po jednej naraz."
+          : `Taka treść już istnieje jako wersja o statusie »${wynik.status}«; nic nie zgłoszono.`,
     },
     wynik.utworzona ? 201 : 200,
   );

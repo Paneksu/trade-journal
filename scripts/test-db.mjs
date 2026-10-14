@@ -7,9 +7,11 @@ import postgres from "postgres";
 /*
  * Testy na prawdziwej, lokalnej bazie: `npm run test:db [-- argumenty vitest]`.
  *
- * Bezpiecznik produkcji: DATABASE_URL (z otoczenia albo z .env.local) musi
- * wskazywac baze na TYM komputerze (127.0.0.1 / localhost / ::1) o nazwie
- * zaczynajacej sie od `tj_`. Inaczej skrypt odmawia, zanim cokolwiek zapisze.
+ * Bezpiecznik produkcji: wspolny `wymagajLokalnego` z narzedzia/bezpiecznik-produkcji.mjs
+ * (sciezka ABSOLUTNA - z worktree sciezka wzgledna nie trafia) sprawdza host
+ * DATABASE_URL, a dodatkowo wymagamy nazwy bazy zaczynajacej sie od `tj_`. Flagi
+ * --produkcja skrypt NIE przekazuje do bezpiecznika (argv jest stale), wiec nie ma
+ * jak jej wlaczyc; brak pliku bezpiecznika = odmowa (fail closed).
  *
  * Skrypt:
  *  1. stosuje migracje na bazie DATABASE_URL (testy API zakladaja gotowy schemat),
@@ -46,8 +48,18 @@ try {
   odmow(`DATABASE_URL (${url ? "nieczytelny adres" : "brak"}) nie jest poprawnym adresem. Ustaw go w .env.local, np. postgresql://journal:journal@127.0.0.1:55433/tj_faza2`);
 }
 const nazwaBazy = decodeURIComponent(u.pathname.replace(/^\//, ""));
+// Wspolny bezpiecznik produkcji (sciezka absolutna). Brak pliku = odmowa (fail closed).
+const SCIEZKA_BEZPIECZNIKA = "file:///R:/PROJEKTY/web_developer/narzedzia/bezpiecznik-produkcji.mjs";
+let bezpiecznik;
+try {
+  bezpiecznik = await import(SCIEZKA_BEZPIECZNIKA);
+} catch (e) {
+  odmow(`nie udało się wczytać wspólnego bezpiecznika produkcji z ${SCIEZKA_BEZPIECZNIKA} (${e.message}). Bez niego nie piszę do żadnej bazy.`);
+}
+// argv na sztywno: --produkcja z wiersza polecen nie dochodzi do bezpiecznika.
+bezpiecznik.wymagajLokalnego({ DATABASE_URL: url }, { argv: ["node", "test-db.mjs"], skrypt: "scripts/test-db.mjs" });
 if (!["127.0.0.1", "localhost", "[::1]", "::1"].includes(u.hostname)) {
-  odmow(`host ${u.hostname} nie jest lokalny (baza ${nazwaBazy}). Testy piszą do bazy i nie wolno ich puszczać na produkcji.`);
+  odmow(`host ${u.hostname} przechodzi wspólny bezpiecznik, ale test:db zezwala tylko na 127.0.0.1 / localhost / ::1 (baza ${nazwaBazy}).`);
 }
 if (!/^tj_[a-z0-9_]+$/.test(nazwaBazy)) {
   odmow(`baza »${nazwaBazy}« nie zaczyna się od tj_. Testy używają wyłącznie baz testowych (np. tj_faza2).`);

@@ -67,3 +67,24 @@ export function bramkaN(
   }
   return { ok: true };
 }
+
+/**
+ * Pochodzenie deklarowane przez klienta API vs pochodzenie, ktore serwer uznaje
+ * (decyzja uzytkownika 15.10.2026: «Walidacja danych»). Import z sejfu poznaje sie po
+ * kluczu `externalRef` zaczynajacym sie od `vault:`; `vault-import` bez niego to zwykly
+ * wpis agenta, wiec traktujemy go jak `ai` (z kontrargumentem, dowodami i progiem n).
+ */
+export type OriginApi = "ai" | "mentor" | "vault-import";
+
+export const PREFIKS_SEJFU = "vault:";
+
+export function czyImportZSejfu(origin: OriginApi, externalRef: string | null | undefined): boolean {
+  return origin === "vault-import" && typeof externalRef === "string" && externalRef.startsWith(PREFIKS_SEJFU) && externalRef.length > PREFIKS_SEJFU.length;
+}
+
+export function originEfektywny(origin: OriginApi, externalRef: string | null | undefined): OriginApi {
+  return origin === "vault-import" && !czyImportZSejfu(origin, externalRef) ? "ai" : origin;
+}
+
+/** Najnizszy prog n, jaki wolno ustawic przez API; nizszy ustawia tylko uzytkownik w aplikacji. */
+export const MIN_PROG_N_API = 20;

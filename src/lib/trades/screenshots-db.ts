@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { screenshots } from "@/lib/db/schema";
+import type { Zapis } from "@/lib/api-v2/zapis";
 import { saveScreenshot } from "@/lib/screenshots";
 
 /**
@@ -32,6 +33,8 @@ export async function wgrajZrzuty(
   tradeId: number,
   items: ZrzutZInterwalem[],
   origin: OriginZrzutu = "manual",
+  /** Z bramy API: wstawienia ida w transakcji z tj.actor (ADR-030). Formularz UI nie podaje. */
+  zapis?: Zapis,
 ): Promise<string | null> {
   if (items.length === 0) return null;
 
@@ -44,7 +47,7 @@ export async function wgrajZrzuty(
   for (const { file, interval } of items) {
     try {
       const saved = await saveScreenshot({ kind: "trade", id: tradeId }, file);
-      await db.insert(screenshots).values({
+      const wiersz = {
         tradeId,
         file: saved.file,
         thumbnail: saved.thumbnail,
@@ -53,7 +56,9 @@ export async function wgrajZrzuty(
         sortOrder: sortOrder++,
         interval,
         origin,
-      });
+      };
+      if (zapis) await zapis((tx) => tx.insert(screenshots).values(wiersz));
+      else await db.insert(screenshots).values(wiersz);
     } catch (error) {
       return `zrzut się nie wgrał: ${(error as Error).message}`;
     }

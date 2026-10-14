@@ -1,4 +1,5 @@
 import { obsluzTradesGet, obsluzTradesPost } from "@/lib/api-v2/handlery";
+import { zapisIngest } from "@/lib/api-v2/zapis";
 import { withIngest } from "@/lib/ingest/with-ingest";
 
 export const dynamic = "force-dynamic";
@@ -12,4 +13,4 @@ export const dynamic = "force-dynamic";
 export const GET = withIngest(async (request) => obsluzTradesGet(request));
 
 /** POST /api/ingest/trades { "dryRun": false, "mode": "create" | "update", "trades": [ ... max 50 ... ] } */
-export const POST = withIngest(async (request) => obsluzTradesPost(request));
+export const POST = withIngest(async (request) => obsluzTradesPost(request, zapisIngest));

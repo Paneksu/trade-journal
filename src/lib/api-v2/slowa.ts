@@ -74,6 +74,11 @@ export async function zapiszSlowa(
   }
 
   // Idempotencja: to samo zdanie, ta sama chwila zapisu i te same kotwice to ten sam wpis.
+  // Tabela nie ma unikatu na te kolumny (poprawki i dopiski moga powtarzac tresc), wiec
+  // rownolegle ponowienia serializuje blokada doradcza po kluczu wpisu - inaczej oba
+  // zapytania nie znajda jeszcze wiersza i zapisza duplikat.
+  const klucz = [policzony, d.capturedAt.toISOString(), d.source, d.role ?? "", d.tradeId ?? "", d.noteId ?? "", d.backtestSessionId ?? "", d.day ?? ""].join("|");
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${klucz}, 0))`);
   const [istniejace] = await tx
     .select()
     .from(userWords)
