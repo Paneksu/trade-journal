@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { screenshots, trades } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami } from "@/lib/domain/interwaly";
-import { bladPliku, deleteScreenshot } from "@/lib/screenshots";
+import { bladPliku, bladZawartosci, deleteScreenshot } from "@/lib/screenshots";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { policzZrzuty, wgrajZrzuty, type OriginZrzutu } from "@/lib/trades/screenshots-db";
 
@@ -58,7 +58,7 @@ export async function zastapZrzuty(
   }
 
   for (let i = 0; i < pliki.length; i += 1) {
-    const b = bladPliku(pliki[i]);
+    const b = bladPliku(pliki[i]) ?? (await bladZawartosci(pliki[i]));
     if (b) return { ok: false, status: 422, error: `shot #${i + 1}: ${b}` };
   }
   for (const [i, w] of interwaly.entries()) {
@@ -166,7 +166,7 @@ export function wczytajMetaZrzutow(form: FormData): { ok: true; meta: MetaZrzuto
       capturedAt.push(null);
       continue;
     }
-    if (!/^d{4}-d{2}-d{2}Td{2}:d{2}(:d{2}(.d{1,9})?)?(Z|[+-]d{2}:d{2})$/.test(tekst) || Number.isNaN(Date.parse(tekst))) {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/.test(tekst) || Number.isNaN(Date.parse(tekst))) {
       return { ok: false, error: `capturedAt #${i + 1}: »${tekst.slice(0, 40)}« - oczekiwano ISO 8601 z offsetem, np. 2026-03-10T09:35:00-04:00.` };
     }
     capturedAt.push(new Date(tekst));

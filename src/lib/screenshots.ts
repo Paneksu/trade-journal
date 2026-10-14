@@ -4,7 +4,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 
-import { dekodujHeic, BladHeic } from "./heic";
+import { dekodujHeic, BladHeic, wygladaNaHeic } from "./heic";
 import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./uploads-path";
 
 /**
@@ -37,6 +37,27 @@ export function bladPliku(upload: File): string | null {
     return `Plik »${upload.name}« ma ${upload.size} B, a limit to ${MAX_BYTES} B (10 MB).`;
   }
   return null;
+}
+
+/**
+ * Czy zawartosc pliku jest obrazem tego typu? Sprawdza naglowek (HEIC: kontener HEIF; reszta: odczyt
+ * metadanych przez sharp), bez dekodowania calego obrazu. Pozwala odrzucic plik z kodem 422 PRZED zapisem
+ * czegokolwiek - w przeciwnym razie plik tylko udajacy obraz wyszedlby jako blad serwera.
+ */
+export async function bladZawartosci(upload: File): Promise<string | null> {
+  const bajty = Buffer.from(await upload.arrayBuffer());
+  if (HEIC.has(upload.type)) {
+    return wygladaNaHeic(bajty)
+      ? null
+      : `Plik »${upload.name}« deklaruje typ ${upload.type}, ale jego nagłówek nie jest kontenerem HEIF (brak znacznika »ftyp« z marką heic/mif1). Wyeksportuj zdjęcie jako JPEG albo PNG.`;
+  }
+  try {
+    const meta = await sharp(bajty, { limitInputPixels: 40_000_000 }).metadata();
+    if (!meta.width || !meta.height) throw new Error("brak wymiarów");
+    return null;
+  } catch (e) {
+    return `Plik »${upload.name}« nie jest poprawnym obrazem (${upload.type || "brak typu"}): ${(e as Error).message}.`;
+  }
 }
 
 export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<SavedScreenshot> {

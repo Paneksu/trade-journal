@@ -4,3 +4,6 @@
 *.sh text eol=lf
 # Reszta zrodel: LF w repo, a w katalogu roboczym wg ustawien systemu.
 * text=auto
+
+# Syntetyczna probka HEIC do testow zalacznikow: plik binarny, bez normalizacji koncow linii.
+*.heic binary

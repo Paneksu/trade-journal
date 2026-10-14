@@ -4,7 +4,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notes, screenshots } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami } from "@/lib/domain/interwaly";
-import { bladPliku } from "@/lib/screenshots";
+import { bladPliku, bladZawartosci } from "@/lib/screenshots";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { policzZalaczniki, wgrajZalaczniki, type OriginZrzutu } from "@/lib/trades/screenshots-db";
 import type { ShotOwner } from "@/lib/uploads-path";
@@ -59,7 +59,7 @@ export async function dolaczZalaczniki(request: Request, w: Wlasciciel, zapis: Z
   const meta = wczytajMetaZrzutow(form);
   if (!meta.ok) return blad(400, "bad_request", meta.error);
   for (let i = 0; i < pliki.length; i += 1) {
-    const b = bladPliku(pliki[i]);
+    const b = bladPliku(pliki[i]) ?? (await bladZawartosci(pliki[i]));
     if (b) return blad(422, "validation_failed", `shot #${i + 1}: ${b}`);
   }
 
