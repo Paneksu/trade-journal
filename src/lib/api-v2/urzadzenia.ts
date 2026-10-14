@@ -170,8 +170,14 @@ export async function odrzucKod(id: number): Promise<{ ok: true } | { ok: false;
   return { ok: true };
 }
 
-/** Zadania czekajace na decyzje (do podgladu na stronie Urzadzenia). */
-export async function oczekujaceKody(): Promise<KodDoZatwierdzenia[]> {
+/**
+ * Zadanie czekajace na decyzje, widziane z LISTY urzadzen: celowo BEZ `userCode` (phishing kodem
+ * urzadzenia, audyt 15.10.2026). Kod zna tylko ten, kto przepisuje go z wlasnego terminala.
+ */
+export type OczekujaceZadanie = Omit<KodDoZatwierdzenia, "userCode">;
+
+/** Zadania czekajace na decyzje (do podgladu na stronie Urzadzenia), bez kodow. */
+export async function oczekujaceKody(): Promise<OczekujaceZadanie[]> {
   const wiersze = await db
     .select()
     .from(deviceCodes)
@@ -179,7 +185,6 @@ export async function oczekujaceKody(): Promise<KodDoZatwierdzenia[]> {
     .orderBy(desc(deviceCodes.createdAt));
   return wiersze.map((w) => ({
     id: w.id,
-    userCode: w.userCode,
     clientName: w.clientName,
     clientIp: w.clientIp,
     requestedScopes: w.requestedScopes.filter(czyScope),
@@ -227,4 +232,18 @@ export async function utworzTokenImportu(
     })
     .returning({ id: apiTokens.id });
   return { id: w.id, token: nowy.token, prefix: nowy.prefix, expiresAt };
+}
+
+/**
+ * Uniewaznia WSZYSTKIE aktywne tokeny urzadzen naraz ("wyloguj wszedzie" + tokeny, ADR-031).
+ * Zwraca id uniewaznionych, zeby wolajacy zostawil wpis token_revoked dla kazdego.
+ * Wczesniej uniewaznione tokeny zostaja nietkniete (z ich pierwotnym powodem).
+ */
+export async function uniewaznWszystkieTokeny(powod = "logout_all"): Promise<number[]> {
+  const zmienione = await db
+    .update(apiTokens)
+    .set({ revokedAt: sql`now()`, revokedReason: powod })
+    .where(isNull(apiTokens.revokedAt))
+    .returning({ id: apiTokens.id });
+  return zmienione.map((z) => z.id);
 }

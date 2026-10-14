@@ -6,18 +6,8 @@
 -- Kopia bazy przed wdrozeniem NIE jest wymagana przez sama migracje (same nowe
 -- tabele), ale jest wymagana przez wydanie R2 jako calosc (STOP z planu).
 --
--- !!! RYZYKO SCALENIA Z FAZA 1 (migracja 0016, tabela auth_events) !!!
--- Model (sekcja 9) kaze tu dolozyc FK auth_events.token_id -> api_tokens.id.
--- Ta galaz powstala BEZ 0016, wiec tabeli auth_events tu nie ma i FK jest
--- POMINIETY. Po scaleniu z galezia fazy 1 trzeba dopisac na KONCU tego pliku
--- (o ile 0017 nie zostala jeszcze nigdzie zaaplikowana; w przeciwnym razie
--- osobna migracja):
---
---   ALTER TABLE "auth_events" ADD CONSTRAINT "auth_events_token_id_fkey"
---     FOREIGN KEY ("token_id") REFERENCES "api_tokens" ("id") ON DELETE NO ACTION;
---
--- oraz w schema.ts dopisac .references(() => apiTokens.id) przy authEvents.tokenId.
--- Test migracje-v2.db.test.ts pada, gdy auth_events istnieje bez tego FK.
+-- FK auth_events.token_id -> api_tokens.id: migracja 0019_auth_events_token_fk (0016 i 0017 powstaly
+-- na osobnych galeziach, wiec klucz obcy dochodzi osobna migracja po scaleniu).
 --
 -- Tokenow sie nie kasuje, tylko uniewaznia (revoked_at): wskazuja na nie
 -- created_by_token_id w tabelach niezmiennych, a FK do nich jest NO ACTION.

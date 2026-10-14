@@ -120,7 +120,7 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
 
   it("trasy oznaczone w kontrakcie jako wymagające import wołają wymagajImportuDlaOrigin (i tylko one)", () => {
     const oznaczone = new Set(ENDPOINTS.filter((e) => e.wymagaImportuDlaOrigin).map((e) => katalogTrasy(e.sciezka)));
-    expect([...oznaczone].sort()).toEqual(["hypotheses", "notes", "rules/proposals"]);
+    expect([...oznaczone].sort()).toEqual(["hypotheses", "notes", "rules/proposals", "user-words"]);
     const wolajace = new Set<string>();
     const idz = (katalog: string) => {
       for (const nazwa of readdirSync(katalog)) {

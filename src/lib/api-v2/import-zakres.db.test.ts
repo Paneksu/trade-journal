@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { wyczyscLimiter } from "./limiter";
-import { MOZNA_NA_BAZIE, nowyToken, polacz, sprzatnijPoTokenach, unikalnyIp, zadanie, zapewnijPodstawy, type Par, type Sql } from "./test/db-pomocnik";
+import { MOZNA_NA_BAZIE, nowyToken, polacz, sha256Hex, sprzatnijPoTokenach, unikalnyIp, zadanie, zapewnijPodstawy, type Par, type Sql } from "./test/db-pomocnik";
 
 vi.mock("server-only", () => ({}));
 
@@ -116,6 +116,34 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zakres import (baza lokalna)", () => {
 
     it("hipoteza bez deklarowanego pochodzenia ‘import’ przechodzi z samym write", async () => {
       expect((await hipoteza({ title: t("H zwykła") }, write.token)).status).toBe(201);
+    });
+  });
+
+  describe("słowa użytkownika ze źródła vault-import (P4)", () => {
+    const sha = (t: string) => sha256Hex(t);
+    const slowa = async (source: string, token: string, tekst: string) => {
+      const { POST } = await import("@/app/api/v2/user-words/route");
+      return POST(
+        zadanie("/user-words", { metoda: "POST", token, cialo: { text: tekst, sha256: sha(tekst), source, capturedAt: new Date().toISOString(), role: `test.import.${znacznik}` } }),
+        undefined,
+      );
+    };
+
+    it("source vault-import bez zakresu import = 403 (write i propose), z importem = 201; nic nie zapisano przy odmowie", async () => {
+      const tekst = `z sejfu ${znacznik}`;
+      await odmowa403(await slowa("vault-import", write.token, tekst));
+      await odmowa403(await slowa("vault-import", propose.token, tekst));
+      const [{ ile }] = await sql`select count(*)::int as ile from user_words where text = ${tekst}`;
+      expect(ile).toBe(0);
+      const ok = await slowa("vault-import", imp.token, tekst);
+      expect(ok.status).toBe(201);
+      expect((await ok.json()).source).toBe("vault-import");
+    });
+
+    it("pozostałe źródła (chat, note, chart, mobile) nadal wystarczy write", async () => {
+      for (const source of ["chat", "note", "chart", "mobile"]) {
+        expect((await slowa(source, write.token, `źródło ${source} ${znacznik}`)).status, source).toBe(201);
+      }
     });
   });
 

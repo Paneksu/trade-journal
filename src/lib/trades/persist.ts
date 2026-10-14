@@ -61,7 +61,7 @@ export async function persistTrade(
 ): Promise<PersistResult> {
   const instrumentRow = szkic.instrumentId
     ? ((
-        await db.select().from(instruments).where(eq(instruments.id, szkic.instrumentId)).limit(1)
+        await (opcje.tx ?? db).select().from(instruments).where(eq(instruments.id, szkic.instrumentId)).limit(1)
       )[0] ?? null)
     : null;
 

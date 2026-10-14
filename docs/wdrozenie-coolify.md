@@ -162,7 +162,7 @@ w pamięci kontenera, więc restart je zeruje.
 
 **Proxy przed aplikacją:** adres klienta do blokad to ostatni wpis `X-Forwarded-For`, a HTTPS wynika
 z `X-Forwarded-Proto`. Traefik z Coolify ustawia oba. Dodanie kolejnego proxy (CDN) przed Traefikiem
-sprawi, że wszyscy klienci zlecą się pod jeden adres — wtedy trzeba zmienić `adresKlienta` w `lib/ingest/http.ts`.
+sprawi, że wszyscy klienci zlecą się pod jeden adres — wtedy trzeba zmienić `adresKlienta` w `lib/api-v2/http.ts`.
 
 ## 9. Domena `dziennik.panekweb.pl`, HTTPS i 2FA (wydanie R1, ADR-031)
 
@@ -210,12 +210,18 @@ Wejście do panelu Coolify i do bazy jest więc ostatnią linią obrony: zabezpi
 **Wyloguj pozostałe urządzenia** (Ustawienia → Bezpieczeństwo) odcina wszystkie urządzenia poza bieżącym. Blokada prób
 (8 błędów hasła lub kodu na adres, 10 minut) siedzi w pamięci kontenera: restart ją zeruje.
 Adres klienta do blokad to ostatni wpis `X-Forwarded-For` (dopisuje go Traefik); CDN przed Traefikiem
-trzeba by uwzględnić w `adresZNaglowkow` (`lib/ingest/http.ts`).
+trzeba by uwzględnić w `adresZNaglowkow` (`lib/api-v2/http.ts`).
 
 ## 10. API v2, tokeny urządzeń i notatki (wydanie R2, ADR-029 i ADR-030)
 
-Wydanie R2 wchodzi **po R1** (sekcja 9) na tej samej gałęzi historii: migracje `0017_api_tokens`,
-`0018_notatki` i `0019_auth_events_token_fk` wykonują się przy starcie kontenera (`scripts/migrate.mjs`).
+**Dwa osobne wdrożenia** (Słowa użytkownika 15.10.2026: «Dwa wdrożenia»), nie jeden push:
+1. **R1** = sekcja 9, sama faza 1 (gałąź `feat/domena-totp`, migracja `0016_totp`). Domena, HTTPS, 2FA. Smoke i canary.
+2. **R2** = ta sekcja, gałąź `feat/notatki-api-v2` (zawiera już R1): migracje `0017_api_tokens`, `0018_notatki` i
+   `0019_auth_events_token_fk` wykonują się przy starcie kontenera (`scripts/migrate.mjs`). Dopiero po udanym R1.
+
+**Logowanie urządzeń zamknięte do włączenia 2FA** (Słowa użytkownika 15.10.2026: «Zamknięte do włączenia 2FA»):
+przed wdrożeniem R2 ustaw w Coolify `DEVICE_LOGIN_DISABLED=1` (aplikacja jest publiczna, a `device/start` nie wymaga
+tokenu). Zdejmij zmienną dopiero po włączeniu 2FA i pierwszym `tj login` zatwierdzonym z sudo.
 
 - **Kopia bazy przed wdrożeniem** (Coolify → Backups → „Backup now”): migracje tylko dokładają, ale
   `0018` zastępuje funkcję `tj_forbid_update` (to samo zachowanie, `TJ409`) i rozszerza `screenshots_owner`.
@@ -226,7 +232,7 @@ Wydanie R2 wchodzi **po R1** (sekcja 9) na tej samej gałęzi historii: migracje
   `DEVICE_LOGIN_DISABLED=1` (zamyka tylko logowanie nowych urządzeń), `APP_PUBLIC_URL=https://dziennik.panekweb.pl`
   (adres w `verificationUri`). `INGEST_TOKEN_SHA256` zostaje, dopóki łącznik nie przejdzie na tokeny v2
   (trasy `/api/ingest/**` są wygaszane, nagłówek `Deprecation`; usunięcie po fazie 3 i za zgodą).
-- **Pierwsze urządzenie:** `tj login` → Ustawienia → Urządzenia → „Połącz urządzenie” → przepisz kod.
+- **Pierwsze urządzenie** (po zdjęciu `DEVICE_LOGIN_DISABLED`): `tj login` → Ustawienia → Urządzenia → „Połącz urządzenie” → przepisz kod.
   Zatwierdzenie wymaga **sudo** (2FA włączone) albo hasła (2FA wyłączone); wpisy trafiają do Bezpieczeństwo → dziennik zdarzeń.
   **Token importu** (zakres `import`, 24 h, pokazywany raz) tworzysz tam samo, ręcznie.
 - **Smoke po wdrożeniu:** `curl https://dziennik.panekweb.pl/api/v2/meta` → `401`; z tokenem → `200` i `contractHash`

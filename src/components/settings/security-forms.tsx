@@ -212,6 +212,10 @@ export function DisableTotpForm({ sudoAktywne }: { sudoAktywne: boolean }) {
   return (
     <form action={formAction} className="space-y-3">
       {!sudoAktywne && <p className="text-xs text-faint">Wymaga trybu sudo.</p>}
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-text">
+        <input type="checkbox" name="uniewaznTokeny" className="size-4 accent-accent" />
+        Unieważnij też wszystkie tokeny urządzeń
+      </label>
       {state.error && <ErrorMessage>{state.error}</ErrorMessage>}
       <Button type="submit" variant="danger" size="s" disabled={!sudoAktywne}>
         Wyłącz 2FA
@@ -222,10 +226,26 @@ export function DisableTotpForm({ sudoAktywne }: { sudoAktywne: boolean }) {
 
 export function LogoutEverywhereButton() {
   const [pending, start] = useTransition();
+  const [tokeny, ustawTokeny] = useState(false);
   return (
-    <Button variant="danger" size="s" disabled={pending} onClick={() => start(() => logoutEverywhere())}>
-      {pending ? "Wylogowuję…" : "Wyloguj pozostałe urządzenia"}
-    </Button>
+    <div className="space-y-2">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-text">
+        <input
+          type="checkbox"
+          checked={tokeny}
+          onChange={(e) => ustawTokeny(e.target.checked)}
+          className="size-4 accent-accent"
+        />
+        Unieważnij też wszystkie tokeny urządzeń (łącznik tj, asystenci AI)
+      </label>
+      <Button variant="danger" size="s" disabled={pending} onClick={() => start(() => logoutEverywhere(tokeny))}>
+        {pending ? "Wylogowuję…" : "Wyloguj pozostałe przeglądarki"}
+      </Button>
+      <p className="text-xs text-faint">
+        Przycisk dotyczy sesji przeglądarek. Tokeny urządzeń zostają, dopóki nie zaznaczysz pola powyżej albo nie
+        unieważnisz ich w Ustawienia → Urządzenia.
+      </p>
+    </div>
   );
 }
 

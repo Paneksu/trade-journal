@@ -139,3 +139,24 @@ describe.skipIf(!MOZNA_NA_BAZIE)("limit żądań, sprzątanie i wyłącznik devi
     expect((await start(`wlaczone ${znacznik}`)).status).toBe(200);
   });
 });
+
+describe.skipIf(!MOZNA_NA_BAZIE)("lista oczekujących nie niesie kodu (P2)", () => {
+  it("oczekujaceKody() zwraca żądania bez pola userCode (typ i dane)", async () => {
+    const sql = polacz();
+    const nazwa = `P2 ${Date.now().toString(36)}`;
+    try {
+      const { POST } = await import("@/app/api/v2/device/start/route");
+      await sql`delete from device_codes where token_id is null`;
+      const res = await POST(zadanie("/device/start", { metoda: "POST", cialo: { clientName: nazwa, scopes: ["read"] }, ip: unikalnyIp() }), undefined);
+      const { userCode } = await res.json();
+      const urz = await import("./urzadzenia");
+      const lista = await urz.oczekujaceKody();
+      expect(lista.length).toBeGreaterThan(0);
+      for (const z of lista) expect(Object.keys(z)).not.toContain("userCode");
+      expect(JSON.stringify(lista)).not.toContain(userCode);
+    } finally {
+      await sql`delete from device_codes where client_name = ${nazwa}`;
+      await sql.end();
+    }
+  });
+});

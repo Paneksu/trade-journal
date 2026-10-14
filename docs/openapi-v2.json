@@ -2442,6 +2442,10 @@
         "x-scopes": [
           "write"
         ],
+        "x-import-scope-required-for-origins": [
+          "vault-import",
+          "mentor"
+        ],
         "parameters": [],
         "responses": {
           "200": {

@@ -2,7 +2,7 @@ import { SlowaListaQuery, SlowaUtworzSchema } from "@/lib/api-v2/contract/v2";
 import { blad, odpowiedz } from "@/lib/api-v2/http";
 import { listaSlow, zapiszSlowa, zSlow } from "@/lib/api-v2/slowa";
 import { wczytajCialo, wczytajQuery } from "@/lib/api-v2/walidacja";
-import { withApi } from "@/lib/api-v2/with-api";
+import { withApi, wymagajImportuDlaOrigin } from "@/lib/api-v2/with-api";
 import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,10 @@ export const GET = withApi({ scopes: ["read"] }, async (request) => {
 export const POST = withApi({ scopes: ["write"] }, async (request, api) => {
   const w = await wczytajCialo(request, SlowaUtworzSchema, "Nieprawidłowe słowa użytkownika");
   if (!w.ok) return w.odpowiedz;
+
+  // source: vault-import to import z sejfu (jak origin vault-import) - tylko z zakresem import.
+  const bezImportu = wymagajImportuDlaOrigin(api, w.dane.source);
+  if (bezImportu) return bezImportu;
 
   const wynik = await api.zapis((tx) => zapiszSlowa(tx, api, w.dane));
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat, wynik.dodatkowe ?? {});

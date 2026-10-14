@@ -76,6 +76,52 @@ describe.skipIf(!MOZNA_NA_BAZIE)("trades, days, sessions, skips, reviews przez v
       expect(w).toMatchObject({ pnl: 40000, risk_amount: 20000, r: 2, status: "closed", dzien: DZIEN, source: "fxreplay", external_ref: `${REF}-1` });
     });
 
+    it("persistTrade z tx czyta instrument w TEJ SAMEJ transakcji (instrument jeszcze niezatwierdzony) i nic nie zostaje po rollbacku", async () => {
+      const { persistTrade } = await import("@/lib/trades/persist");
+      const { db } = await import("@/lib/db");
+      const { instruments } = await import("@/lib/db/schema");
+      const symbol = `TX${znacznik}`.slice(0, 12).toUpperCase();
+      class Wycofaj extends Error {}
+      let wynik: Awaited<ReturnType<typeof persistTrade>> | null = null;
+      await db
+        .transaction(async (tx) => {
+          const [i] = await tx.insert(instruments).values({ symbol, name: "Instrument testowy w transakcji", tickSize: "0.25", tickValue: 5000 }).returning({ id: instruments.id });
+          wynik = await persistTrade(
+            {
+              id: null,
+              accountId: kontoId,
+              instrumentId: i.id,
+              backtestSessionId: null,
+              direction: "long",
+              status: "closed",
+              entryTime: new Date(`${DZIEN}T14:35:00Z`),
+              entryPrice: 100,
+              contracts: 1,
+              wyjscia: [{ numer: 1, czas: new Date(`${DZIEN}T14:50:00Z`), cena: 101, kontrakty: null, kwotaBrokera: null, notatka: null }],
+              stopLoss: 99,
+              takeProfit: null,
+              mae: null,
+              mfe: null,
+              brokerAmount: null,
+              note: undefined,
+              moodNote: undefined,
+              readiness: undefined,
+              custom: undefined,
+              tags: undefined,
+            },
+            undefined,
+            { tx },
+          );
+          throw new Wycofaj();
+        })
+        .catch((e) => {
+          if (!(e instanceof Wycofaj)) throw e;
+        });
+      expect(wynik, JSON.stringify(wynik)).toMatchObject({ ok: true });
+      const [{ ile }] = await sql`select count(*)::int as ile from instruments where symbol = ${symbol}`;
+      expect(ile).toBe(0);
+    });
+
     it("dryRun liczy bez zapisu", async () => {
       const res = await wyslijTrady([trade(2)], { dryRun: true });
       const dane = await res.json();

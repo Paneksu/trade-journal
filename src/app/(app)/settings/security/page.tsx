@@ -96,7 +96,7 @@ export default async function SecuritySettingsPage() {
         <PasswordForm />
       </Panel>
 
-      <Panel title="Sesje" description="Gdy podejrzewasz, że ktoś ma Twoją sesję: odetnij wszystkie urządzenia naraz.">
+      <Panel title="Sesje" description="Gdy podejrzewasz, że ktoś ma Twoją sesję: odetnij wszystkie przeglądarki naraz (opcjonalnie także tokeny urządzeń).">
         <div className="p-4">
           <LogoutEverywhereButton />
         </div>

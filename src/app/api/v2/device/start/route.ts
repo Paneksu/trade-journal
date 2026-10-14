@@ -14,8 +14,10 @@ export const dynamic = "force-dynamic";
 export const POST = withPublicApi(
   { nazwa: "device-start", limit: 10, oknoMs: 60 * 60 * 1000 },
   async (request) => {
-    // Osobny wylacznik logowania urzadzen (niezalezny od API_V2_DISABLED): warunek publicznego
-    // wystawienia to sudo przy zatwierdzaniu z fazy 1; do tego czasu mozna to zamknac jedna zmienna.
+    // Osobny wylacznik logowania urzadzen (niezalezny od API_V2_DISABLED). Sudo przy zatwierdzaniu jest
+    // juz wdrozone, ale decyzja uzytkownika 15.10.2026 («Zamkniete do wlaczenia 2FA»): przed wdrozeniem R2
+    // ustaw DEVICE_LOGIN_DISABLED=1, zdejmij dopiero po wlaczeniu 2FA i pierwszym `tj login`
+    // (docs/wdrozenie-coolify.md, sekcja 10).
     if (process.env.DEVICE_LOGIN_DISABLED === "1") {
       return blad(403, "device_login_disabled", "Logowanie nowych urządzeń jest wyłączone (DEVICE_LOGIN_DISABLED=1). Istniejące tokeny działają bez zmian. Włącz je na czas łączenia urządzenia.");
     }

@@ -37,6 +37,7 @@ import {
   zapiszNiepowodzenie,
   zdarzenie,
 } from "@/lib/auth/zadanie";
+import { uniewaznWszystkieTokeny } from "@/lib/api-v2/urzadzenia";
 import { db } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 
@@ -186,7 +187,19 @@ export async function regenerateBackupCodes(): Promise<BackupState> {
 
 export type DisableState = { ok?: boolean; error?: string };
 
-export async function disableTotp(): Promise<DisableState> {
+/** Unieważnia wszystkie tokeny urządzeń i zostawia wpis token_revoked dla każdego (bez sekretów). */
+async function uniewaznTokenyZDzienikiem(kontekst: string): Promise<number> {
+  const ids = await uniewaznWszystkieTokeny("logout_all");
+  for (const tokenId of ids) await zdarzenie("token_revoked", { tokenId, powod: "logout_all", kontekst });
+  return ids.length;
+}
+
+/**
+ * Wyłącza 2FA. Opcjonalnie (pole formularza `uniewaznTokeny`) unieważnia też wszystkie tokeny urządzeń:
+ * ktoś, kto miał dostęp do konta, mógł już wydać sobie token, a ten przeżyłby wyłączenie 2FA
+ * (Słowa użytkownika 15.10.2026: «Dopisać teraz»).
+ */
+export async function disableTotp(_p?: DisableState, data?: FormData): Promise<DisableState> {
   const s = await requireSession();
   if (!s.totpEnabledAt) return { error: "2FA jest już wyłączone." };
   if ((await stanSudo(s)).stan !== "aktywny") return { error: KOMUNIKAT_SUDO };
@@ -197,12 +210,17 @@ export async function disableTotp(): Promise<DisableState> {
   await clearSudoCookie();
   await setSessionCookie(wersja);
   await zdarzenie("totp_disabled");
+  if (data?.get("uniewaznTokeny") === "on") await uniewaznTokenyZDzienikiem("totp_disabled");
   revalidatePath("/", "layout");
   return { ok: true };
 }
 
-/** Wylogowuje wszystkie urzadzenia (podbicie wersji sesji). Odcinanie dostepu ma byc latwe: bez sudo. */
-export async function logoutEverywhere(): Promise<void> {
+/**
+ * Wylogowuje wszystkie PRZEGLĄDARKI (podbicie wersji sesji); tokeny urządzeń (tj, AI) to osobna sprawa i
+ * zostają, chyba że `uniewaznTokeny` = true (Słowa użytkownika 15.10.2026: «Dopisać teraz»).
+ * Odcinanie dostępu ma być łatwe: bez sudo.
+ */
+export async function logoutEverywhere(uniewaznTokeny = false): Promise<void> {
   await requireSession();
   // Podbicie atomowo w bazie (nie "odczytana wersja + 1"): dwa rownolegle wywolania nie dostana
   // tej samej nowej wersji, wiec nie wyjda z tego dwa rownoczesnie wazne ciasteczka.
@@ -213,6 +231,7 @@ export async function logoutEverywhere(): Promise<void> {
     .returning({ nowa: settings.sessionVersion });
   await clearSudoCookie();
   await setSessionCookie(nowa);
-  await zdarzenie("logout_all");
+  await zdarzenie("logout_all", { tokeny: uniewaznTokeny });
+  if (uniewaznTokeny) await uniewaznTokenyZDzienikiem("logout_all");
   revalidatePath("/", "layout");
 }

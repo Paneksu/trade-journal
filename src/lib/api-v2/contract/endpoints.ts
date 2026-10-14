@@ -71,7 +71,7 @@ export type Endpoint = {
   /** Inne kody, ktore trasa zwraca z powodu reguly biznesowej (documentacja, nie walidacja). */
   bledy?: Record<number, string>;
   ifMatch?: boolean;
-  /** Deklarowane pochodzenie vault-import / mentor wymaga dodatkowo zakresu `import` (403 bez niego). */
+  /** Deklarowane pochodzenie vault-import / mentor (w user-words: source vault-import) wymaga dodatkowo zakresu `import` (403 bez niego). */
   wymagaImportuDlaOrigin?: boolean;
 };
 
@@ -104,7 +104,7 @@ export const ENDPOINTS: Endpoint[] = [
   { metoda: "post", sciezka: "/hypotheses", zakresy: ["write"], wymagaImportuDlaOrigin: true, opis: "Zaklada hipoteze (notatka kind=hypothesis + wiersz hypotheses, decyzja 'active').", cialo: HipotezaUtworzSchema, odpowiedz: luzna, status: 201 },
 
   { metoda: "get", sciezka: "/user-words", zakresy: ["read"], opis: "Slowa uzytkownika doslownie (text + sha256 + interpretacja AI osobno).", query: SlowaListaQuery, odpowiedz: luzna },
-  { metoda: "post", sciezka: "/user-words", zakresy: ["write"], opis: "Zapis slow uzytkownika bajt w bajt. Klient podaje sha256 z bajtow UTF-8; niezgodnosc = 400. Ponowne wyslanie tego samego wpisu jest idempotentne.", cialo: SlowaUtworzSchema, odpowiedz: SlowaOdpowiedz, status: 201, bledy: { 200: "Taki wpis juz istnieje (zwrocony bez duplikatu)." } },
+  { metoda: "post", sciezka: "/user-words", zakresy: ["write"], wymagaImportuDlaOrigin: true, opis: "Zapis slow uzytkownika bajt w bajt. Klient podaje sha256 z bajtow UTF-8; niezgodnosc = 400. Ponowne wyslanie tego samego wpisu jest idempotentne.", cialo: SlowaUtworzSchema, odpowiedz: SlowaOdpowiedz, status: 201, bledy: { 200: "Taki wpis juz istnieje (zwrocony bez duplikatu)." } },
   { metoda: "patch", sciezka: "/user-words/{id}", zakresy: ["write"], opis: "ZAWSZE 409: slowa uzytkownika sa niezmienne, poprawia je uzytkownik w aplikacji.", parametrySciezki: ["id"], odpowiedz: BladOdpowiedz, status: 409 },
   { metoda: "put", sciezka: "/user-words/{id}", zakresy: ["write"], opis: "ZAWSZE 409: slowa uzytkownika sa niezmienne, poprawia je uzytkownik w aplikacji.", parametrySciezki: ["id"], odpowiedz: BladOdpowiedz, status: 409 },
   { metoda: "put", sciezka: "/user-words/{id}/interpretation", zakresy: ["write"], opis: "Jedyna zmienna czesc slow: interpretacja AI, ustawiana raz (poprawke zapisuje uzytkownik w aplikacji).", parametrySciezki: ["id"], cialo: InterpretacjaSchema, odpowiedz: SlowaOdpowiedz, bledy: { 409: "Interpretacja jest juz ustawiona." } },
