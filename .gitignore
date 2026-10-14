@@ -49,3 +49,7 @@ e2e/.sesja.json
 
 # Zrzuty z przegladow wizualnych - widac na nich wlasne dane finansowe.
 .zrzuty-recenzja/
+
+# materiał roboczy Refero (wzory), nie do repo
+docs/design/wzory/**/*.jpg
+docs/design/wzory/**/*.png

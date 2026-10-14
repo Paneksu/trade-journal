@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plansza wzorów</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0e12;--s1:#12161c;--s2:#191f26;--s3:#212932;--line:#262e38;--line2:#35404d;--tx:#e7ecf1;--mu:#97a3b0;--fa:#838f9d;--ac:#e8a44c;--acd:#3a2c17;--pr:#46c08b;--ls:#e5654f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 "IBM Plex Sans",system-ui,sans-serif}
+.w{max-width:1320px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:28px;line-height:36px;font-weight:500;margin:0 0 4px}
+h2{font-size:19px;line-height:28px;font-weight:500;margin:48px 0 16px;padding-top:24px;border-top:1px solid var(--line)}
+.lead{color:var(--mu);max-width:70ch;margin:0}
+.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}
+.brand{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:24px;margin-top:24px;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:24px}
+.sw{display:flex;flex-wrap:wrap;gap:8px}
+.sw div{width:72px;font-size:11px;color:var(--mu)}
+.sw i{display:block;height:40px;border-radius:6px;border:1px solid var(--line2);margin-bottom:4px}
+.lbl{font-size:12px;line-height:20px;letter-spacing:.2px;color:var(--fa);margin-bottom:8px}
+.type .big{font:500 28px/36px "IBM Plex Mono",monospace;letter-spacing:-.03em}
+.type .big small{font-size:16px;color:var(--mu)}
+.pill{display:inline-block;padding:4px 14px;border-radius:999px;background:var(--s3);font-size:14px;margin:4px 4px 0 0}
+.pill.a{background:var(--ac);color:#1a1206;font-weight:500}
+.quote{border-left:3px solid var(--ac);padding:6px 12px;background:var(--s2);font-size:14px;margin-top:8px}
+.ai{font-size:12px;color:var(--fa)}
+.sk{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.card img{display:block;width:100%;height:auto;border-bottom:1px solid var(--line);background:#000}
+.card .b{padding:16px 20px}
+.card h3{margin:0 0 6px;font-size:15px;font-weight:600}
+.card h3 .n{color:var(--ac);font-family:"IBM Plex Mono",monospace;margin-right:8px}
+.card p{margin:4px 0;font-size:13px;line-height:20px;color:var(--mu)}
+.card p b{color:var(--tx);font-weight:500}
+.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:4px;background:var(--acd);color:var(--ac);margin-left:6px;vertical-align:2px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mob{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+.verdict{background:var(--s1);border:1px solid var(--line);border-left:3px solid var(--ac);border-radius:12px;padding:20px 24px;margin-top:16px}
+.q{background:var(--s2);border:1px solid var(--line2);border-radius:12px;padding:20px 24px}
+.q ol{margin:8px 0 0;padding-left:20px}
+@media (max-width:900px){.brand,.sk,.grid,.two{grid-template-columns:1fr}.mob{grid-template-columns:1fr 1fr}}
+@media (max-width:480px){.w{padding:24px 16px 60px}.mob{grid-template-columns:1fr}}
+</style>
+</head>
+<body><div class="w">
+
+<h1>Plansza wzorów: dziennik tradingowy UI v2</h1>
+<p class="lead">Etap 5a potoku v2, 14.10.2026. Wzór daje formę (układ, proporcje, rytm), marka dziennika daje tożsamość. Obrazy z Refero to roboczy materiał projektu, nie do publikacji. Do akceptacji: szkielet A albo B oraz lista wzorów ekranów.</p>
+
+<div class="brand">
+  <div>
+    <div class="lbl">MARKA KLIENTA · KOLORY (globals.css)</div>
+    <div class="sw">
+      <div><i style="background:#0b0e12"></i>tło #0b0e12</div>
+      <div><i style="background:#12161c"></i>pow. #12161c</div>
+      <div><i style="background:#191f26"></i>pow. 2 #191f26</div>
+      <div><i style="background:#212932"></i>pow. 3 #212932</div>
+      <div><i style="background:#e8a44c"></i>akcent #e8a44c</div>
+      <div><i style="background:#3a2c17"></i>akc. dim</div>
+      <div><i style="background:#46c08b"></i>zysk #46c08b</div>
+      <div><i style="background:#e5654f"></i>strata #e5654f</div>
+    </div>
+    <p class="ai" style="margin-top:10px">Zieleń i czerwień tylko dla wyniku. Logotyp: brak (pytanie do użytkownika).</p>
+  </div>
+  <div class="type">
+    <div class="lbl">KROJE KLIENTA · IBM PLEX SANS / MONO</div>
+    <div class="big">+2,40 R <small>n=37 · 95% [0,8; 3,9]</small></div>
+    <div style="font-size:19px;line-height:28px;font-weight:500">Przegląd tygodnia</div>
+    <div style="font-size:13px;color:var(--mu)">Skala ze wzoru Mercury (28/36, 19/28, 15/24, 13/20), krój zostaje.</div>
+    <div style="margin-top:8px"><span class="pill a">Przed sesją</span><span class="pill">Po sesji</span><span class="pill">Szybki wpis</span></div>
+  </div>
+  <div>
+    <div class="lbl">MOTYWY RODZINNE</div>
+    <div class="quote">„…tu wpisany tekst użytkownika, bajt w bajt”<div class="ai">Słowa użytkownika</div></div>
+    <p class="ai" style="margin:8px 0 0">interpretacja AI · dowód [1] [2] · as_of · wersja reguły</p>
+    <p class="ai" style="margin:4px 0 0">kłódka: plan zamrożony · liczby zawsze w Plex Mono z n i przedziałem</p>
+  </div>
+</div>
+
+<h2>Szkielet: do wyboru</h2>
+<div class="sk">
+  <div class="card">
+    <img src="szkielet-mercury/1440.jpg" alt="Szkielet A: Mercury, pulpit w ciemnym motywie, zrzut 1440">
+    <div class="b"><h3><span class="n">A</span>Mercury, ciemny <span class="tag">rekomendacja</span></h3>
+    <p><b>Nośnik:</b> liczby i karty. demo.mercury.com/dashboard · Refero 859b1114.</p>
+    <p><b>Forma:</b> sidebar 220, kontener 968, karty r=12 z ramką 12%, siatka 2 i 3 kolumn co 24, księga z datą w 1. wierszu dnia, pigułki akcji pod nagłówkiem.</p>
+    <p><b>Marka:</b> granaty i fiolet Mercury → grafit i bursztyn dziennika; Arcadia → Plex.</p>
+    <p><b>375:</b> jedna kolumna, margines 16, bez poziomego scrolla (zmierzone).</p></div>
+  </div>
+  <div class="card">
+    <img src="szkielet-linear/refero-lista.jpg" alt="Szkielet B: Linear, lista zgłoszeń w ciemnym motywie">
+    <div class="b"><h3><span class="n">B</span>Linear, ciemny <span class="tag">wariant</span></h3>
+    <p><b>Nośnik:</b> typografia i gęstość listy. Refero 58ac6637, bez publicznego adresu.</p>
+    <p><b>Forma:</b> płaskie listy bez kart, grupy z nagłówkiem na pasku, chipy, prawy panel właściwości, klawiatura.</p>
+    <p><b>Marka:</b> Inter → Plex, fioletowe statusy → tokeny A/B/C i P&amp;L.</p>
+    <p><b>Słabość:</b> ekrany z liczbami (Dziś, Prop) bez naturalnego miejsca na dużą liczbę.</p></div>
+  </div>
+</div>
+<div class="two" style="margin-top:12px">
+  <div class="card"><img src="szkielet-mercury/375.jpg" alt="Szkielet A przy 375 px" style="max-height:520px;object-fit:cover;object-position:top"><div class="b"><p>A przy 375 (żywy zrzut, Playwright)</p></div></div>
+  <div class="card"><img src="panel-prop-konto-zywy-1440.jpg" alt="Mercury: karta kredytowa, pasek limitu i księga" style="max-height:520px;object-fit:cover;object-position:top"><div class="b"><p>Język A na ekranie konta: pasek limitu i księga (żywy zrzut) → wzór ekranu Prop</p></div></div>
+</div>
+
+<h2>Wzory ekranów (kolejność nawigacji)</h2>
+<div class="grid">
+  <div class="card"><img src="panel-dzis.jpg" alt="Mercury, pulpit"><div class="b"><h3><span class="n">1</span>Dziś</h3><p><b>Wzór:</b> Mercury Home · 859b1114</p><p><b>Forma:</b> pigułki akcji (Przed / Po sesji / Szybki wpis), karta wyniku dnia w R + karta buforów kont prop, 3 karty: plan, reguły, „Do decyzji”.</p><p><b>Marka:</b> liczba w Plex Mono, akcent tylko na „Przed sesją”.</p><p><b>Nośnik:</b> dane z API.</p></div></div>
+  <div class="card"><img src="panel-lista.jpg" alt="Linear, lista zgłoszeń w grupach"><div class="b"><h3><span class="n">2a</span>Lista trade'ów</h3><p><b>Wzór:</b> Linear 58ac6637 + księga Mercury</p><p><b>Forma:</b> wiersz ok. 48 px, grupy po dniu, data w 1. wierszu, chip setupu, A/B/C, R do prawej.</p><p><b>Marka:</b> R w mono, P&amp;L w tokenach.</p><p><b>Nośnik:</b> dane.</p></div></div>
+  <div class="card"><img src="panel-lista-szuflada.jpg" alt="Mercury, transakcje z szufladą szczegółów"><div class="b"><h3><span class="n">2b</span>Lista: szuflada</h3><p><b>Wzór:</b> Mercury Transactions · 8fd6e234</p><p><b>Forma:</b> prawa szuflada ok. 420 px: wynik, miniatury zrzutów, notatka.</p><p><b>Nośnik:</b> zrzuty wykresów użytkownika.</p></div></div>
+  <div class="card"><img src="panel-galeria.jpg" alt="Luma, ciemna galeria miniatur" style="max-height:340px;object-fit:cover;object-position:top"><div class="b"><h3><span class="n">2c</span>Galeria</h3><p><b>Wzór:</b> Luma Featured · a00a01e8</p><p><b>Forma:</b> siatka 5 kol. (375: 2), kafel kwadratowy r=8, jeden wiersz podpisu.</p><p><b>Marka:</b> podpis data · setup · R w mono, znaczek A/B/C.</p><p><b>Nośnik:</b> zrzuty użytkownika.</p></div></div>
+  <div class="card"><img src="panel-szczegol.jpg" alt="Linear, szczegół zgłoszenia z panelem właściwości"><div class="b"><h3><span class="n">3</span>Szczegół trade'u</h3><p><b>Wzór:</b> Linear issue · 77d175dd</p><p><b>Forma:</b> zakładki Plan / Werdykt AI / Przebieg / Zrzuty / Proces / Notatka; prawy panel = zamrożony plan z kłódką; oś dopisków.</p><p><b>Nośnik:</b> dane + tekst.</p></div></div>
+  <div class="card"><img src="panel-werdykt.jpg" alt="Parallel, panel uzasadnienia z numerowanymi źródłami"><div class="b"><h3><span class="n">3w</span>Zakładka Werdykt AI</h3><p><b>Wzór:</b> Parallel „Basis” · 1f946f8c</p><p><b>Forma:</b> uzasadnienie + numerowane dowody per warunek reguły; wynik zakryty do zamknięcia.</p><p><b>Marka:</b> „interpretacja AI” osobno od „Słów użytkownika”.</p></div></div>
+  <div class="card"><img src="panel-playbook.jpg" alt="Linear, profil z listą zadań w grupach i panelem informacji"><div class="b"><h3><span class="n">4</span>Playbook: karta setupu</h3><p><b>Wzór:</b> Linear profile · 4a094449</p><p><b>Forma:</b> lewa: trade'y w grupach A+ / anty / reszta; prawa: status, wersja, warunki, statystyka z n i przedziałem; zakładki Warunki / Statystyka / Historia.</p><p><b>Nośnik:</b> dane + zrzuty A+.</p></div></div>
+  <div class="card"><img src="panel-przeglad.jpg" alt="Mercury Insights, wykres słupkowy i trzy wnioski"><div class="b"><h3><span class="n">5</span>Przegląd tygodnia</h3><p><b>Wzór:</b> Mercury Insights · 320c6124</p><p><b>Forma:</b> zakładki Tydzień / Miesiąc, duża liczba + średnia, słupki dni, 3 kolumny wniosków (najlepsze/najgorsze, koszt C, jedno zobowiązanie).</p><p><b>Nośnik:</b> dane + szkic AI.</p></div></div>
+  <div class="card"><img src="panel-backtest.jpg" alt="Missive, tabela porównania okresów"><div class="b"><h3><span class="n">6</span>Backtest i porównanie</h3><p><b>Wzór:</b> Missive Analytics · 30b695eb</p><p><b>Forma:</b> wiersze = źródła (backtest, forward, demo, live), kolumny = n, WR z przedziałem, expectancy; delta przy liczbie; „porównaj z”.</p><p><b>Marka:</b> wzór jasny → tokeny ciemne.</p></div></div>
+  <div class="card"><img src="panel-prop-konta.jpg" alt="Mercury, lista kont z saldami"><div class="b"><h3><span class="n">7a</span>Prop: konta</h3><p><b>Wzór:</b> Mercury Accounts · c7f36c02</p><p><b>Forma:</b> suma + 2 liczby, zakładki Konta / Presety / Księga, tabela kont z kolumną bufora ($ i R).</p><p><b>Marka:</b> progi 50/75/90% akcent → strata.</p></div></div>
+  <div class="card"><img src="panel-prop-konto.jpg" alt="Mercury, karta kredytowa z paskiem limitu i księgą"><div class="b"><h3><span class="n">7b</span>Prop: konto</h3><p><b>Wzór:</b> Mercury Credit · 420d8e8e (zmierzony na żywo)</p><p><b>Forma:</b> lewa 296: saldo, pasek bufora do DD, wiersze 44 px (limit dzienny, consistency); prawa: krzywa z linią DD; księga evali i wypłat.</p></div></div>
+  <div class="card"><img src="panel-mozg.jpg" alt="Cycle, pojedyncza pozycja z panelem propozycji do weryfikacji"><div class="b"><h3><span class="n">8</span>Mózg: kolejka decyzji</h3><p><b>Wzór:</b> Cycle · a721db29</p><p><b>Forma:</b> jedna propozycja w środku, „1 / n” i strzałki w nagłówku, prawy panel dowodów i kontrargumentu, pasek Zatwierdź / Odrzuć / Później.</p><p><b>Nośnik:</b> tekst.</p></div></div>
+  <div class="card"><img src="panel-notatka.jpg" alt="Memotron, notatka dnia z panelem linków"><div class="b"><h3><span class="n">9</span>Notatka z backlinkami</h3><p><b>Wzór:</b> Memotron · e516f4e0</p><p><b>Forma:</b> notatka ok. 65% (wiersz 68 zn.), panel Linki ok. 35%: backlinki i wzmianki; Edycja / Podgląd na dole.</p><p><b>Marka:</b> <span class="mono">[[link]]</span> w akcencie.</p></div></div>
+  <div class="card"><img src="panel-statystyki.jpg" alt="Missive, kafle wskaźników i rozkłady"><div class="b"><h3><span class="n">10</span>Statystyki</h3><p><b>Wzór:</b> Missive Analytics · 1c47a246</p><p><b>Forma:</b> 3 kafle z liczbą, pod nią n i przedział 95%; equity i dyscyplina obok siebie; kolumny rozkładów, n&lt;20 wyszarzone.</p></div></div>
+  <div class="card"><img src="panel-kalendarz.jpg" alt="Missive, kalendarz miesiąca"><div class="b"><h3><span class="n">11</span>Kalendarz</h3><p><b>Wzór:</b> Missive month · dca15c76</p><p><b>Forma:</b> siatka miesiąca, w komórce R i liczba trade'ów, kropka = notatka dnia.</p><p><b>Marka:</b> „dziś” w akcencie, nie w czerwieni.</p></div></div>
+  <div class="card"><img src="panel-ustawienia.jpg" alt="Linear, ustawienia bezpieczeństwa"><div class="b"><h3><span class="n">12</span>Ustawienia</h3><p><b>Wzór:</b> Linear Security · 00c4424c</p><p><b>Forma:</b> sekcje z tytułem, opisem i ramką-listą: Urządzenia, 2FA, Tokeny <span class="mono">tj</span>, Łącznik MCP.</p><p><b>Marka:</b> wzór jasny → tokeny ciemne.</p></div></div>
+  <div class="card"><img src="panel-ctrlk.jpg" alt="Runey, paleta wyszukiwania z grupami wyników"><div class="b"><h3><span class="n">13</span>Paleta Ctrl+K</h3><p><b>Wzór:</b> Runey · 237a7449</p><p><b>Forma:</b> modal ok. 560, grupy z licznikiem (Trade'y, Notatki), stopka skrótów ↑↓ ↵ esc.</p></div></div>
+</div>
+
+<h2>Telefon (PWA)</h2>
+<div class="mob">
+  <div class="card"><img src="mobile-dzis.jpg" alt="Revolut iOS, karta majątku i dolny pasek"><div class="b"><h3><span class="n">14a</span>Dziś + dolny pasek</h3><p>Revolut · 0cb050cd. 5 pozycji: Dziś, Trade'y, +, Mózg, Więcej; karta z buforami kont.</p></div></div>
+  <div class="card"><img src="mobile-szybki-wpis.jpg" alt="ABY Journal iOS, szybki wpis z mediami"><div class="b"><h3><span class="n">14b</span>Szybki wpis + zdjęcie</h3><p>ABY Journal · c4cbf16d. Godzina i Gotowe u góry, chipy kontekstu, tekst, Aparat / Galeria. Cudzą ilustrację pomijamy.</p></div></div>
+  <div class="card"><img src="szkielet-mercury/375.jpg" alt="Mercury przy 375" style="max-height:640px;object-fit:cover;object-position:top"><div class="b"><h3><span class="n">375</span>Reguła reszty ekranów</h3><p>Jedna kolumna z A, margines 16, karty pełnej szerokości.</p></div></div>
+</div>
+
+<div class="verdict">
+  <div class="lbl">TEST MARKI</div>
+  <b>„Czy po zasłonięciu logo nadal widać, że to ten dziennik?” TAK.</b>
+  <p class="lead" style="margin-top:6px">Tożsamość niesie bursztyn na graficie, Plex Mono w każdej liczbie i stałe znaczniki (n z przedziałem, „Słowa użytkownika”, „interpretacja AI”, kłódka planu), nie układ. Ryzyko przy A: „Mercury w pomarańczu” na ekranie Dziś; zabezpieczenie: R zamiast $, mono, akcent tylko na głównym CTA i stanach aktywnych.</p>
+</div>
+
+<h2>Do decyzji użytkownika</h2>
+<div class="q"><ol>
+  <li>Szkielet A (Mercury: liczby i karty) czy B (Linear: gęste listy)?</li>
+  <li>Pytanie celu: „czy ekran wygląda co najmniej tak dobrze jak wzór i czy widać, że to nasz dziennik?” Przyjąć czy inne?</li>
+  <li>Czy dziennik ma mieć znak (logo), czy wystarczy nazwa składem w Plex Sans?</li>
+  <li>Czy któryś wzór ekranu wymienić (podaj numer)?</li>
+</ol></div>
+
+</div></body>
+</html>

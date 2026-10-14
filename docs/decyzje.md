@@ -1164,6 +1164,8 @@ transakcją całą serię zaległych plików). Sprawdzona oboma migratorami (dri
 zeruje, a dwa kontenery miałyby osobne liczniki — przy jednym kontenerze i jednym kliencie to
 wystarcza (ta sama decyzja co przy logowaniu). Token to jedna wartość: rotacja = zmiana zmiennej
 i restart, bez okresu przejściowego.
+*(do wygaszenia — ADR-030, 2026-10-14: tokeny urządzeń w bazie zastępują `INGEST_TOKEN_SHA256`;
+brama `withIngest` zostaje do końca okresu przejściowego.)*
 
 ---
 
@@ -1237,6 +1239,396 @@ oceny: `rule_id` + kopię treści + `brain_version` (hash commita w repo mózgu,
 odnieść do wersji reguł, według których powstała). Powód: dwie kopie planu (w mózgu i w aplikacji)
 rozjechałyby się przy pierwszej zmianie reguły, a mózg jest źródłem prawdy o wiedzy, aplikacja
 — o liczbach.
+*(uchylone — ADR-029, 2026-10-14: plan gry, reguły i wszystkie notatki przechodzą do aplikacji,
+a Obsidian zostaje wycofany. Powód z tego akapitu — dwie kopie się rozjadą — zostaje w mocy, tylko
+jedyną kopią staje się aplikacja. Zasada z akapitu niżej zostaje bez zmian.)*
 
 **Reguły zmienia wyłącznie użytkownik.** API nie ma operacji, która zakłada, zmienia ani zatwierdza
 regułę; może tylko ocenić trade względem reguł, które klient przysłał razem z oceną.
+*(rozwinięte — ADR-029/030, 2026-10-14: API v2 dostaje operację **propozycji** reguły, ale nadal
+nie ma operacji, która ją zatwierdza; zasada „reguły zmienia wyłącznie użytkownik” zostaje.)*
+
+---
+
+> **ADR-029 do ADR-033 (2026-10-14) — przebudowa v2.** Status: **ZAAKCEPTOWANY 14.10.2026**
+> przez użytkownika (STOP fazy 0). Słowa użytkownika: «Akceptuję, ruszamy». Plan zatwierdzony przez użytkownika: „Przebudowa dziennika
+> tradingowego + łącznik `tj` dla AI” (14.10.2026). Pełny projekt schematu: `docs/v2/model-danych.md`.
+> Raporty, na których stoją decyzje: `docs/research/rynek.md`, `docs/research/metodyka.md`.
+
+## ADR-029 — notatki w aplikacji; Obsidian wycofany (2026-10-14)
+
+**Kontekst.** Wiedza i notatki są rozdarte: mózg tradingowy żyje w lokalnym sejfie Obsidiana
+(bez zdalnego repo, bo dane finansowe), a dziennik trzyma trade'y i oceny. Na drugim urządzeniu
+AI nie ma ani mózgu, ani narzędzi. Decyzja użytkownika z 14.10.2026: „wszystkie notatki
+przechodzą do aplikacji, a Obsidian zostaje wycofany”. To odwraca akapit ADR-028 „plan gry
+mieszka w mózgu”. Argument tamtego akapitu (dwie kopie planu się rozjadą) zostaje w mocy, tylko
+odwraca wniosek: jedyną kopią staje się aplikacja.
+
+**Model hybrydowy: dokument + typowane encje.** Wszystko, co w sejfie było plikiem `.md`, staje
+się wierszem `notes` (`kind`, `slug`, `title`, `body_md`, `meta jsonb`, kotwice `trade_id` /
+`backtest_session_id` / `day`, `external_ref`, `content_hash`, `search`). Tam, gdzie notatka
+niesie liczby albo stan, który coś liczy, obok stoi typowana tabela 1:1: `rules` (R-xxx, status)
+i `hypotheses` (H-xxx, `n`, `prog_n`). Odrzucone:
+- **sam JSONB w `notes.meta`** — status reguły i `n` hipotezy wchodzą do filtrów, do bramki
+  „poniżej progu AI nie proponuje reguły” i do statystyk; tego nie da się sensownie pilnować
+  CHECK-iem ani indeksem w JSONB (to samo rozumowanie co ADR-018 i ADR-025);
+- **osobna tabela na każdy rodzaj notatki** — 12 rodzajów z sejfu różni się prawie wyłącznie
+  nazwą folderu; tabela na rodzaj dałaby 12 kopii CRUD-u, wyszukiwania i linków.
+
+**Historia i linki.** Każda zmiana treści zostawia wiersz w `note_revisions` (zapisuje go
+trigger, nie kod aplikacji — nie da się o nim zapomnieć w nowej ścieżce zapisu). Linki `[[...]]`
+z treści trafiają do `note_links` przy każdym zapisie; link do notatki, której jeszcze nie ma,
+jest dozwolony (`to_note_id` NULL, `to_slug` wypełnione) i dowiązuje się sam, gdy notatka
+powstanie — tak działa Obsidian i tak działa import w dwóch przebiegach.
+
+**Optymistyczna współbieżność.** Notatka ma licznik `rev`. Zapis przez API wymaga `If-Match: <rev>`;
+nieaktualny `rev` daje 409 z bieżącą treścią. Dwa urządzenia z AI piszące do tej samej notatki
+nie nadpiszą się po cichu.
+
+**Wyszukiwanie: konfiguracja `simple` + `unaccent` + `pg_trgm`.** Nie `polish`: Postgres nie ma
+wbudowanego słownika polskiego (wymaga plików ispell instalowanych na serwerze, czego Coolify
+nie daje bez własnego obrazu bazy). `simple` nie odmienia, więc pełnotekstowe dopasowanie łapie
+całe słowa, a `pg_trgm` łapie odmiany i literówki. `unaccent` sprawia, że „zarzadzanie” znajduje
+„Zarządzanie” (test w fazie 2). Funkcja `f_unaccent` jest opakowaniem `IMMUTABLE` ze
+schematem podanym wprost — goła `unaccent()` jest `STABLE` i nie wolno jej użyć w kolumnie
+generowanej ani w indeksie.
+
+**`screenshots.note_id`.** Zrzut może wisieć pod notatką (np. przykład pojęcia ICT). Warunek
+`screenshots_owner` rozszerza się z „dokładnie jedno z dwóch” na „dokładnie jedno z trzech”.
+
+**Reguły: agent tylko proponuje.** Zostaje w mocy zasada z ADR-028 i z `mozg-tradingowy/CLAUDE.md`:
+regułę zatwierdza wyłącznie użytkownik w UI, **jedna propozycja naraz**, nigdy zbiorczo. Pilnują
+tego trzy niezależne warstwy (szczegóły w ADR-030): brak zakresu tokenu, który by na to pozwalał,
+403 na trasie, i trigger w bazie, który odrzuca zatwierdzenie, gdy zapis nie przyszedł z sesji UI.
+
+**Import z sejfu nie zatwierdza niczego** (Słowa użytkownika, 14.10.2026: «Jako propozycje,
+zatwierdzam ponownie»). Reguły R-004, R-007 i R-010, w sejfie `zatwierdzona`, wchodzą jako
+propozycje z notą o statusie w sejfie i użytkownik zatwierdza je w UI po jednej. Trigger nie ma
+wyjątku dla importu. Propozycje z wiedzy mentora nie podlegają progowi `n` i są podpisane
+„wg mentora, n = 0” (Słowa użytkownika, 14.10.2026: «Bez progu, podpisane n=0»); szczegóły w ADR-033.
+
+**Co dzieje się z `brain_version`.** Kolumna zostaje przy starych ocenach (historia ma się nie
+zgubić). Nowe oceny wskazują wersję zestawu reguł z aplikacji (`ruleset_version`, ADR-033), bo
+repo mózgu przestaje istnieć jako źródło prawdy.
+
+**Koszt.** Edytor markdown z `[[` i backlinkami trzeba zbudować w UI (faza 5); do tego czasu notatki
+pisze się przez `tj notes` i API. Obsidian działa do zakończenia importu (faza 4) i dopiero wtedy,
+po decyzji użytkownika, sejf jest archiwizowany.
+
+---
+
+## ADR-030 — API v2: tokeny urządzeń z zakresami, logowanie kodem urządzenia (2026-10-14)
+
+**Kontekst.** ADR-026 dał jeden token w zmiennej `INGEST_TOKEN_SHA256`: rotacja to restart,
+nie ma listy urządzeń, każdy klient może wszystko. Łącznik `tj` ma działać na kilku urządzeniach,
+a aplikacja staje się publiczna (ADR-031), więc token musi mieć właściciela, zakres i dać się
+unieważnić bez restartu.
+
+**Tokeny w bazie (`api_tokens`).** Format `tj_<prefix>_<sekret>`: prefiks (8 znaków) służy do
+wyszukania wiersza i do pokazania w UI, sekret (32 losowe bajty) nie jest nigdzie zapisany.
+W bazie leży tylko SHA-256 całego tokenu i porównanie idzie `timingSafeEqual` — ta sama
+uzasadniona szybka funkcja co w ADR-026 (token to losowy ciąg, nie hasło). Ostatnie użycie
+(czas, adres) zapisuje się nie częściej niż raz na minutę, żeby każde zapytanie nie było zapisem.
+
+**Trzy zakresy i czwartego nie będzie.**
+
+| Zakres | Pozwala |
+|---|---|
+| `read` | wszystkie `GET`, wyszukiwanie, `/meta` |
+| `write` | trade'y, zrzuty, notatki i ich treść, słowa użytkownika, rysunki z wykresu, werdykty AI, pominięcia, dzień |
+| `propose` | propozycje reguł i wersji setupów, kolejka sugestii AI, hasła słownika, pytania o luki |
+
+Zakresu „zatwierdź” nie ma i CHECK w bazie (`scopes <@ {read,write,propose}`) nie pozwoli go
+dopisać bez migracji. Zatwierdzanie reguł, zatwierdzanie sugestii AI, poprawianie słów
+użytkownika, kasowanie czegokolwiek i zarządzanie tokenami dzieje się wyłącznie w UI, za sesją.
+
+**Trzy warstwy pilnowania „agent nie zatwierdzi reguły”:**
+1. brak zakresu (wyżej);
+2. trasa `rules/proposals/:id/approve` nie istnieje w `/api/v2`; test-strażnik czyta źródła
+   tras i pada, gdy jakakolwiek trasa v2 dotyka statusu `approved` (test „agent nie zatwierdzi
+   reguły (403)” z planu sprawdza też, że próba przez istniejące trasy daje 403);
+3. **trigger w bazie**: każde zapytanie v2 działa w transakcji z `set_config('tj.actor', 'api:<id tokenu>', true)`,
+   akcje UI ustawiają `tj.actor = 'ui'`. Trigger na `rule_versions` i `setup_versions` odrzuca
+   przejście w `approved`, gdy aktorem nie jest `ui`. To obrona przed błędem we własnym kodzie,
+   nie przed właścicielem bazy — i tak ma być.
+
+**Logowanie kodem urządzenia (`device_codes`, wzór RFC 8628).** `tj login` woła
+`POST /api/v2/device/start` z nazwą klienta i żądanymi zakresami, dostaje `user_code` (8 znaków
+bez mylących liter, np. `KTWM-4HQP`) i adres `https://dziennik.panekweb.pl/urzadzenia/polacz`.
+Użytkownik loguje się (hasło + TOTP), wchodzi w tryb sudo (ADR-031), **przepisuje kod** z
+terminala (nie klika gotowego linku z kodem — to utrudnia phishing kodem urządzenia), widzi nazwę
+klienta, adres IP, z którego przyszło żądanie, i zakresy; może je zawęzić. CLI odpytuje
+`POST /api/v2/device/token` co 5 s i dostaje token **dokładnie raz**. Kod żyje 10 minut. Skrót
+`device_code` (nie sam kod) leży w bazie. Te dwie trasy są jedynymi w v2 bez tokenu; mają własne
+opakowanie z limitem (10 startów na godzinę na adres) i test-strażnik zna je z nazwy.
+
+**Brama `withApi({ scopes })`** w `src/lib/api-v2/with-api.ts` uogólnia `withIngest`. Kolejność:
+wyłącznik awaryjny `API_V2_DISABLED=1` → 404; produkcja bez HTTPS → 403; blokada po 8 złych
+tokenach (przed porównaniem) → 429; token nieznany, unieważniony albo przeterminowany → 401;
+brak zakresu → 403 z nazwą brakującego zakresu; limit 120 zapytań na minutę **na token**
+(nie na adres — urządzenie zmienia sieć) → 429; handler w transakcji z `tj.actor`; wyjątek → 500
+z `x-request-id`. Trasy `/api/v2/**` są wyłączone z matchera `proxy.ts` z tych samych dwóch
+powodów co w ADR-026.
+
+**Kontrakt.** Schematy zod 4 w `src/lib/api-v2/contract/` generują `docs/openapi-v2.json`;
+test pada, gdy plik jest nieaktualny. `GET /meta` zwraca `contractHash` (SHA-256 pliku), a
+`tj doctor` porównuje go ze swoim — dryf kontraktu jest widoczny, zanim cokolwiek się zepsuje.
+
+**Słowa użytkownika przez API.** `user_words` przyjmuje się tylko przez `POST`. Klient wysyła
+tekst i swój SHA-256 z bajtów UTF-8; serwer liczy skrót sam (trigger w bazie) i przy niezgodności
+odrzuca zapis (400) — to jest test „tekst nie zmienił się w drodze czat → `tj` → API”. Każdy
+`PATCH` i `PUT` na słowach użytkownika daje **409** z odesłaniem do UI.
+
+**Werdykt AI z `as_of` jest niezmienny.** Ponowne wysłanie werdyktu z tym samym `as_of` daje 409,
+a korekta użytkownika to nowy wiersz `kind = 'user_override'` (ADR-033). To odwraca zdanie
+z ADR-028 „ponowne wysłanie podmienia, nie mnoży” dla werdyktów z `as_of`; stare wiersze bez
+`as_of` zachowują się jak dotąd.
+
+**Wygaszanie `INGEST_TOKEN_SHA256`.**
+1. Faza 2: `/api/ingest/**` przyjmuje stary skrót **albo** token v2 z zakresem `write`. Każda
+   odpowiedź niesie `Deprecation: true` i `Link` do `/api/v2`. Logi liczą użycia starego tokenu.
+2. Po fazie 3 (łącznik używa wyłącznie v2) i **za zgodą użytkownika**: trasy `/api/ingest/**`
+   znikają, zmienna zostaje usunięta z Coolify, `withIngest` i jego test-strażnik idą do kosza.
+   Do tego czasu ADR-026 obowiązuje bez zmian.
+
+**Odrzucone.** OAuth z serwerem autoryzacji (jedna osoba, kilka urządzeń — ciężar bez zysku);
+JWT bez stanu (nie da się unieważnić pojedynczego urządzenia bez listy, a lista to już stan);
+token per zakres zamiast listy zakresów (CLI potrzebuje zwykle `read` + `write` naraz).
+
+**Koszt.** Liczniki blokad i limitów zostają w pamięci procesu (decyzja z ADR-026). Tokeny bez
+daty wygaśnięcia domyślnie; UI pokazuje ostatnie użycie i oznacza tokeny nieużywane od 90 dni.
+
+---
+
+## ADR-031 — publiczna domena `dziennik.panekweb.pl`, TOTP 2FA, kody zapasowe, tryb sudo (2026-10-14)
+
+**Kontekst.** Decyzja użytkownika z 14.10.2026: „aplikacja zostaje jednoosobowa, dostępna
+z internetu pod subdomeną panekweb.pl z SSL”. Do tej pory chroniło ją głównie to, że adres był
+mało znany. Od teraz jedyną barierą jest uwierzytelnienie, a za nim leżą dane finansowe
+i tokeny, które piszą do dziennika.
+
+**Domena i transport.** Rekord w Hetzner DNS → serwer; domena i certyfikat Let's Encrypt
+w Coolify. **Adres sslip/http zostaje usunięty** — drugi adres bez HTTPS byłby obejściem
+wszystkiego niżej. HSTS `max-age=31536000` **bez** `includeSubDomains` i bez `preload`
+(pozostałe subdomeny `panekweb.pl` nie są częścią tej aplikacji). `X-Robots-Tag: noindex`
+i `robots.txt` bez zmian (odstępstwo „Lighthouse SEO 60” zostaje).
+
+**Ciasteczko sesji.** Na produkcji zawsze `Secure` i `SameSite=Strict` (było: `Secure` tylko
+przy HTTPS i `Lax`, ADR-005 — powód tamtego warunku, adres http z Coolify, znika razem z adresem).
+Koszt `Strict`: wejście z linku z zewnątrz (np. z maila) trafia na stronę bez sesji i wymaga
+kliknięcia jeszcze raz; dla dziennika jednoosobowego to akceptowalne. Do sprawdzenia w fazie 1:
+`X-Forwarded-Proto` za Traefikiem i nagłówki `Host`/`Origin`, od których zależy ochrona CSRF
+akcji serwera w Next.
+
+**TOTP (RFC 6238).** 6 cyfr, SHA-1, krok 30 s, tolerancja ±1 krok, ochrona przed powtórką
+(`settings.totp_last_step` — kod z kroku już użytego jest odrzucany). Sekret szyfrowany AES-256-GCM
+kluczem z osobnej zmiennej `TOTP_ENC_KEY`: wyciek samej bazy nie daje sekretu. Włączenie wymaga
+hasła, pokazuje kod QR i aktywuje się dopiero po wpisaniu poprawnego kodu. Logowanie dwuetapowe:
+po haśle przeglądarka dostaje krótkie (5 min), podpisane ciasteczko „czeka na drugi krok”,
+a dopiero po kodzie właściwą sesję. Błędne kody liczą się do tej samej blokady co hasło (8 prób).
+
+**Kody zapasowe.** 10 kodów po 10 znaków, pokazane raz, jednorazowe. W bazie HMAC-SHA256 z
+sekretem serwera (nie goły SHA-256: 50 bitów entropii to za mało przy wycieku samej bazy, a scrypt
+na 10 kodach spowalniałby logowanie bez potrzeby). Wygenerowanie nowej paczki unieważnia starą.
+
+**Tryb sudo.** Ponowne podanie kodu TOTP (albo kodu zapasowego) daje 10 minut podwyższonych
+uprawnień — osobne ciasteczko `HttpOnly`, `Secure`, `SameSite=Strict`, związane z `session_version`.
+Wymagane do: zatwierdzenia urządzenia (kod urządzenia), utworzenia tokenu, wygenerowania kodów
+zapasowych, wyłączenia 2FA, zmiany hasła, pełnego eksportu. **Unieważnienie** tokenu sudo nie
+wymaga — odcięcie dostępu ma być łatwiejsze niż jego nadanie. Zatwierdzanie reguł nie wymaga sudo:
+to codzienna praca, a chroni ją sesja z 2FA.
+
+**Dziennik zdarzeń bezpieczeństwa (`auth_events`).** Logowania udane i nieudane, błędne kody,
+użycie kodu zapasowego, wejście w sudo, zatwierdzenie urządzenia, utworzenie i unieważnienie
+tokenu. Tylko dopisywanie. Widoczny w Ustawieniach → Bezpieczeństwo.
+
+**Wyłączenie 2FA i „wyloguj wszędzie”** podbijają `session_version` (mechanizm z ADR-005)
+i opcjonalnie unieważniają wszystkie tokeny jednym przyciskiem.
+
+**Odrzucone na teraz.** Passkey/WebAuthn (rekomendacja planu: później; wymaga biblioteki i testu
+na telefonie, a TOTP daje 2FA od razu); SMS i e-mail jako drugi składnik (słabsze i wymagają
+dostawcy); Cloudflare Access albo VPN przed aplikacją (PWA na telefonie i `tj` z dowolnego
+urządzenia muszą działać bez klienta VPN).
+
+---
+
+## ADR-032 — łącznik `Paneksu/tj-connector` jako plugin Claude Code; AI steruje wykresem, nigdy nie składa zleceń (2026-10-14)
+
+**Kontekst.** Łącznik to dziś luźne skrypty (`wyslij.mjs` z zaszytą ścieżką do sekretów), niesprawdzony
+na żywo klon tradingview-mcp i metoda czytania FX Replay, której skrypty zaginęły. Decyzja
+użytkownika z 14.10.2026: łącznik ma postać CLI `tj` + serwera MCP + skilli w jednym
+**prywatnym** repo GitHub.
+
+**Jedno repo, trzy pakiety (npm workspaces, ESM `.mjs` + `@ts-check`, Node ≥ 22):**
+`packages/core` (klient API v2, konfiguracja, tokeny, port `ict.mjs` i `mapa-dziennika.mjs`,
+czytniki FX Replay i TradingView, sterowanie wykresem), `packages/cli` (`tj`), `packages/mcp`
+(stdio, narzędzia 1:1 z CLI). Do tego `skills/` i `.claude-plugin/` + `.mcp.json`. MCP i CLI są
+cienkie: cała logika w `core`, więc to samo zachowanie testuje się raz. TypeScript z kompilacją
+odrzucony: łącznik ma działać po `git clone` + `npm i` bez kroku budowania.
+
+**Instalacja jako plugin Claude Code** (`tj setup claude` dodaje marketplace z prywatnego repo
+i instaluje plugin). Plan B: `claude mcp add --scope user` + kopie skilli. Przed implementacją
+`claude-code-guide` potwierdza, że plugin z prywatnego repo poprawnie podaje ścieżkę serwera MCP.
+
+**Sekrety.** Token urządzenia (ADR-030) w katalogu konfiguracyjnym systemu (`%APPDATA%\tj\`
+na Windows, `~/Library/Application Support/tj/` na macOS), plik z uprawnieniami tylko dla
+użytkownika, nigdy w repo. Klient API: `https` poza `localhost`, `redirect: "error"` (przekierowanie
+nie może zanieść nagłówka `Authorization` gdzie indziej), token wycinany z logów i błędów.
+gitleaks w pre-commit i w CI; dane testowe wyłącznie syntetyczne.
+
+**AI steruje wykresem — zmiana dotychczasowego „tylko odczyt”.** Słowa użytkownika (14.10.2026):
+„żeby AI robiło screenshoty samo i umiało samo sterować wykresem i zmieniać timeframe, tak
+naprawdę wszystko co robi człowiek, ale też jak mu wyślę zdjęcie to użyje tego”. Wspólne API
+sterowania w `core/chart/` z dwoma sterownikami (TradingView Desktop przez tradingview-mcp,
+CDP 9222; FX Replay przez Playwright `connectOverCDP`, CDP 9223, widżet TradingView w iframe).
+Listy zakazów zmiany wykresu w `settings.json` obu repozytoriów zostają zdjęte **dla narzędzi
+wykresu** i tylko dla nich. Zrzut (`tj shot`) przywraca stan wykresu sprzed zrzutu.
+
+**AI nigdy nie składa zleceń (decyzja użytkownika 14.10.2026).** W żadnym narzędziu, ani w FX
+Replay, ani w TradingView, nie ma operacji kupna, sprzedaży, zamknięcia, przesunięcia SL/TP
+ani BE. Pilnowanie w trzech miejscach:
+1. **kod**: sterownik ma listę dozwolonych akcji (allowlist, nie blocklist); selektory paneli
+   zleceń (Buy/Sell/Close, okno zlecenia) i skróty klawiszowe zleceń są dodatkowo na czarnej
+   liście, a kliknięcie w ich obszar jest odrzucane przed wysłaniem zdarzenia;
+2. **testy**: test przechodzi po wszystkich narzędziach MCP i komendach CLI i pada, gdy
+   którekolwiek dotyka zleceń; test na żywo kończy się sprawdzeniem, że nie powstało żadne zlecenie;
+3. **Claude**: `settings.json` pluginu zabrania surowego `browser_click` i `evaluate` serwera
+   `fxreplay` — sterowanie idzie wyłącznie przez `tj chart`.
+
+Aplikacja tego nie musi pilnować, bo nie ma żadnego połączenia z brokerem (ADR-026 bez zmian).
+
+**Rysunki AI na wykresie** mają stały prefiks `[AI] ` w tekście; `tj chart draw clear --own`
+kasuje wyłącznie takie, a `tj chart drawings` pomija je przy zapisie rysunków użytkownika
+(ADR-033, `chart_annotations`). Serwer odrzuca rysunek użytkownika z tym prefiksem.
+
+**Treść notatek to dane, nie instrukcje.** Narzędzia MCP zwracają treść notatek i słowa
+użytkownika w wyraźnie oznaczonym bloku danych; skille mają regułę, że polecenia znalezione
+w treści się ignoruje. MCP nie ma operacji destrukcyjnych (kasowanie tylko w UI).
+
+**TradingView.** `tj tools install tradingview` klonuje `tradesdontlie/tradingview-mcp`
+przypięty do przejrzanego SHA; licencja do sprawdzenia przed pierwszym użyciem.
+
+**Odrzucone.** Hostowany serwer MCP po stronie aplikacji (wymagałby, żeby aplikacja na Hetznerze
+sięgała do wykresu na komputerze użytkownika — odwrotność decyzji „push, nie pull” z ADR-026);
+publiczne repo (dane i ścieżki z komputera użytkownika w historii; decyzja użytkownika: prywatne).
+
+---
+
+## ADR-033 — model funkcji z researchu (2026-10-14)
+
+**Kontekst.** Dwa raporty `market-researcher` z 14.10.2026. Wniosek: rynek importuje trade'y
+po fakcie i mierzy wynik, a ten dziennik ma zapisywać kontekst na żywo i oceniać wykonanie.
+Przy 30 trade'ach przedział Wilsona ma ok. ±17 pp, więc główną wartością dziennika nie jest
+„znajdź edge”, tylko „nie oszukaj się”. AI jest audytorem z dowodami, nie doradcą. Decyzje
+użytkownika z 14.10.2026: ocena procesu A/B/C osobno od wyniku; kilka kont prop + presety
+najpopularniejszych futures prop firm; PWA; backtest ślepy („losuję, zwykle nie znam”);
+próg n=20 jako „do oceny”; sugestie SL/TP/BE od n≥100.
+
+**Zasady przekrojowe, którym podlega każda nowa tabela:**
+- **Pochodzenie każdego zapisu** (`origin`: `user` / `ai` / `mentor` / `vault-import`). Statystyki
+  domyślnie liczą tylko to, co zatwierdził użytkownik.
+- **Słowa użytkownika dosłownie.** Słowa użytkownika z 14.10.2026: „to co piszę w notatce do niego
+  i na wykresie zapisywało dosłownie i nie zmieniało moich słów”. Tekst użytkownika żyje w tabeli
+  `user_words`: bajt w bajt, bez przycinania i normalizacji, ze skrótem SHA-256 liczonym przez bazę.
+  Kolumny tekstu i skrótu są niezmienne (trigger odrzuca każdy `UPDATE` tych kolumn). Poprawka
+  w UI to nowy wiersz wskazujący poprzedni (`supersedes_id`) — stary zostaje. `ai_interpretation`
+  to osobne pole tego samego wiersza, zawsze podpisane w UI „interpretacja AI”, i tylko ono może
+  się zmieniać (przez rejestr poprawek).
+- **Co niezmienne, pilnuje baza, nie tylko API**: słowa użytkownika, zamrożony plan, werdykt
+  AI z `as_of`, zatwierdzone wersje reguł i setupów, cytaty mentora, dziennik zdarzeń, rejestr
+  poprawek. Trigger, a nie tylko brak trasy `PATCH`, bo kolejna ścieżka zapisu (akcja serwera,
+  skrypt, import) nie przejdzie przez trasę API.
+- **Nowe dziedziny wartości jako `text` + `CHECK`**, nigdy `ALTER TYPE … ADD VALUE` (ADR-026).
+- **Pola, których nic nie liczy, nie powstają** (lista „Nie robimy” z planu). Wszystko, co da się
+  wyprowadzić z istniejących danych, jest wyprowadzane w `lib/domain`, a nie zapisywane.
+
+**Nowe tabele** (kolumny, ograniczenia i indeksy: `docs/v2/model-danych.md`):
+
+| Tabela | Po co | MUST |
+|---|---|---|
+| `trade_plans` + `trade_plan_addenda` | plan przed wejściem: setup, bias, wejście, SL, TP, unieważnienie, ryzyko; po zapisie tylko do odczytu, zmiany jako dopiski z czasem | 1 |
+| `setups` + `setup_versions` + `setup_examples` | playbook jako struktura: warunki, checklista, SL/TP/BE, unieważnienie, A+ i anty-przykłady, progi statusu zadeklarowane z góry, wersje | 4 |
+| `rule_versions` | wersja reguły; propozycja → zatwierdzona → zastąpiona; trade wskazuje zestaw reguł z dnia wejścia | 4, 10 |
+| `trade_note_links` | trade ↔ hipoteza / pojęcie ICT / błąd | 4 |
+| `hypothesis_variants`, `threshold_changes` | licznik testowanych wariantów; log zmian progów po zobaczeniu wyniku | 5 |
+| `prop_firm_presets`, `prop_rules`, `prop_ledger` | presety firm jako dane z URL i datą odczytu; reguły per konto z datą obowiązywania; koszty evali, resetów i wypłaty | 7 |
+| `weekly_reviews` | przegląd procesowy z **jednym** zobowiązaniem i rozliczeniem poprzedniego | 9 |
+| `ai_suggestions` | kolejka potwierdzeń z pochodzeniem, dowodem, pewnością i `n`; cofalna | 10, 15 |
+| `user_words` | słowa użytkownika dosłownie + `ai_interpretation` | 13 |
+| `chart_annotations` | rysunki użytkownika z wykresu, tekst 1:1 przez `user_words` | 12, 13 |
+| `profile_terms` (+ źródła), `interpretation_corrections` | słownik tradera i rejestr poprawek interpretacji | 14 |
+| `note_additions` | dopiski AI i mentora do notatek strategii i kart setupu, z cytatem i linkiem, cofalne | 15, 16 |
+| `strategy_gaps` | pytania o luki w strategii i sprzeczności „mentor kontra praktyka” — AI ich nie rozstrzyga | 15, 16 |
+| `mentor_sources`, `mentor_claims` | filmy playlisty ze statusem; twierdzenia z dosłownym cytatem i `t=` | 16 |
+
+**Nowe pola w istniejących tabelach.**
+- `trades.process_grade` (`A` / `B` / `C`, NULL = nieocenione) — osobno od wyniku; siatka 2×2
+  liczy się z niej i z R.
+- `trades.setup_id`, `trades.setup_version_id`, `trades.ruleset_version` — wersje obowiązujące
+  w chwili wejścia, zapisywane raz.
+- `trades.day_known` — opcjonalna flaga na trade'ie z replayu, domyślnie fałsz (raport metodyki,
+  R15: przy ślepym backteście czwarte źródło danych nie jest potrzebne).
+- `trade_reviews.as_of`, `evidence_hash`, `ruleset_version`, `kind` (`ai` / `user_override`);
+  `trade_rule_checks.rule_version_id`. **Odstępstwo od brzmienia planu:** plan wymienia
+  `rule_version_id` przy `trade_reviews`, ale jeden werdykt sprawdza kilka reguł naraz, więc
+  wersja konkretnej reguły należy do wiersza sprawdzenia, a werdykt dostaje numer całego zestawu.
+- `day_notes`: bias, maks. liczba trade'ów, sen (1–5) — rytuał przed sesją; reszta (energia,
+  nastrój, notatki) już jest.
+- **Źródło danych (backtest / forward / demo / live) jest wyliczane, bez kolumny `data_source`.**
+  Słowa użytkownika (14.10.2026): «Wyliczane». Plan wymieniał je jako nową kolumnę `trades`, ale
+  wszystkie cztery wartości wynikają z danych, a ADR-027 odrzucił zapis kategorii na trade'ie,
+  bo zmiana fazy konta musiałaby przepisać całą historię. Wyliczenie (jedna funkcja
+  `zrodloDanych` w `lib/domain/zrodla.ts` i jej lustro SQL w `filters.ts`, test parzystości jak
+  przy `wynikTrade`/`sqlWynik` z ADR-011):
+  1. trade w sesji (`backtest_session_id` nie NULL) → `backtest_sessions.kind` (`backtest` albo `forward`);
+  2. inaczej konto `demo` albo `paper` → `demo`;
+  3. inaczej (`live`, `prop`) → `live`; podział `live` na realne / prop eval / prop funded daje
+     istniejąca kategoria konta (`kategoriaKonta`, ADR-027).
+
+  Wskaźnik „ile R znika między backtestem a live” per setup grupuje po tej funkcji. Nie mylić
+  z `trades.source` (ADR-026: skąd przyszedł wpis — formularz, TradingView, FX Replay).
+
+**Statystyka uczciwa w czystym `lib/domain/stats-ci.ts`:** przedział Wilsona 95% dla win rate
+(15/30 → 33,2–66,8%), bootstrap średniego R z ustalonym ziarnem w testach i flagą „orientacyjnie”
+przy n<30, break-even win rate L/(W+L) z własnych średnich w R, status setupu i hipotezy
+(nieważny / niejednoznaczny / obiecujący / potwierdzony) według progów zapisanych w wersji setupu
+albo w hipotezie **przed** zebraniem próby. Do tego `prop.ts` (bufory DD dla czterech typów,
+consistency, bufor „gdy trafi SL”), `process-grid.ts` i rozszerzenie istniejącego `discipline.ts`
+o wskaźnik z reguł. Wszystkie bez dostępu do bazy, testowane jednostkowo na przypadkach z raportu.
+
+**Dyscyplina bez nowej tabeli.** Naruszenia twardych reguł wynikają z danych: przekroczony limit
+trade'ów (`day_notes.max_trades`), handel poza oknem (`settings.trading_hours_*`), ruszony SL
+(SL trade'u ≠ SL zamrożonego planu), trade bez planu (brak `trade_plans` z `frozen_at` ≤ wejście).
+Nowy wskaźnik nie zastępuje `scoreDiscipline` z ADR-011/018 — stoi obok, z inną nazwą, bo wyniki
+obu nie są porównywalne.
+
+**Presety prop są danymi, nie kodem.** Wypełnia je `market-researcher` z **oficjalnych** regulaminów
+(URL, data odczytu, `needs_verification` przy sprzecznych źródłach) w migracji danych. Użytkownik
+przypisuje preset do konta i może nadpisać każdą wartość; UI pokazuje wiek presetu. Tylko
+ostrzeżenia, bez blokad — AI nie składa zleceń, więc blokady nie da się wymusić.
+
+**Ryzyko look-ahead modelu.** Werdykt na dniu, który model mógł znać z treningu, dostaje w UI
+flagę „model mógł znać ten dzień”. Flaga jest wyliczana (model + dzień handlowy względem daty
+odcięcia wiedzy modelu z listy w `lib/domain`), nie zapisywana.
+
+**Nie robimy** (z planu): jednej liczby „edge score”, gamifikacji i serii, warstwy społecznościowej,
+auto-sync brokerów, blokad, których nie da się wymusić, pól, których nic nie liczy. Pełny eksport
+do ponownego importu zostaje i obejmuje nowe tabele.
+
+**Koszt.** Kilkanaście nowych tabel i trzy funkcje triggerów — więcej powierzchni migracji
+i testów (test „migracje od zera vs `schema.ts`” w fazie 2 jest warunkiem, nie dodatkiem).
+Zatwierdzanie przez kolejkę dokłada kliknięcia; łagodzi to zatwierdzanie jednym kliknięciem
+z cofnięciem, a dopiski do strategii (obserwacje, nie reguły) wchodzą bez zatwierdzenia.
+
+**Rozstrzygnięcia użytkownika (14.10.2026).** Słowa użytkownika:
+1. Źródło danych: «Wyliczane». Bez kolumny `data_source`; wyliczenie opisane wyżej.
+2. Reguły R-004, R-007, R-010, w sejfie `zatwierdzona`: «Jako propozycje, zatwierdzam ponownie».
+   Import (`tj import vault`) zakłada **wszystkie** reguły z sejfu jako `proposed`
+   z `origin = 'vault-import'` i notą o statusie w sejfie; użytkownik zatwierdza je w UI, po jednej.
+   **Żadnej furtki w bazie:** trigger zatwierdzeń nie ma wyjątku dla importu. To doprecyzowuje
+   punkt planu „statusy reguł 1:1, nic nie zostaje zatwierdzone z automatu”: status z sejfu jest
+   zachowany jako informacja, a nie jako zatwierdzenie.
+3. Reguły z wiedzy mentora: «Bez progu, podpisane n=0». Propozycje `origin = 'mentor'` nie
+   podlegają bramce „poniżej progu `n` AI nie proponuje reguły” (ta bramka dotyczy wniosków AI
+   z własnych trade'ów, `origin = 'ai'`). W UI są podpisane „wg mentora, n = 0”. Nadal są tylko
+   propozycją: zatwierdza wyłącznie użytkownik, po jednej (MUST 16.5).

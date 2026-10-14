@@ -1,0 +1,59 @@
+{
+  "_meta": {
+    "data": "2026-10-14",
+    "autor": "design-scout",
+    "zrodlo": "Playwright MCP browser_evaluate na https://demo.mercury.com (publiczne demo, robots.txt pozwala), motyw wymuszony data-theme=dark",
+    "dembrandt": "NIEDOSTEPNY: brak binarki chromium_headless_shell-1243 (zakaz npx playwright install, wiedza/pulapki/playwright.md). Pomiar tylko Playwrightem.",
+    "uwaga": "Krój Arcadia (Mercury, płatny, firmowy) NIE przechodzi do projektu. Skala i rytm tak, krój zostaje IBM Plex Sans/Mono klienta."
+  },
+  "szkielet-mercury": {
+    "adres": "https://demo.mercury.com/dashboard",
+    "1440": {
+      "sidebar": { "szerokosc": 220, "tlo": "rgb(16,16,26)", "zrodlo": "1440, Playwright" },
+      "tlo_tresci": "rgb(23,23,33)",
+      "kontener": { "x": 339, "szerokosc": 968, "uwagi": "wycentrowany w obszarze 1220 px obok sidebaru; maks. ok. 968" },
+      "naglowek_strony": { "tekst": "Welcome, Jane", "fs": 28, "lh": 36, "fw": 380, "ls": "normal", "krój": "Arcadia Display" },
+      "liczba_bohater": { "tekst": "$5,216,471.18", "fs": 28, "lh": 36, "fw": 380, "ls": "-0.84px (-0.03em)", "grosze": "mniejszy indeks górny" },
+      "naglowek_sekcji": { "tekst": "Money movement", "fs": 19, "lh": 28, "fw": 400 },
+      "etykieta_karty": { "fs": 15, "lh": 24, "fw": 400, "kolor": "rgb(221,221,229)" },
+      "tekst_drugorzedny": { "fs": 13, "lh": 20, "ls": "0.1px", "kolor": "rgb(157,157,168)" },
+      "etykieta_grupy_nav": { "tekst": "Bookmarks", "fs": 12, "lh": 20, "fw": 480, "ls": "0.2px", "kolor": "rgb(157,157,168)" },
+      "nav_pozycja": { "fs": 15, "lh": 24, "wysokosc": 30, "kolor": "rgb(195,195,204)", "aktywna": "rgb(244,245,249) na podkladce" },
+      "karta": { "promien": "12px", "ramka": "1px solid rgba(180,183,200,0.12)", "tlo": "rgb(30,30,42)", "padding": "24px", "cien": "none" },
+      "siatka_kart": { "dwie_kolumny": "472 + 24 + 472", "trzy_kolumny": "307 + 24 + 307 + 24 + 307", "odstep": 24 },
+      "odstep_miedzy_sekcjami": { "koniec_kart_do_naglowka": 44, "naglowek_do_kart": 18 },
+      "przycisk_pigulka": { "wysokosc": 32, "fs": 15, "glowny": "wypełniony akcentem", "pozostale": "tło rgba(180,183,200,0.12)" },
+      "zakladka_aktywna": { "promien": "8px", "wysokosc": 32, "tlo": "rgba(141,164,245,0.2)" },
+      "wiersz_tabeli": { "wysokosc": 51, "naglowek_kolumny": { "fs": 13, "lh": 20, "kolor": "rgb(157,157,168)", "padding": "8px 16px 8px 0" } }
+    },
+    "375": {
+      "poziomy_scroll": "brak (scrollWidth 375 = clientWidth 375)",
+      "margines_boczny": 16,
+      "naglowek_strony": { "fs": 28, "lh": 36, "zrodlo": "375, Playwright" },
+      "liczba_bohater": { "fs": 28, "lh": 36 },
+      "naglowek_sekcji": { "fs": 19, "lh": 28 },
+      "uklad": "jedna kolumna; karty pełnej szerokości z wewnętrznym paddingiem 24 (x=41 dla treści karty przy marginesie 16); główne CTA na pełną szerokość + przycisk 'More'; nawigacja w hamburgerze (u nas zamiast tego dolny pasek ze wzoru mobile-dzis)"
+    },
+    "ruch": {
+      "zrodlo": "getComputedStyle transition na a/button/tr, 1440, Playwright",
+      "przyciski_i_wiersze": "background-color, color 160ms ease-out",
+      "linki": "color 200ms ease-out",
+      "uwagi": "brak animacji wejścia; ruch tylko w stanach hover. NIEPRZETESTOWANE: wykres (hover tooltip)."
+    }
+  },
+  "panel-prop-konto": {
+    "adres": "https://demo.mercury.com/accounts/credit",
+    "1440": {
+      "uklad_gory": "lewa kolumna 296 (saldo + pasek + 2 pigułki-wiersze) | prawa: wykres do krawędzi kontenera",
+      "wiersz_pigulka": { "wysokosc": 44, "szerokosc": 296, "promien": "12px", "tlo": "rgba(180,183,200,0.12)", "odstep": 16 },
+      "naglowek_sekcji": { "tekst": "This month", "fs": 19, "lh": 28 },
+      "naglowek_tabeli": { "fs": 14, "lh": 20, "wysokosc": 36, "kolor": "rgb(157,157,168)" },
+      "wiersz_tabeli": { "wysokosc": 48, "data_tylko_w_pierwszym_wierszu_dnia": true },
+      "zrodlo": "1440, Playwright"
+    }
+  },
+  "szkielet-linear": {
+    "adres": "brak publicznego adresu (wnętrze aplikacji po zalogowaniu)",
+    "pomiar": "NIEPRZETESTOWANE na żywo. Szacunek z obrazu Refero 58ac6637 (800 px = skala ok. 0.55 widoku 1440): sidebar ok. 245 px, wiersz listy ok. 44 px, nagłówek grupy ok. 36 px na tle o stopień jaśniejszym, prawy panel ok. 470 px. Do zmierzenia przez ui-designer w 2c, jeśli wybrany zostanie szkielet B."
+  }
+}
