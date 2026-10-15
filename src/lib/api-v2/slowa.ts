@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, sql, type SQL } from "drizzle-orm";
 
-import { czySlowaUkryte, sqlSlowaPoWejsciuUkrytego } from "./ukrycie-wyniku";
+import { czySlowaUkryte, sqlSlowaUkryte } from "./ukrycie-wyniku";
 import type { z } from "zod";
 
 import { notes, userWords } from "@/lib/db/schema";
@@ -132,7 +132,7 @@ export async function listaSlow(
   f: z.output<typeof SlowaListaQuery>,
 ) {
   // Slowa napisane po wejsciu trade'a z ukrytym wynikiem nie wychodza z API (slepa ocena), takze w listach.
-  const warunki: SQL[] = [gt(userWords.id, f.after), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}`];
+  const warunki: SQL[] = [gt(userWords.id, f.after), sql`not ${sqlSlowaUkryte({ tradeId: sql`${userWords.tradeId}`, day: sql`${userWords.day}`, capturedAt: sql`${userWords.capturedAt}`, noteId: sql`${userWords.noteId}` })}`];
   if (f.tradeId) warunki.push(eq(userWords.tradeId, f.tradeId));
   if (f.noteId) warunki.push(eq(userWords.noteId, f.noteId));
   if (f.backtestSessionId) warunki.push(eq(userWords.backtestSessionId, f.backtestSessionId));

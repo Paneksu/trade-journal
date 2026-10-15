@@ -5,7 +5,7 @@ import type { z } from "zod";
 import { aiSuggestions, interpretationCorrections, profileTermSources, profileTerms, userWords } from "@/lib/db/schema";
 
 import type { KorektaInterpretacjiSchema } from "./contract/funkcje";
-import { ukryteSlowa } from "./ukrycie-wyniku";
+import { czySlowaUkryte, ukryteSlowa } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -113,7 +113,8 @@ export async function zapiszKorekteInterpretacji(
   d: z.output<typeof KorektaInterpretacjiSchema>,
 ): Promise<WynikKorektyInterpretacji> {
   const [slowa] = await tx.select().from(userWords).where(eq(userWords.id, d.wordsId)).for("update").limit(1);
-  if (!slowa) return { ok: false, status: 404, kod: "not_found", komunikat: `Słowa użytkownika #${d.wordsId} nie istnieją.` };
+  // Slepa ocena: ukryte slowa wygladaja jak nieistniejace (404 przed odczytem interpretacji).
+  if (!slowa || (await czySlowaUkryte(tx, d.wordsId))) return { ok: false, status: 404, kod: "not_found", komunikat: `Słowa użytkownika #${d.wordsId} nie istnieją.` };
   if (slowa.aiInterpretation === null) {
     return { ok: false, status: 422, kod: "no_interpretation", komunikat: `Słowa #${d.wordsId} nie mają interpretacji AI, więc nie ma czego poprawiać. Ustaw ją: PUT /api/v2/user-words/${d.wordsId}/interpretation.` };
   }
@@ -121,7 +122,7 @@ export async function zapiszKorekteInterpretacji(
     return { ok: false, status: 422, kod: "same_words", komunikat: "pole correctionWordsId: korekta musi być osobnym wpisem (twoje »nie, chodziło mi o…«), nie tymi samymi słowami, które poprawiasz." };
   }
   const [korekta] = await tx.select({ id: userWords.id }).from(userWords).where(eq(userWords.id, d.correctionWordsId)).limit(1);
-  if (!korekta) return { ok: false, status: 422, kod: "unknown_reference", komunikat: `pole correctionWordsId: słowa użytkownika #${d.correctionWordsId} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).` };
+  if (!korekta || (await czySlowaUkryte(tx, d.correctionWordsId))) return { ok: false, status: 422, kod: "unknown_reference", komunikat: `pole correctionWordsId: słowa użytkownika #${d.correctionWordsId} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).` };
   if (slowa.aiInterpretation === d.afterInterpretation) {
     return { ok: false, status: 422, kod: "no_change", komunikat: "pole afterInterpretation: jest identyczne z obecną interpretacją, więc to nie jest poprawka." };
   }

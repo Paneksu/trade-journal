@@ -280,8 +280,9 @@ export async function persistTrade(
         const [oczekuje] = await tx
           .select({ id: aiSuggestions.id })
           .from(aiSuggestions)
-          .where(and(eq(aiSuggestions.kind, "tag"), eq(aiSuggestions.status, "pending"), sql`${aiSuggestions.target} = ${JSON.stringify(cel)}::jsonb`, sql`${aiSuggestions.payload} = ${JSON.stringify(payload)}::jsonb`))
+          .where(and(eq(aiSuggestions.kind, "tag"), sql`${aiSuggestions.target} = ${JSON.stringify(cel)}::jsonb`, sql`${aiSuggestions.payload} = ${JSON.stringify(payload)}::jsonb`))
           .limit(1);
+        // Sugestia o takiej tresci juz byla (oczekuje, zatwierdzona albo ODRZUCONA): odrzucony tag nie wraca przy kolejnej synchronizacji.
         if (oczekuje) continue;
         const [tag] = await tx.select({ name: tags.name }).from(tags).where(eq(tags.id, p.tagId)).limit(1);
         await tx.insert(aiSuggestions).values({

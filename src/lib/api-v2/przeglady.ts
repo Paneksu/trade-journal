@@ -11,6 +11,7 @@ import { getProgi } from "@/lib/queries/dictionaries";
 
 import type { PrzegladTygodniaZapisSchema } from "./contract/funkcje";
 import { dyscyplinaDoApi, siatkaDoApi } from "./mapowanie";
+import { czySlowaUkryte, ukryteSlowa } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -134,7 +135,9 @@ async function slowaPoId(tx: Db, ids: (number | null)[]) {
     .select({ id: userWords.id, text: userWords.text, sha256: userWords.sha256 })
     .from(userWords)
     .where(inArray(userWords.id, wartosci));
-  return new Map(wiersze.map((w) => [w.id, w]));
+  // Slepa ocena: slowa ukryte (po wejsciu trade'a z ukrytym wynikiem, przypiete do ukrytej notatki) nie wychodza takze z przegladu tygodnia.
+  const ukryte = await ukryteSlowa(tx, wartosci);
+  return new Map(wiersze.filter((w) => !ukryte.has(w.id)).map((w) => [w.id, w]));
 }
 
 export async function zPrzegladu(tx: Db, p: Przeglad) {
@@ -197,7 +200,8 @@ export async function zapiszPrzeglad(
   for (const [pole, wid] of [["conclusionsWordsId", d.conclusionsWordsId], ["commitmentWordsId", d.commitmentWordsId], ["prevResultWordsId", d.prevResultWordsId]] as const) {
     if (wid != null) {
       const [w] = await tx.select({ id: userWords.id, tradeId: userWords.tradeId }).from(userWords).where(eq(userWords.id, wid)).limit(1);
-      if (!w) return odrzuc(422, "unknown_reference", `pole ${pole}: słowa użytkownika #${wid} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).`);
+      // Ukryte slowa wygladaja jak nieistniejace (slepa ocena): nie da sie ich podpiac pod przeglad ani sprawdzic ich istnienia.
+      if (!w || (await czySlowaUkryte(tx, wid))) return odrzuc(422, "unknown_reference", `pole ${pole}: słowa użytkownika #${wid} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).`);
       // Przeglad tygodnia zyje dluzej niz pojedynczy trade: slowa przypiete do trade'u (CASCADE przy jego kasowaniu)
       // zablokowalyby skasowanie tego trade'u w aplikacji (klucz bez kaskady, 23503).
       if (w.tradeId !== null) {

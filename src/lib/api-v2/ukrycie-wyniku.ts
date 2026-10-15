@@ -60,9 +60,6 @@ export function sqlNotatkaUkryta(tradeId: SQL, createdAt: SQL, updatedAt: SQL, d
             and greatest(${createdAt}, ${updatedAt}) > ${sqlWejscieTradu(sql`uw_d.id`)})))`;
 }
 
-/** Stara nazwa (przed rozszerzeniem o dzien): zachowana dla czytelnosci wywolan, `day` jest teraz wymagany. */
-export const sqlNotatkaPoWejsciuUkrytego = sqlNotatkaUkryta;
-
 /**
  * Warunek SQL: slowa uzytkownika sa ukryte, gdy
  *  - powstaly po wejsciu trade'a z ukrytym wynikiem i dotycza tego trade'a albo jego dnia (slowa dnia bez trade'a), albo
@@ -77,11 +74,6 @@ export function sqlSlowaUkryte(a: { tradeId: SQL; day: SQL; capturedAt: SQL; not
     or (${a.noteId} is not null and exists (select 1 from notes uw_n
       where uw_n.id = ${a.noteId}
         and ${sqlNotatkaUkryta(sql`uw_n.trade_id`, sql`uw_n.created_at`, sql`uw_n.updated_at`, sql`uw_n.day`)})))`;
-}
-
-/** Zgodnosc wsteczna wywolan (trade, dzien, czas): bez kotwicy notatki. */
-export function sqlSlowaPoWejsciuUkrytego(tradeId: SQL, day: SQL, capturedAt: SQL, noteId: SQL = sql`null`): SQL {
-  return sqlSlowaUkryte({ tradeId, day, capturedAt, noteId });
 }
 
 /** Podzbior `ids`, ktorych wynik jest ukryty (otwarty trade z werdyktem). */

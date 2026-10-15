@@ -96,6 +96,17 @@ describe.skipIf(!MOZNA_NA_BAZIE)("trades, days, sessions, skips, reviews przez v
         expect(r2.results[0].status, JSON.stringify(r2)).toBe("updated");
         expect(await kolejka(id)).toHaveLength(1);
 
+        // odrzucona sugestia nie wraca przy kolejnej synchronizacji (duplikat liczy sie niezaleznie od statusu)
+        const { odrzucSugestie } = await import("@/lib/decyzje/sugestie");
+        const z15 = (extra: Record<string, unknown> = {}) => body({ tags: [{ category: "confluence", name: NAZWA, interval: "5m" }, { category: "confluence", name: NAZWA, interval: "15m" }], ...extra });
+        await wyslijTrady([z15({ exits: [{ time: `${DZIEN}T14:56:00Z`, price: 20026 }] })], { mode: "update" });
+        const k15 = (await kolejka(id)).find((k) => (k.payload as { interval: string }).interval === "15m")!;
+        expect(k15).toBeDefined();
+        expect((await odrzucSugestie(k15.id)).ok).toBe(true);
+        await wyslijTrady([z15({ exits: [{ time: `${DZIEN}T14:57:00Z`, price: 20027 }] })], { mode: "update" });
+        const wszystkie15 = (await kolejka(id)).filter((k) => (k.payload as { interval: string }).interval === "15m");
+        expect(wszystkie15).toHaveLength(1);
+        expect(wszystkie15[0].status).toBe("rejected");
         // po zatwierdzeniu w UI tag liczy sie jako origin = ai
         const { zatwierdzSugestie } = await import("@/lib/decyzje/sugestie");
         expect((await zatwierdzSugestie(k1[0].id)).ok).toBe(true);

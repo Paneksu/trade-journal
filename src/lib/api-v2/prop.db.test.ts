@@ -353,6 +353,25 @@ describe.skipIf(!MOZNA_NA_BAZIE)("moduł prop: presety, reguly konta, bufory i k
     expect(lista).not.toContain(stara.json.id);
   });
 
+  it("najostrzejsza wartosc pole po polu z ostatniej potwierdzonej, obowiazujacej i WSZYSTKICH niepotwierdzonych (obie galezie, «Zawsze bezpieczniej dla mnie»)", async () => {
+    const id = await kontoProp();
+    const r1 = await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 300_000, dailyLossCents: 100_000, profitTargetCents: 500_000 });
+    const r2 = await reguly(id, { validFrom: "2026-02-01", ddType: "static", maxDdCents: 250_000, dailyLossCents: 200_000, profitTargetCents: 600_000 });
+    const r3 = await reguly(id, { validFrom: "2026-03-01", ddType: "static", maxDdCents: 400_000, dailyLossCents: 150_000, profitTargetCents: 300_000 });
+    for (const r of [r1, r2, r3]) expect(r.status).toBe(201);
+    const { potwierdzReguleKonta } = await import("@/lib/decyzje/prop");
+
+    // galaz »same niepotwierdzone«: R1, R2, R3 niepotwierdzone, obowiazuje R3
+    const same = await status(id, "?day=2026-04-01");
+    expect(same.json.rulesUsed).toMatchObject({ source: "unconfirmed_only", maxDdCents: 250_000, dailyLossCents: 100_000, profitTargetCents: 600_000 });
+
+    // galaz »potwierdzona + niepotwierdzone«: R1 potwierdzona, R2 i R3 nie: ta sama najostrzejsza wartosc, nie tylko para R1 i R3
+    expect((await potwierdzReguleKonta(r1.json.id)).ok).toBe(true);
+    const mieszana = await status(id, "?day=2026-04-01");
+    expect(mieszana.json.rulesUsed).toMatchObject({ source: "stricter_of_confirmed_and_unconfirmed", confirmedRuleId: r1.json.id, maxDdCents: 250_000, dailyLossCents: 100_000, profitTargetCents: 600_000 });
+    expect(mieszana.json.rulesNote).toContain(`#${r2.json.id}`);
+  });
+
   it("potwierdzic reguly moze tylko UI: SQL z aktorem api:* dostaje TJ403, a wstawienie juz potwierdzonej reguly tez", async () => {
     const id = await kontoProp();
     const r = await reguly(id, { validFrom: "2026-02-01", ddType: "static", maxDdCents: 300_000 });

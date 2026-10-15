@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 
-import { sqlNotatkaUkryta, sqlSlowaPoWejsciuUkrytego, sqlWynikUkryty } from "./ukrycie-wyniku";
+import { sqlNotatkaUkryta, sqlSlowaUkryte, sqlWynikUkryty } from "./ukrycie-wyniku";
 
 /**
  * Wyszukiwanie (model-danych 7, ADR-029): konfiguracja `simple` + `unaccent`
@@ -96,7 +96,7 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
         from user_words w
        where (w.search @@ ${zapytanie}
           or lower(public.f_unaccent(w.text)) like ${wzorzecN} escape '\\')
-         and not ${sqlSlowaPoWejsciuUkrytego(sql`w.trade_id`, sql`w.day`, sql`w.captured_at`, sql`w.note_id`)}
+         and not ${sqlSlowaUkryte({ tradeId: sql`w.trade_id`, day: sql`w.day`, capturedAt: sql`w.captured_at`, noteId: sql`w.note_id` })}
        order by rank desc, w.id
        limit ${limit}`);
     for (const w of wiersze) wyniki.push({ type: "user_words", id: w.id, rank: Number(w.rank), title: w.title, snippet: w.snippet, meta: w.meta });

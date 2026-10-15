@@ -459,6 +459,38 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     }
   });
 
+  it("przeglad tygodnia: ukryte slowa nie wychodza z GET (commitment = null) i nie da sie ich podpiac (422 unknown_reference); korekta interpretacji ukrytych slow = 404", async () => {
+    const { id, po, dnia } = await przygotuj();
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where account_id = ${kontoId} and trading_day = ${DZIEN} and id <> ${id}`;
+    const sprzatanie: (() => Promise<unknown>)[] = [];
+    try {
+      // zapis przez API: slowa dnia napisane po wejsciu sa dla przegladu »nieistniejace«
+      const zapis = await wywolaj(import("@/app/api/v2/reviews/weekly/[weekStart]/route"), "PUT", `/reviews/weekly/${DZIEN}`, { token: rw.token, cialo: { commitmentWordsId: dnia.id } }, PARAMS({ weekStart: DZIEN }));
+      expect(zapis.status, JSON.stringify(zapis.json)).toBe(422);
+      expect(zapis.json.code).toBe("unknown_reference");
+      // odczyt: przeglad zapisany SQL-em (z ukrytymi slowami) nie oddaje ich tekstu
+      const [r] = await sql`insert into weekly_reviews (week_start, commitment_words_id) values (${DZIEN}, ${dnia.id}) returning id`;
+      sprzatanie.push(() => sql`delete from weekly_reviews where id = ${r.id}`);
+      const odczyt = await get(import("@/app/api/v2/reviews/weekly/route"), `/reviews/weekly?weekStart=${DZIEN}`);
+      expect(odczyt.status, JSON.stringify(odczyt.json)).toBe(200);
+      expect(odczyt.json.review.commitment).toBeNull();
+      expect(JSON.stringify(odczyt.json)).not.toContain("Podsumowanie dnia");
+
+      // korekta interpretacji ukrytych slow: 404, nic nie zapisane
+      await sql`update user_words set ai_interpretation = 'Interpretacja AI', interpretation_model = 'm', interpretation_at = now() where id = ${po.id}`;
+      const kor = await wywolaj(import("@/app/api/v2/profile/corrections/route"), "POST", "/profile/corrections", { token: rw.token, cialo: { wordsId: po.id, afterInterpretation: "Inna interpretacja", correctionWordsId: dnia.id } });
+      expect(kor.status, JSON.stringify(kor.json)).toBe(404);
+      expect((await sql`select count(*)::int as n from interpretation_corrections where words_id = ${po.id}`)[0].n).toBe(0);
+
+      // po zamknieciu trade'a przeglad pokazuje slowa
+      await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+      const po2 = await get(import("@/app/api/v2/reviews/weekly/route"), `/reviews/weekly?weekStart=${DZIEN}`);
+      expect(po2.json.review.commitment.id).toBe(dnia.id);
+    } finally {
+      for (const f of sprzatanie) await f().catch(() => {});
+    }
+  });
+
   it("GET /trades/:id: zrzuty zrobione po wejsciu traca podpis, czas i stan wykresu; tresc korekty uzytkownika (summaryMd) jest ukryta", async () => {
     const { id } = await przygotuj();
     const [{ id: ocenaId }] = await sql`select id from trade_reviews where trade_id = ${id} and kind = 'ai'`;

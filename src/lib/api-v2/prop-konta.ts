@@ -309,21 +309,22 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
       .where(and(eq(propRules.accountId, accountId), lte(propRules.validFrom, dzien), isNotNull(propRules.confirmedAt), ne(propRules.id, obowiazujace.regula.id)))
       .orderBy(desc(propRules.validFrom))
       .limit(1);
+    // «Zawsze bezpieczniej dla mnie» (Slowa uzytkownika 15.10.2026): w OBU galeziach liczymy na najostrzejszej wartosci pole po polu
+    // z ostatniej potwierdzonej, obowiazujacej i WSZYSTKICH niepotwierdzonych reguł do dnia statusu.
+    const inne = await tx
+      .select()
+      .from(propRules)
+      .where(and(eq(propRules.accountId, accountId), lte(propRules.validFrom, dzien), isNull(propRules.confirmedAt), ne(propRules.id, obowiazujace.regula.id)))
+      .orderBy(asc(propRules.validFrom));
+    if (potw) zasady = ostrzejszeZasady(naZasady(potw), zasady).zasady;
+    for (const r of inne) zasady = ostrzejszeZasady(naZasady(r), zasady).zasady;
+    const wczesniejsze = inne.length > 0 ? ` oraz wcześniejszych niepotwierdzonych (${inne.map((r) => `#${r.id}`).join(", ")})` : "";
     if (potw) {
-      zasady = ostrzejszeZasady(naZasady(potw), zasady).zasady;
       zrodloZasad = "stricter_of_confirmed_and_unconfirmed";
       idPotwierdzonej = potw.id;
-      notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, więc bufory liczę na ostrzejszej z dwóch: ostatniej potwierdzonej (od ${potw.validFrom}, #${potw.id}) i nowej. Potwierdź je w »Do decyzji«, gdy sprawdzisz regulamin.`;
+      notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, więc bufory liczę na najostrzejszej wartości z ostatniej potwierdzonej (od ${potw.validFrom}, #${potw.id}), nowej${wczesniejsze}. Potwierdź je w »Do decyzji«, gdy sprawdzisz regulamin.`;
     } else {
       zrodloZasad = "unconfirmed_only";
-      // Same niepotwierdzone reguly: bierzemy NAJOSTRZEJSZA ze wszystkich obowiazujacych do dnia statusu («Zawsze bezpieczniej dla mnie»,
-      // Slowa uzytkownika 15.10.2026), nie tylko najnowsza.
-      const inne = await tx
-        .select()
-        .from(propRules)
-        .where(and(eq(propRules.accountId, accountId), lte(propRules.validFrom, dzien), isNull(propRules.confirmedAt), ne(propRules.id, obowiazujace.regula.id)))
-        .orderBy(asc(propRules.validFrom));
-      for (const r of inne) zasady = ostrzejszeZasady(naZasady(r), zasady).zasady;
       notatkaZasad = inne.length > 0
         ? `Reguły konta nie są potwierdzone w aplikacji (obowiązujące od ${obowiazujace.regula.validFrom}, #${obowiazujace.regula.id}, oraz wcześniejsze: ${inne.map((r) => `#${r.id}`).join(", ")}), a potwierdzonych brak, więc liczę na najostrzejszej ze wszystkich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`
         : `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, a wcześniejszych potwierdzonych brak, więc liczę na nich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`;

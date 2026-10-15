@@ -11,7 +11,7 @@ import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 import type { DzienQuery, DzienZapisSchema } from "./contract/v2";
 import type { Zapis } from "./zapis";
 import { zSlow } from "./slowa";
-import { sqlNotatkaUkryta, sqlSlowaPoWejsciuUkrytego, ukryteTrady } from "./ukrycie-wyniku";
+import { sqlNotatkaUkryta, sqlSlowaUkryte, ukryteTrady } from "./ukrycie-wyniku";
 
 /**
  * Dzien (plan: `days/:date`). Odczyt zbiera wszystko, co wisi na dniu; zapis
@@ -52,7 +52,7 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
   const slowa = await db
     .select()
     .from(userWords)
-    .where(and(eq(userWords.day, data), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}`))
+    .where(and(eq(userWords.day, data), sql`not ${sqlSlowaUkryte({ tradeId: sql`${userWords.tradeId}`, day: sql`${userWords.day}`, capturedAt: sql`${userWords.capturedAt}`, noteId: sql`${userWords.noteId}` })}`))
     .orderBy(asc(userWords.id))
     .limit(200);
   const notatki = await db

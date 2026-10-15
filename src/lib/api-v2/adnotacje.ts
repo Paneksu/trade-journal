@@ -8,7 +8,7 @@ import { sprawdzTekstBajtWBajt } from "@/lib/domain/notatki";
 import type { AdnotacjeListaQuery, AdnotacjeZapisSchema } from "./contract/funkcje";
 import { skrotTekstu } from "./skrot";
 import { zSlow } from "./slowa";
-import { sqlSlowaPoWejsciuUkrytego, sqlSlowaUkryte } from "./ukrycie-wyniku";
+import { sqlSlowaUkryte } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -196,7 +196,7 @@ export async function listaAdnotacji(tx: Db, f: z.output<typeof AdnotacjeListaQu
   if (f.sessionId) warunki.push(eq(chartAnnotations.backtestSessionId, f.sessionId));
   if (f.day) warunki.push(eq(chartAnnotations.day, f.day));
   const wiersze = await tx
-    .select({ a: chartAnnotations, w: userWords, ukryte: sql<boolean>`coalesce(${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}, false)` })
+    .select({ a: chartAnnotations, w: userWords, ukryte: sql<boolean>`coalesce(${sqlSlowaUkryte({ tradeId: sql`${userWords.tradeId}`, day: sql`${userWords.day}`, capturedAt: sql`${userWords.capturedAt}`, noteId: sql`${userWords.noteId}` })}, false)` })
     .from(chartAnnotations)
     .leftJoin(userWords, eq(chartAnnotations.wordsId, userWords.id))
     .where(and(...warunki))

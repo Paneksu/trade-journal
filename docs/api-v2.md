@@ -141,6 +141,10 @@ Filtr `externalRef` działa na `GET /rules` i `GET /hypotheses`.
 
 Poprawki po przeglądzie (15.10.2026): `POST /trades/:id/reviews` z `basis = chart` wymaga `evidence.intervalMinutes` (świeca musi się skończyć przed wejściem); `POST .../override`, `POST /trade-plans/:id/addenda` i `POST /notes/:id/additions` są idempotentne (powtórka = 200, ten sam wiersz); `GET /setups/:slug` zwraca `statsByVersion` (progi nie działają wstecz) i `unversionedTrades`; `GET /prop/accounts/:id/status` zwraca `rulesConfirmed`, `rulesUsed`, `rulesNote`; `GET /trades/:id` ma `hiddenFields` i `hiddenReviews`; nowy rodzaj sugestii `trade_setup`. Szczegóły: ADR-033, sekcja »Faza 2b, poprawki po audycie i review«.
 
+Uwagi dla klientów API (informacyjnie, 15.10.2026):
+- Każdy werdykt `POST /trades/:id/reviews` jest niezmienny. Stary klient mózgu (`wyslij.mjs`), który dotąd podmieniał ocenę ponownym wysłaniem, dostaje przy innej treści **409 `verdict_immutable`** i powinien traktować to jako stan końcowy (nie ponawiać); ta sama treść daje 200.
+- W werdyktach `basis = chart` bez `evidence` pole `evidenceCutoff` musi być **<=** wejściu trade'a (liczonemu jako najwcześniejsze znane wejście), inaczej 422 `look_ahead`.
+
 Brakujące ekrany UI (zatwierdzanie przeglądu tygodnia, odpowiedzi na luki, ocena zgodności cytatu mentora `review_ok`) to faza 5: do tego czasu te decyzje zapadają tylko przez bazę, a API ich nie obsługuje (agent nie ma ścieżki do zatwierdzenia).
 
 ### Ekrany decyzji użytkownika (bez AI)
