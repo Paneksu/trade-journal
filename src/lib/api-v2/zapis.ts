@@ -15,11 +15,30 @@ export type Transakcja = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /** Wykonuje `fn` w transakcji z ustawionym aktorem. */
 export type Zapis = <T>(fn: (tx: Transakcja) => Promise<T>) => Promise<T>;
 
-export function zapisZAktorem<T>(actor: string, fn: (tx: Transakcja) => Promise<T>): Promise<T> {
+function wTransakcji<T>(actor: string, fn: (tx: Transakcja) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select set_config('tj.actor', ${actor}, true)`);
     return fn(tx);
   });
+}
+
+/**
+ * Zapis z aktorem innym niz `ui`: `api:<id tokenu>`, `ingest`. Aktor `ui` (zatwierdzenia uzytkownika) jest
+ * ODRZUCANY (audyt 6): ta funkcja jest dostepna dla tras API, a trasa nie moze sie podszyc pod uzytkownika
+ * przez przekazanie napisu. Zatwierdzenia ida przez `zapisJakoUi` z modulow `lib/decyzje`; straznik
+ * (guard.test.ts) zabrania uzycia `zapisJakoUi` i importu `lib/decyzje` oraz `lib/actions` w `src/app/api/**`
+ * i w `src/lib/api-v2/**`.
+ */
+export function zapisZAktorem<T>(actor: string, fn: (tx: Transakcja) => Promise<T>): Promise<T> {
+  if (actor.trim().toLowerCase() === "ui") {
+    throw new Error("zapisZAktorem odrzuca aktora »ui«: zatwierdzenia użytkownika zapisuje wyłącznie moduł lib/decyzje przez zapisJakoUi (sesja po requireSession), nigdy trasa API.");
+  }
+  return wTransakcji(actor, fn);
+}
+
+/** Zapis jako uzytkownik w aplikacji (`tj.actor = ui`): tylko dla akcji serwera po `requireSession()`, przez `lib/decyzje`. */
+export function zapisJakoUi<T>(fn: (tx: Transakcja) => Promise<T>): Promise<T> {
+  return wTransakcji("ui", fn);
 }
 
 /** Aktor starych tras /api/ingest/** (nie znaja tokenu v2 w handlerze). */

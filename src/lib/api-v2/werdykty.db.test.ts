@@ -90,7 +90,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
       brainVerdict: "wejdz",
       summaryMd: "FVG po sweepie, bias long.",
       model: "claude-opus-5-5",
-      evidence: { candles: swiece(), screenshots: [{ sha256: zrzut.sha256 }] },
+      evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zrzut.sha256 }] },
       ruleChecks: [{ ruleId: "E2E-R1", ruleText: "Wejście po sweepie", verdict: "pass", evidence: "świeca 14:25" }],
     });
     expect(r.status).toBe(201);
@@ -99,6 +99,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(r.json.unknownRules).toEqual(["E2E-R1"]);
 
     const manifest = {
+      intervalMinutes: 5,
       candles: swiece().map((s) => ({ t: new Date(s.t).toISOString(), o: s.o, h: s.h, l: s.l, c: s.c })),
       screenshots: [{ sha256: zrzut.sha256 }],
     };
@@ -120,7 +121,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
       basis: "chart",
       brainVerdict: "wejdz",
       summaryMd: "Pierwsza ocena.",
-      evidence: { candles: swiece() },
+      evidence: { intervalMinutes: 5, candles: swiece() },
       ruleChecks: [{ ruleId: "E2E-R2", ruleText: "Reguła testowa", verdict: "fail", evidence: "brak sweepu" }],
     };
     const pierwszy = await ocena(id, cialo);
@@ -153,7 +154,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
 
   it("PATCH i PUT werdyktu = 409 z odeslaniem do korekty", async () => {
     const id = await nowyOtwarty();
-    const r = await ocena(id, { basis: "chart", brainVerdict: "czekaj", evidence: { candles: swiece() } });
+    const r = await ocena(id, { basis: "chart", brainVerdict: "czekaj", evidence: { intervalMinutes: 5, candles: swiece() } });
     for (const metoda of ["PATCH", "PUT"] as const) {
       const odm = await wywolaj(
         import("@/app/api/v2/trades/[id]/reviews/[reviewId]/route"),
@@ -168,15 +169,37 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     }
   });
 
+  it("look-ahead granice: swieca musi SKONCZYC sie przed wejsciem (t + interwal <= wejscie); t == wejscie i 15-minutowa swieca obejmujaca wejscie = 422; brak intervalMinutes = 400", async () => {
+    const c = (t: string) => [{ t: `${DZIEN}T${t}:00Z`, o: 20000, h: 20010, l: 19995, c: 20005 }];
+    const id = await nowyOtwarty(); // wejscie 14:35
+    const rowne = await ocena(id, { basis: "chart", evidence: { intervalMinutes: 5, candles: c("14:35") } });
+    expect(rowne.status).toBe(422);
+    expect(rowne.json.code).toBe("look_ahead");
+    const obejmuje = await ocena(id, { basis: "chart", evidence: { intervalMinutes: 15, candles: c("14:30") } });
+    expect(obejmuje.status).toBe(422);
+    expect(obejmuje.json.error).toContain("kończy się");
+    const bez = await ocena(id, { basis: "chart", evidence: { candles: c("14:30") } });
+    expect(bez.status).toBe(400);
+    expect(bez.json.error).toContain("intervalMinutes");
+    const odciecie = await ocena(id, { basis: "chart", evidenceCutoff: `${DZIEN}T14:36:00Z`, evidence: { intervalMinutes: 5, candles: c("14:25") } });
+    expect(odciecie.status).toBe(422);
+    expect(odciecie.json.error).toContain("evidenceCutoff");
+    expect((await sql`select count(*)::int as n from trade_reviews where trade_id = ${id}`)[0].n).toBe(0);
+    const ok = await ocena(id, { basis: "chart", evidenceCutoff: `${DZIEN}T14:35:00Z`, evidence: { intervalMinutes: 5, candles: c("14:30") } });
+    expect(ok.status, JSON.stringify(ok.json)).toBe(201); // swieca konczy sie dokladnie o wejsciu
+    const hist = await ocena(await nowyOtwarty(), { basis: "history", evidence: { intervalMinutes: 15, candles: c("14:30") } });
+    expect(hist.status).toBe(201); // po fakcie wolno
+  });
+
   it("ocena »chart« nie moze widziec swiec pozniejszych niz wejscie (look-ahead); »history« moze; odciecie nie moze byc przed swieca", async () => {
     const id = await nowyOtwarty();
-    const zaPozno = await ocena(id, { basis: "chart", evidence: { candles: swiece("14:40") } });
+    const zaPozno = await ocena(id, { basis: "chart", evidence: { intervalMinutes: 5, candles: swiece("14:40") } });
     expect(zaPozno.status).toBe(422);
     expect(zaPozno.json.code).toBe("look_ahead");
     expect(zaPozno.json.error).toContain("14:40");
-    const historia = await ocena(id, { basis: "history", evidence: { candles: swiece("14:40") } });
+    const historia = await ocena(id, { basis: "history", evidence: { intervalMinutes: 5, candles: swiece("14:40") } });
     expect(historia.status).toBe(201);
-    const odciecie = await ocena(await nowyOtwarty(), { basis: "history", evidenceCutoff: `${DZIEN}T14:00:00Z`, evidence: { candles: swiece() } });
+    const odciecie = await ocena(await nowyOtwarty(), { basis: "history", evidenceCutoff: `${DZIEN}T14:00:00Z`, evidence: { intervalMinutes: 5, candles: swiece() } });
     expect(odciecie.status).toBe(422);
     expect(odciecie.json.error).toContain("evidenceCutoff");
     const [{ ile }] = await sql`select count(*)::int as ile from trade_reviews where trade_id = ${id}`;
@@ -187,11 +210,11 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     const id = await nowyOtwarty();
     const cudzy = await nowyOtwarty();
     const zrzutCudzy = await wgrajZrzut(cudzy, "tradingview");
-    const r = await ocena(id, { basis: "chart", evidence: { candles: swiece(), screenshots: [{ sha256: zrzutCudzy.sha256 }] } });
+    const r = await ocena(id, { basis: "chart", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zrzutCudzy.sha256 }] } });
     expect(r.status).toBe(422);
     expect(r.json.code).toBe("unknown_screenshot");
     expect(r.json.missing).toEqual([zrzutCudzy.sha256]);
-    const zly = await ocena(id, { basis: "chart", evidence: { candles: swiece(), screenshots: [{ sha256: "XYZ" }] } });
+    const zly = await ocena(id, { basis: "chart", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: "XYZ" }] } });
     expect(zly.status).toBe(400);
   });
 
@@ -211,7 +234,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     const id = await nowyOtwarty();
     const r = await ocena(id, {
       basis: "chart",
-      evidence: { candles: swiece() },
+      evidence: { intervalMinutes: 5, candles: swiece() },
       ruleChecks: [{ ruleId: kod, ruleText: "Wchodzę tylko po sweepie.", verdict: "pass" }],
     });
     expect(r.status).toBe(201);
@@ -220,7 +243,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     const [c] = await sql`select rule_version_id from trade_rule_checks where review_id = ${r.json.reviewId}`;
     expect(c.rule_version_id).toBe(wersja.id);
 
-    const przyszly = await ocena(await nowyOtwarty(), { basis: "chart", rulesetVersion: zestaw.ruleset_version + 5, evidence: { candles: swiece() } });
+    const przyszly = await ocena(await nowyOtwarty(), { basis: "chart", rulesetVersion: zestaw.ruleset_version + 5, evidence: { intervalMinutes: 5, candles: swiece() } });
     expect(przyszly.status).toBe(422);
     expect(przyszly.json.code).toBe("unknown_ruleset");
   });
@@ -244,7 +267,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
       basis: "chart",
       brainVerdict: "wejdz",
       summaryMd: "AI: wejdź.",
-      evidence: { candles: swiece() },
+      evidence: { intervalMinutes: 5, candles: swiece() },
       ruleChecks: [{ ruleId: "E2E-R3", ruleText: "Reguła", verdict: "pass" }],
     });
     const rid = r.json.reviewId as number;
@@ -283,6 +306,36 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(ai.changedByUser).toBe(1);
   });
 
+  it("korekta jest idempotentna (ten sam wiersz, 200) i stoi tylko na slowach o tym trade'u albo jego dniu handlowym", async () => {
+    const id = await nowyOtwarty();
+    const r = await ocena(id, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece() } });
+    const rid = r.json.reviewId as number;
+    const mod = import("@/app/api/v2/trades/[id]/reviews/[reviewId]/override/route");
+    const ctx = PARAMS({ id: String(id), reviewId: String(rid) });
+    const wyslij = (wordsId: number, extra: Record<string, unknown> = {}) => wywolaj(mod, "POST", `/trades/${id}/reviews/${rid}/override`, { token: rw.token, cialo: { wordsId, brainVerdict: "odpusc", ...extra } }, ctx);
+
+    const swoje = await zapiszSlowa(rw.token, "Korekta: fałszywy sweep.", { tradeId: id });
+    const pierwsza = await wyslij(swoje.id);
+    expect(pierwsza.status, JSON.stringify(pierwsza.json)).toBe(201);
+    const druga = await wyslij(swoje.id);
+    expect(druga.status).toBe(200);
+    expect(druga.json.reviewId).toBe(pierwsza.json.reviewId);
+    zgodneZKontraktem("post", "/trades/{id}/reviews/{reviewId}/override", druga.json);
+    expect((await sql`select count(*)::int as n from trade_reviews where overrides_review_id = ${rid}`)[0].n).toBe(1);
+    // inna tresc korekty to nowa korekta
+    expect((await wyslij(swoje.id, { summaryMd: "Inne podsumowanie." })).status).toBe(201);
+
+    const dniowe = await zapiszSlowa(rw.token, "Uwaga dnia: ten dzień był nerwowy.", { day: DZIEN });
+    expect((await wyslij(dniowe.id, { brainVerdict: "czekaj" })).status).toBe(201); // slowa z dnia handlowego trade'a
+    const cudzyTrade = await nowyOtwarty();
+    const cudze = await zapiszSlowa(rw.token, "To dotyczy innego trade'a.", { tradeId: cudzyTrade });
+    const odm = await wyslij(cudze.id, { brainVerdict: "czekaj" });
+    expect(odm.status).toBe(422);
+    expect(odm.json.code).toBe("words_not_for_trade");
+    const innyDzien = await zapiszSlowa(rw.token, "Słowa z zupełnie innego dnia.", { day: "1988-03-14" });
+    expect((await wyslij(innyDzien.id, { brainVerdict: "czekaj" })).json.code).toBe("words_not_for_trade");
+  });
+
   it("GET /trades/:id ukrywa wynik, dopoki trade z werdyktem nie jest zamkniety (logika w API, flaga dla widoku); po zamknieciu pokazuje", async () => {
     const id = await nowyOtwarty();
     // bez werdyktu otwarty trade nie ma co ukrywac
@@ -291,7 +344,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     zgodneZKontraktem("get", "/trades/{id}", bez.json);
     expect(bez.json.resultHidden).toBe(false);
 
-    await ocena(id, { basis: "chart", brainVerdict: "wejdz", model: "claude-opus-5-5", evidence: { candles: swiece() } });
+    await ocena(id, { basis: "chart", brainVerdict: "wejdz", model: "claude-opus-5-5", lesson: "Wniosek po fakcie.", evidence: { intervalMinutes: 5, candles: swiece() } });
+    const poFakcie = await ocena(id, { basis: "history", summaryMd: "Wynik: wygral dwa R.", evidence: { intervalMinutes: 5, candles: swiece("14:40") } });
+    expect(poFakcie.status, JSON.stringify(poFakcie.json)).toBe(201);
+    await sql`update trades set note = 'Notatka po wyniku: +2R' where id = ${id}`;
     // trade dostaje wynik (np. wpis z FX Replay), ale status jeszcze nie jest zamkniety
     await sql`update trades set pnl = 80000, r_multiple = 2, exit_price = 20020, exit_time = ${WEJSCIE} where id = ${id}`;
     const ukryty = await trade(id);
@@ -300,6 +356,13 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(ukryty.json.result).toBeNull();
     expect(JSON.stringify(ukryty.json)).not.toContain("80000");
     expect(ukryty.json.reviews).toHaveLength(1);
+    // razem z wynikiem schowane sa oceny po fakcie, wnioski i notatki trade'a (review: slepa ocena ma byc slepa)
+    expect(ukryty.json.hiddenReviews).toBe(1);
+    expect(ukryty.json.hiddenFields).toContain("reviews.basis=history");
+    expect(ukryty.json.trade.note).toBeNull();
+    expect(ukryty.json.reviews[0].lesson).toBeNull();
+    expect(ukryty.json.reviews.some((r: { basis: string }) => r.basis === "history")).toBe(false);
+    expect(JSON.stringify(ukryty.json)).not.toContain("Wynik: wygral dwa R");
     expect(ukryty.json.reviews[0].immutable).toBe(true);
     // historyczny dzien (1988) sprzed odciecia wiedzy modelu: flaga »model mogl znac ten dzien«
     expect(ukryty.json.reviews[0].lookAhead.moglZnacDzien).toBe(true);
@@ -308,6 +371,11 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     const odslonity = await trade(id);
     zgodneZKontraktem("get", "/trades/{id}", odslonity.json);
     expect(odslonity.json.resultHidden).toBe(false);
+    expect(odslonity.json.hiddenFields).toEqual([]);
+    expect(odslonity.json.hiddenReviews).toBe(0);
+    expect(odslonity.json.reviews).toHaveLength(2);
+    expect(odslonity.json.trade.note).toBe("Notatka po wyniku: +2R");
+    expect(odslonity.json.reviews.find((r: { basis: string }) => r.basis === "chart").lesson).toBe("Wniosek po fakcie.");
     expect(odslonity.json.result).toMatchObject({ pnlCents: 80000, rMultiple: 2, exitPrice: 20020 });
   });
 
@@ -331,7 +399,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     const [w] = await sql`select summary_md, as_of from trade_reviews where trade_id = ${id}`;
     expect(w).toEqual({ summary_md: "v2", as_of: null });
 
-    const niezmienna = await ocena(id, { basis: "chart", brainVerdict: "wejdz", summaryMd: "v3", evidence: { candles: swiece() } });
+    const niezmienna = await ocena(id, { basis: "chart", brainVerdict: "wejdz", summaryMd: "v3", evidence: { intervalMinutes: 5, candles: swiece() } });
     expect(niezmienna.status).toBe(201);
     expect(niezmienna.json.immutable).toBe(true);
     const [ile] = await sql`select count(*)::int as n from trade_reviews where trade_id = ${id}`;

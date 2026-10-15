@@ -58,7 +58,7 @@ export function zrodloPrzelacznika(source: "live" | "backtest" | "forward" | "se
    Nie mylic z `trades.source` (ADR-026: skad przyszedl wpis - formularz, TradingView, FX Replay).
 
    Ta sama regula istnieje w dwoch postaciach: `zrodloDanych` (TypeScript) i
-   `sqlZrodloDanych` (fragment SQL). Test `zrodla-sql.db.test.ts` porownuje je na
+   `sqlZrodloDanych` (fragment SQL). Test `src/lib/api-v2/decyzje-eksport-zrodla.db.test.ts` (zrodlo danych: TS kontra SQL) porownuje je na
    prawdziwych wierszach, wzorem `wynikTrade` / `sqlWynik` (ADR-011). Zmiana jednej
    wymaga zmiany drugiej.
 */

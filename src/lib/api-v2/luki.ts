@@ -33,14 +33,23 @@ export function kluczLuki(kind: string, pytanie: string): string {
   return skrotTekstu(`${kind}\n${norm}`);
 }
 
-export function linkZeZnacznikiem(url: string, tStartS: number): string {
-  try {
-    const u = new URL(url);
-    u.searchParams.set("t", String(tStartS));
-    return u.toString();
-  } catch {
-    return url;
-  }
+/** Id filmu YouTube: ten sam wzorzec, ktory przyjmuje kontrakt (litery, cyfry, _ i -). */
+export const REGEX_VIDEO_ID = /^[A-Za-z0-9_-]{6,20}$/;
+
+/**
+ * Link do filmu z znacznikiem czasu, ZBUDOWANY z id filmu (audyt 5), a nie z adresu podanego przez klienta:
+ * adres z bazy moze prowadzic gdziekolwiek (https://zlosliwa.example/...), a tu zawsze jest youtube.com.
+ */
+export function linkMentora(videoId: string, tStartS: number): string {
+  return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}&t=${Math.max(0, Math.trunc(tStartS))}`;
+}
+
+/** Link z `evidence` propozycji ({ video, t }): tylko gdy id filmu ma poprawny ksztalt, inaczej null. */
+export function linkZDowodu(dowod: unknown): string | null {
+  if (dowod === null || typeof dowod !== "object") return null;
+  const { video, t } = dowod as { video?: unknown; t?: unknown };
+  if (typeof video !== "string" || !REGEX_VIDEO_ID.test(video)) return null;
+  return linkMentora(video, typeof t === "number" && Number.isFinite(t) ? t : 0);
 }
 
 export type WynikLuki =
@@ -150,7 +159,7 @@ export async function listaLuk(tx: Db, f: z.output<typeof LukiListaQuery>) {
               videoId: cl.s.videoId,
               videoTitle: cl.s.title,
               /** Link do filmu z znacznikiem t= w miejscu cytatu. */
-              link: linkZeZnacznikiem(cl.s.url, cl.c.tStartS),
+              link: linkMentora(cl.s.videoId, cl.c.tStartS),
             }
           : null,
         askedAt: l.askedAt?.toISOString() ?? null,

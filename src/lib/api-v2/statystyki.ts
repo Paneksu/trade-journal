@@ -24,7 +24,10 @@ type Db = Transakcja | typeof import("@/lib/db").db;
  * i przedzialem, osobno dla zrodel danych (backtest / forward / demo / live), bo ich
  * lacznie nie wolno mieszac bez swiadomej decyzji. W tabelach docelowych jest tylko to,
  * co zatwierdzil uzytkownik (sugestie AI trafiaja tam dopiero po zatwierdzeniu), wiec
- * nic tu nie trzeba odfiltrowywac.
+ * nic tu nie trzeba odfiltrowywac. Jedyny wyjatek wprost: setup trade'a wynikajacy z planu
+ * zamrozonego przed wejsciem, ktorego teza to slowa uzytkownika (15.10.2026, Slowa uzytkownika:
+ * «Plan z moich slow = zatwierdzenie»); kazde inne przypisanie setupu przez AI czeka w
+ * kolejce (rodzaj trade_setup) i liczy sie dopiero po zatwierdzeniu.
  */
 
 export type WierszPomiaru = { id: number; pomiar: Pomiar; r: number };

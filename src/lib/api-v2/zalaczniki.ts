@@ -35,7 +35,7 @@ type Wlasciciel = { rodzaj: "note"; id: number } | { rodzaj: "day"; data: string
 
 const ORIGINY: readonly OriginZrzutu[] = ["manual", "tradingview", "fxreplay"];
 
-export async function dolaczZalaczniki(request: Request, w: Wlasciciel, zapis: Zapis): Promise<Response> {
+export async function dolaczZalaczniki(request: Request, w: Wlasciciel, zapis: Zapis, requestId?: string): Promise<Response> {
   const cialo = await czytajMultipart(request);
   if (!cialo.ok) return blad(cialo.status, cialo.status === 413 ? "payload_too_large" : "bad_request", cialo.error);
   const form = cialo.formData;
@@ -80,6 +80,7 @@ export async function dolaczZalaczniki(request: Request, w: Wlasciciel, zapis: Z
   if (limit) return blad(422, "validation_failed", `${limit} Dopisujesz ${pliki.length}, a jest już ${juz} (maksimum ${MAX_ZRZUTOW}).`);
 
   const ids: number[] = [];
+  const przekroczonyLimit = { wartosc: false };
   const bladZapisu = await wgrajZalaczniki(
     owner,
     sparujZInterwalami(pliki, interwaly).map((p, i) => ({
@@ -92,14 +93,12 @@ export async function dolaczZalaczniki(request: Request, w: Wlasciciel, zapis: Z
     origin,
     zapis,
     ids,
+    { requestId, przekroczonyLimit },
   );
   if (bladZapisu) {
-    return blad(
-      500,
-      "internal_error",
-      `Zapis załączników przerwany: ${bladZapisu}. Część plików mogła już wejść (${ids.length} z ${pliki.length}); sprawdź listę przed ponowieniem, żeby nie dublować.`,
-      { saved: ids.length },
-    );
+    const sufiks = `Część plików mogła już wejść (${ids.length} z ${pliki.length}); sprawdź listę przed ponowieniem, żeby nie dublować.`;
+    if (przekroczonyLimit.wartosc) return blad(422, "validation_failed", `${bladZapisu}. ${sufiks}`, { saved: ids.length });
+    return blad(500, "internal_error", `Zapis załączników przerwany: ${bladZapisu}. ${sufiks}`, { saved: ids.length });
   }
 
   const wiersze = ids.length

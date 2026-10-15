@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ekwiwalentNqNaKontrakt,
+  ostrzejszeZasady,
   kwotaUsd,
   lacznaEkspozycjaNq,
   ostrzezenieKontraktow,
@@ -453,5 +454,38 @@ describe("kwotaUsd", () => {
     expect(kwotaUsd(5)).toBe("0,05 USD");
     expect(kwotaUsd(1234567)).toBe("12 345,67 USD");
     expect(kwotaUsd(-250_000)).toBe("-2 500,00 USD");
+  });
+});
+
+describe("niepotwierdzone reguly konta: liczymy na ostrzejszej z dwoch, pole po polu", () => {
+  it("mniejszy DD i DLL, mniejszy cel, consistency i kontrakty; wiecej minimalnych dni; wyzsza blokada", () => {
+    const potw = zasady({ ddType: "trailing_to_static", maxDdCents: 300_000, ddLockCents: 300_000, dailyLossCents: 150_000, profitTargetCents: 400_000, consistencyPct: 50, minDays: 5, maxContractsMini: 5, maxContractsMicro: 50 });
+    const nowe = zasady({ ddType: "trailing_to_static", maxDdCents: 250_000, ddLockCents: 250_000, dailyLossCents: 200_000, profitTargetCents: 350_000, consistencyPct: 40, minDays: 3, maxContractsMini: 6, maxContractsMicro: null });
+    const w = ostrzejszeZasady(potw, nowe).zasady;
+    expect(w).toMatchObject({ maxDdCents: 250_000, ddLockCents: 300_000, dailyLossCents: 150_000, profitTargetCents: 350_000, consistencyPct: 40, minDays: 5, maxContractsMini: 5, maxContractsMicro: 50 });
+  });
+
+  it("typ DD: silniejszy wygrywa (intraday > eod > trailing_to_static > static), a `extra` idzie z nim", () => {
+    const stat = zasady({ ddType: "static", extra: { a: 1 } });
+    const intr = zasady({ ddType: "intraday", extra: { b: 2 } });
+    expect(ostrzejszeZasady(stat, intr)).toMatchObject({ zrodloTypuDd: "nowe", zasady: { ddType: "intraday", extra: { b: 2 } } });
+    expect(ostrzejszeZasady(intr, stat)).toMatchObject({ zrodloTypuDd: "potwierdzone", zasady: { ddType: "intraday", extra: { b: 2 } } });
+    expect(ostrzejszeZasady(zasady({ ddType: "eod" }), zasady({ ddType: "trailing_to_static", ddLockCents: 1 })).zasady.ddType).toBe("eod");
+  });
+
+  it("brak limitu po jednej stronie nie oslabia drugiej; identyczne reguly zostaja bez zmian", () => {
+    const a = zasady({ dailyLossCents: null, maxContractsMini: 3 });
+    const b = zasady({ dailyLossCents: 100_000, maxContractsMini: null });
+    expect(ostrzejszeZasady(a, b).zasady).toMatchObject({ dailyLossCents: 100_000, maxContractsMini: 3 });
+    expect(ostrzejszeZasady(a, a).zasady).toEqual(a);
+  });
+
+  it("skutek na buforze: ostrzejsze zasady daja mniejszy bufor niz nowa luzniejsza regula", () => {
+    const potw = zasady({ maxDdCents: 200_000 });
+    const nowe = zasady({ maxDdCents: 400_000 });
+    const trans = [t("2026-10-01", -100_000)];
+    const stan = (z: ZasadyKonta) => stanKonta({ zasady: z, saldoStartCents: START, transakcje: trans, dzis: "2026-10-02", ryzykoPlanuCents: null, ostatniaWyplata: null });
+    expect(stan(nowe).buforDdCents).toBe(300_000);
+    expect(stan(ostrzejszeZasady(potw, nowe).zasady).buforDdCents).toBe(100_000);
   });
 });

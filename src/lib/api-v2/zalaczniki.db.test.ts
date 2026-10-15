@@ -198,6 +198,61 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
     expect(ile).toBe(3);
   });
 
+  it("HEIC z deklarowanym gigapikselowym obrazem jest odrzucany z metadanych (bez dekodowania); limit liczony pod blokada: dwa rownolegle wgrania nie przekrocza 8", async () => {
+    const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: unikat("Pojęcie HEIC limit"), bodyMd: "" } });
+    const noteId = nota.json.id as number;
+    const wyslij = async (pliki: File[]) => {
+      const form = new FormData();
+      for (const p of pliki) form.append("shot", p);
+      return wywolajMultipart(import("@/app/api/v2/notes/[id]/attachments/route"), `/notes/${noteId}/attachments`, rw.token, form, PARAMS({ id: String(noteId) }));
+    };
+    // podmiana wymiarow w pudelku ispe na 20000 x 20000 px (400 mln > limit 40 mln)
+    const duzy = Buffer.from(PROBKA_HEIC);
+    let podmiany = 0;
+    for (let i = 4; i + 16 <= duzy.length; i += 1) {
+      if (duzy.toString("latin1", i, i + 4) === "ispe") {
+        duzy.writeUInt32BE(20000, i + 8);
+        duzy.writeUInt32BE(20000, i + 12);
+        podmiany += 1;
+      }
+    }
+    expect(podmiany).toBeGreaterThan(0);
+    const gigant = await wyslij([plik(duzy, "gigant.heic", "image/heic")]);
+    expect(gigant.status).toBe(422);
+    expect(gigant.json.error).toContain("limit to 40000000 px");
+    expect((await sql`select count(*)::int as n from screenshots where note_id = ${noteId}`)[0].n).toBe(0);
+
+    const paczka = async (ziarno: number) => Promise.all(Array.from({ length: 5 }, async (_, i) => plik(await png(ziarno + i), `r${ziarno + i}.png`, "image/png")));
+    const [a, b] = await Promise.all([wyslij(await paczka(100)), wyslij(await paczka(150))]);
+    // obie paczki przeszly wstepna kontrole (0 + 5 <= 8), a limit pilnuje blokada przy zapisie: lacznie dokladnie 8, co najmniej jedna odmowa
+    expect([a.status, b.status].every((x) => x === 201 || x === 422)).toBe(true);
+    expect([a.status, b.status]).toContain(422);
+    const wiersze = await sql`select sort_order from screenshots where note_id = ${noteId} order by sort_order`;
+    expect(wiersze.length).toBe(8);
+    expect(new Set(wiersze.map((w) => w.sort_order)).size).toBe(wiersze.length);
+    const odmowa = a.status === 422 ? a : b;
+    expect(odmowa.json.error).toContain("Limit 8");
+    expect(odmowa.json.saved).toBeLessThan(5);
+  });
+
+  it("blad zapisu: klient dostaje tekst ogolny z identyfikatorem, szczegoly (sciezki, komunikaty sterownika) tylko w logu, a plik nie zostaje na dysku", async () => {
+    const { wgrajZalaczniki } = await import("@/lib/trades/screenshots-db");
+    const blad = vi.spyOn(console, "error").mockImplementation(() => {});
+    const psuty = { name: "x.png", type: "image/png", size: 10, arrayBuffer: async () => { throw new Error("EACCES: permission denied, open /sekret/uploads/x"); } } as unknown as File;
+    const wynik = await wgrajZalaczniki({ kind: "note", id: 1 }, [{ file: psuty, interval: null }], "manual", undefined, undefined, { requestId: "req-test-1" });
+    expect(wynik).toContain("req-test-1");
+    expect(wynik).not.toContain("EACCES");
+    expect(wynik).not.toContain("sekret");
+    expect(blad.mock.calls.some((c) => String(c[0]).includes("req-test-1") && String((c[1] as Error)?.message).includes("EACCES"))).toBe(true);
+
+    // blad bazy (nieistniejaca notatka): komunikat z opiszBladBazy, bez surowego tekstu Postgresa
+    const ok = await png(7);
+    const dbBlad = await wgrajZalaczniki({ kind: "note", id: 999999999 }, [{ file: plik(ok, "ok.png", "image/png"), interval: null }], "manual", undefined, undefined, { requestId: "req-test-2" });
+    expect(dbBlad).toContain("req-test-2");
+    expect(dbBlad).not.toContain("violates");
+    expect(dbBlad).not.toContain("foreign key");
+  });
+
   it("limit 8 zalacznikow na wlasciciela; nieznana notatka = 404; interwal spoza listy = 422; brak plikow = 400", async () => {
     const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: unikat("Pojęcie limit"), bodyMd: "" } });
     const noteId = nota.json.id as number;
@@ -251,6 +306,11 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
     expect(ok.status, JSON.stringify(ok.json)).toBe(201);
     zgodneZKontraktem("post", "/notes/{id}/additions", ok.json);
     expect(ok.json.signature).toBe("obserwacja AI");
+    // idempotencja (review P5): ten sam dopisek wyslany ponownie = ten sam wiersz, 200
+    const powtorka = await wywolaj(mod, "POST", `/notes/${noteId}/additions`, { token: rw.token, cialo: { bodyMd: "Warunek: zamknięcie świecy.", origin: "ai", tradeId, quoteWordsId: slowa.id } }, ctx);
+    expect(powtorka.status).toBe(200);
+    expect(powtorka.json.id).toBe(ok.json.id);
+    expect((await sql`select count(*)::int as n from note_additions where note_id = ${noteId}`)[0].n).toBe(1);
     const mentor = await wywolaj(mod, "POST", `/notes/${noteId}/additions`, { token: rw.token, cialo: { bodyMd: "x", origin: "mentor", mentorClaimId: 1 } }, ctx);
     expect(mentor.status).toBe(403);
     expect(mentor.json.missingScope).toBe("import");

@@ -1435,7 +1435,8 @@ export type AiSuggestionKind =
   | "profile_term"
   | "day_conclusion"
   | "weekly_conclusion"
-  | "strategy_detail";
+  | "strategy_detail"
+  | "trade_setup";
 
 /* Kolejka potwierdzen. Tresc niezmienna; zmieniaja sie status, decidedAt, appliedRef.
    accepted / rejected / reverted tylko z UI (TJ403); 'applied' ustawia API wylacznie dla
@@ -1466,7 +1467,7 @@ export const aiSuggestions = pgTable(
   (t) => [
     check(
       "ai_suggestions_kind",
-      sql`${t.kind} in ('tag', 'trade_link', 'setup_example', 'process_grade', 'profile_term', 'day_conclusion', 'weekly_conclusion', 'strategy_detail')`,
+      sql`${t.kind} in ('tag', 'trade_link', 'setup_example', 'process_grade', 'profile_term', 'day_conclusion', 'weekly_conclusion', 'strategy_detail', 'trade_setup')`,
     ),
     check(
       "ai_suggestions_status",

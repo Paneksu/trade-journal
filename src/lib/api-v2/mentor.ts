@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gt, inArray, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 
 import { mentorClaims, mentorSources, noteAdditions, notes, setups, trades, userWords } from "@/lib/db/schema";
@@ -13,7 +13,7 @@ import type {
   MentorZrodloSchema,
   MentorZrodloStatusSchema,
 } from "./contract/funkcje";
-import { linkZeZnacznikiem } from "./luki";
+import { linkMentora } from "./luki";
 import { KINDY_ZARZADZANE } from "./notatki";
 import { skrotTekstu } from "./skrot";
 import type { Transakcja } from "./with-api";
@@ -59,7 +59,7 @@ export function zTwierdzenia(c: Twierdzenie, zrodlo: Pick<Zrodlo, "videoId" | "t
     quoteSha256: c.quoteSha256,
     tStartS: c.tStartS,
     tEndS: c.tEndS,
-    link: linkZeZnacznikiem(zrodlo.url, c.tStartS),
+    link: linkMentora(zrodlo.videoId, c.tStartS),
     claimType: c.claimType,
     paraphrase: c.paraphrase,
     paraphraseSignature: c.paraphrase ? "streszczenie AI" : null,
@@ -234,7 +234,7 @@ export async function dodajDopisek(
   tx: Transakcja,
   noteId: number,
   d: z.output<typeof DopisekNotatkiSchema>,
-): Promise<{ ok: true; dopisek: typeof noteAdditions.$inferSelect } | BladMentor> {
+): Promise<{ ok: true; dopisek: typeof noteAdditions.$inferSelect; utworzony: boolean } | BladMentor> {
   const [nota] = await tx.select({ id: notes.id, kind: notes.kind }).from(notes).where(eq(notes.id, noteId)).limit(1);
   if (!nota) return odrzuc(404, "not_found", `Notatka #${noteId} nie istnieje.`);
   if ((KINDY_ZARZADZANE as readonly string[]).includes(nota.kind) && nota.kind !== "setup") {
@@ -252,6 +252,24 @@ export async function dodajDopisek(
     const [c] = await tx.select({ id: mentorClaims.id }).from(mentorClaims).where(inArray(mentorClaims.id, [d.mentorClaimId])).limit(1);
     if (!c) return odrzuc(422, "unknown_reference", `pole mentorClaimId: »${d.mentorClaimId}« - nie ma takiego twierdzenia mentora.`);
   }
+  // Idempotencja (review P5): ten sam dopisek (notatka, tresc, pochodzenie, cytat, trade, twierdzenie) to ten sam wiersz (200).
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.noteadd:${noteId}:${d.origin}:${d.bodyMd}:${d.quoteWordsId ?? ""}:${d.tradeId ?? ""}:${d.mentorClaimId ?? ""}`}, 0))`);
+  const [juz] = await tx
+    .select()
+    .from(noteAdditions)
+    .where(
+      and(
+        eq(noteAdditions.noteId, noteId),
+        eq(noteAdditions.bodyMd, d.bodyMd),
+        eq(noteAdditions.origin, d.origin),
+        sql`${noteAdditions.quoteWordsId} is not distinct from ${d.quoteWordsId ?? null}`,
+        sql`${noteAdditions.tradeId} is not distinct from ${d.tradeId ?? null}`,
+        sql`${noteAdditions.mentorClaimId} is not distinct from ${d.mentorClaimId ?? null}`,
+        isNull(noteAdditions.revertedAt),
+      ),
+    )
+    .limit(1);
+  if (juz) return { ok: true, dopisek: juz, utworzony: false };
   const [dopisek] = await tx
     .insert(noteAdditions)
     .values({
@@ -264,7 +282,7 @@ export async function dodajDopisek(
       mentorClaimId: d.mentorClaimId ?? null,
     })
     .returning();
-  return { ok: true, dopisek };
+  return { ok: true, dopisek, utworzony: true };
 }
 
 export function zDopiska(d: typeof noteAdditions.$inferSelect) {

@@ -104,7 +104,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("kolejka sugestii AI i zatwierdzanie przez UI (
     const tradeId = await nowyTrade();
     const r = await sugeruj({ kind: "process_grade", target: { type: "trade", id: tradeId }, payload: { grade: "A" }, ...baza });
     const id = r.json.suggestion.id as number;
-    const { zapisZAktorem } = await import("./zapis");
+    const { zapisZAktorem, zapisJakoUi } = await import("./zapis");
     const probuj = async (aktor: string) => {
       try {
         await zapisZAktorem(aktor, (tx) => tx.execute(dsql`update ai_suggestions set status = 'accepted', decided_at = now() where id = ${id}`));
@@ -116,7 +116,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("kolejka sugestii AI i zatwierdzanie przez UI (
     expect(await probuj(`api:${rw.id}`)).toBe("TJ403");
     expect(await probuj("ingest")).toBe("TJ403");
     expect((await sql`select status from ai_suggestions where id = ${id}`)[0].status).toBe("pending");
+    // zapisZAktorem nie przyjmuje aktora »ui« (audyt 6); zatwierdza modul decyzji przez zapisJakoUi
     expect(await probuj("ui")).toBeNull();
+    expect((await sql`select status from ai_suggestions where id = ${id}`)[0].status).toBe("pending");
+    await zapisJakoUi((tx) => tx.execute(dsql`update ai_suggestions set status = 'accepted', decided_at = now() where id = ${id}`));
     expect((await sql`select status from ai_suggestions where id = ${id}`)[0].status).toBe("accepted");
   });
 

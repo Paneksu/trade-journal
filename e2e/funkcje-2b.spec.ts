@@ -129,7 +129,7 @@ test.describe("funkcje MUST: plan, werdykt, sugestie, prop, adnotacje, zalacznik
         basis: "chart",
         brainVerdict: "wejdz",
         model: "claude-opus-5-5",
-        evidence: { candles: [{ t: `${DZIEN}T14:20:00Z`, o: 20000, h: 20010, l: 19995, c: 20005 }] },
+        evidence: { intervalMinutes: 5, candles: [{ t: `${DZIEN}T14:20:00Z`, o: 20000, h: 20010, l: 19995, c: 20005 }] },
       },
     });
     expect(rev.status(), await rev.text()).toBe(201);
@@ -138,6 +138,7 @@ test.describe("funkcje MUST: plan, werdykt, sugestie, prop, adnotacje, zalacznik
     expect(ukryty.resultHidden).toBe(true);
     expect(ukryty.result).toBeNull();
     expect(JSON.stringify(ukryty)).not.toContain("80000");
+    expect(JSON.stringify(ukryty)).not.toContain("20020"); // cena wyjscia tez nie wycieka
 
     const zmiana = await api.patch(`/api/v2/trades/${id}/reviews/${(await rev.json()).reviewId}`, { data: { brainVerdict: "pomin" } });
     expect(zmiana.status()).toBe(409);

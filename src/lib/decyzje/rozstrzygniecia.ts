@@ -1,7 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 
-import { zapisZAktorem } from "@/lib/api-v2/zapis";
+import { zapisJakoUi } from "@/lib/api-v2/zapis";
 import { strategyGaps, userWords } from "@/lib/db/schema";
 
 import { czyRozstrzygniecie, ROZSTRZYGNIECIA, ROZSTRZYGNIECIE_OPISY } from "./rozstrzygniecia-opisy";
@@ -28,7 +28,7 @@ export async function rozstrzygnijSprzecznosc(gapId: number, decyzja: unknown, s
   if (slowaUzytkownika.includes("\u0000")) return blad("Tekst zawiera znak NUL (kod 0), którego baza nie przyjmie. Usuń go.");
   if (slowaUzytkownika.length > 20_000) return blad(`Tekst ma ${slowaUzytkownika.length} znaków, a limit to 20000.`);
 
-  return zapisZAktorem("ui", async (tx) => {
+  return zapisJakoUi(async (tx) => {
     const [g] = await tx.select().from(strategyGaps).where(eq(strategyGaps.id, gapId)).for("update").limit(1);
     if (!g) return blad(`Pytanie #${gapId} nie istnieje.`);
     if (g.kind !== "mentor_conflict") return blad(`Pytanie #${gapId} to luka w strategii, nie sprzeczność z mentorem; odpowiada się na nie w rytuale po sesji.`);
@@ -42,7 +42,8 @@ export async function rozstrzygnijSprzecznosc(gapId: number, decyzja: unknown, s
         source: "ui",
         role: "conflict.answer",
         // Kotwica dniem, nie trade'em: odpowiedz ma przezyc skasowanie trade'u, na ktorego dotyczy sprzecznosc.
-        day: teraz.toISOString().slice(0, 10),
+        // Dzien w strefie uzytkownika (Europe/Warsaw), nie UTC: po polnocy czasu polskiego UTC jeszcze pokazuje wczoraj.
+        day: new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Warsaw" }).format(teraz),
         capturedAt: teraz,
       })
       .returning({ id: userWords.id });

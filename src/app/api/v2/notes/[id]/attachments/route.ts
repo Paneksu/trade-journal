@@ -13,5 +13,5 @@ type Ctx = { params: Promise<{ id: string }> };
 export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { params }) => {
   const id = idZAdresu((await params).id, "id notatki");
   if (!id.ok) return id.odpowiedz;
-  return dolaczZalaczniki(request, { rodzaj: "note", id: id.dane }, api.zapis);
+  return dolaczZalaczniki(request, { rodzaj: "note", id: id.dane }, api.zapis, api.requestId);
 });

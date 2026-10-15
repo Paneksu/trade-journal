@@ -23,6 +23,7 @@ export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { p
   if (!w.ok) return w.odpowiedz;
 
   const wynik = await zapiszKorekte(trade.dane, review.dane, w.dane, api.zapis, api.token.id);
-  if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.error);
-  return odpowiedz(wynik, 201);
+  if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat);
+  const { utworzona, ...cialo } = wynik;
+  return odpowiedz(cialo, utworzona ? 201 : 200);
 });

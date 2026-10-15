@@ -197,9 +197,29 @@ export async function szczegolySetupu(tx: Db, slug: string) {
   const propozycja = wersje.find((w) => w.status === "proposed") ?? null;
 
   // Progi statusu z obowiazujacej wersji; bez zatwierdzonej wersji obowiazuja domyslne (20 / 100).
+  // Progi NIE dzialaja wstecz (15.10.2026, review B2): trade liczy sie wedlug progow tej wersji setupu, z ktora
+  // zostal wykonany (trades.setup_version_id). Nowa wersja z nizszym minN nie zmienia statusu trade'ow starej.
   const { progi, blad } = progiZJson(obowiazujaca?.thresholds);
-  const pomiary = await pomiaryZamknietych(tx, eq(trades.setupId, s.id));
-  const statystyka = statystykaPoZrodlach(pomiary, progi);
+  const warunekBiezacej = obowiazujaca
+    ? eq(trades.setupVersionId, obowiazujaca.id)
+    : and(eq(trades.setupId, s.id), isNull(trades.setupVersionId))!;
+  const statystyka = statystykaPoZrodlach(await pomiaryZamknietych(tx, warunekBiezacej), progi);
+
+  const poWersjach = [];
+  for (const w of [...wersje].reverse()) {
+    if (w.status !== "approved" && w.status !== "superseded") continue;
+    const p = progiZJson(w.thresholds);
+    poWersjach.push({
+      version: w.version,
+      status: w.status,
+      thresholdsUsed: p.progi,
+      stats: statystykaPoZrodlach(await pomiaryZamknietych(tx, eq(trades.setupVersionId, w.id)), p.progi),
+    });
+  }
+  const [{ bezWersji }] = await tx
+    .select({ bezWersji: sql<number>`count(*)::int` })
+    .from(trades)
+    .where(and(eq(trades.setupId, s.id), isNull(trades.setupVersionId)));
 
   const przyklady = await tx
     .select({
@@ -238,6 +258,8 @@ export async function szczegolySetupu(tx: Db, slug: string) {
     thresholdsWarning: blad,
     tradesLinked: ile,
     stats: statystyka,
+    statsByVersion: poWersjach,
+    unversionedTrades: bezWersji,
     examples: przyklady.map((p) => ({ ...p, createdAt: p.createdAt.toISOString() })),
   };
 }

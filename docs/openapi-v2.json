@@ -1119,6 +1119,17 @@
                         }
                       ]
                     },
+                    "hiddenFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "hiddenReviews": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
                     "result": {
                       "anyOf": [
                         {
@@ -2454,6 +2465,8 @@
                     "trade",
                     "resultHidden",
                     "resultHiddenReason",
+                    "hiddenFields",
+                    "hiddenReviews",
                     "result",
                     "plan",
                     "screenshots",
@@ -2928,6 +2941,11 @@
                           ],
                           "additionalProperties": false
                         }
+                      },
+                      "intervalMinutes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10080
                       },
                       "screenshots": {
                         "default": [],
@@ -13386,6 +13404,911 @@
                       ],
                       "additionalProperties": false
                     },
+                    "statsByVersion": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "version": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "approved",
+                              "superseded"
+                            ]
+                          },
+                          "thresholdsUsed": {
+                            "type": "object",
+                            "properties": {
+                              "minN": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "potwierdzenieN": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "minN",
+                              "potwierdzenieN"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "stats": {
+                            "type": "object",
+                            "properties": {
+                              "bySource": {
+                                "type": "object",
+                                "properties": {
+                                  "backtest": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "wins": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "losses": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "winRate": {
+                                            "type": "object",
+                                            "properties": {
+                                              "p": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "p",
+                                              "low",
+                                              "high"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "breakEvenWinRate": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgWinR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgLossR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "expectancyR": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mean": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "orientacyjnie": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "mean",
+                                              "low",
+                                              "high",
+                                              "orientacyjnie"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "status": {
+                                            "type": "string",
+                                            "enum": [
+                                              "niewazny",
+                                              "niejednoznaczny",
+                                              "obiecujacy",
+                                              "potwierdzony"
+                                            ]
+                                          },
+                                          "statusNazwa": {
+                                            "type": "string"
+                                          },
+                                          "statusPowod": {
+                                            "type": "string"
+                                          },
+                                          "opis": {
+                                            "type": "string"
+                                          },
+                                          "progi": {
+                                            "type": "object",
+                                            "properties": {
+                                              "minN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "potwierdzenieN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              }
+                                            },
+                                            "required": [
+                                              "minN",
+                                              "potwierdzenieN"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "wins",
+                                          "losses",
+                                          "winRate",
+                                          "breakEvenWinRate",
+                                          "avgWinR",
+                                          "avgLossR",
+                                          "expectancyR",
+                                          "status",
+                                          "statusNazwa",
+                                          "statusPowod",
+                                          "opis",
+                                          "progi"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "forward": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "wins": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "losses": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "winRate": {
+                                            "type": "object",
+                                            "properties": {
+                                              "p": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "p",
+                                              "low",
+                                              "high"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "breakEvenWinRate": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgWinR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgLossR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "expectancyR": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mean": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "orientacyjnie": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "mean",
+                                              "low",
+                                              "high",
+                                              "orientacyjnie"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "status": {
+                                            "type": "string",
+                                            "enum": [
+                                              "niewazny",
+                                              "niejednoznaczny",
+                                              "obiecujacy",
+                                              "potwierdzony"
+                                            ]
+                                          },
+                                          "statusNazwa": {
+                                            "type": "string"
+                                          },
+                                          "statusPowod": {
+                                            "type": "string"
+                                          },
+                                          "opis": {
+                                            "type": "string"
+                                          },
+                                          "progi": {
+                                            "type": "object",
+                                            "properties": {
+                                              "minN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "potwierdzenieN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              }
+                                            },
+                                            "required": [
+                                              "minN",
+                                              "potwierdzenieN"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "wins",
+                                          "losses",
+                                          "winRate",
+                                          "breakEvenWinRate",
+                                          "avgWinR",
+                                          "avgLossR",
+                                          "expectancyR",
+                                          "status",
+                                          "statusNazwa",
+                                          "statusPowod",
+                                          "opis",
+                                          "progi"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "demo": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "wins": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "losses": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "winRate": {
+                                            "type": "object",
+                                            "properties": {
+                                              "p": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "p",
+                                              "low",
+                                              "high"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "breakEvenWinRate": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgWinR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgLossR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "expectancyR": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mean": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "orientacyjnie": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "mean",
+                                              "low",
+                                              "high",
+                                              "orientacyjnie"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "status": {
+                                            "type": "string",
+                                            "enum": [
+                                              "niewazny",
+                                              "niejednoznaczny",
+                                              "obiecujacy",
+                                              "potwierdzony"
+                                            ]
+                                          },
+                                          "statusNazwa": {
+                                            "type": "string"
+                                          },
+                                          "statusPowod": {
+                                            "type": "string"
+                                          },
+                                          "opis": {
+                                            "type": "string"
+                                          },
+                                          "progi": {
+                                            "type": "object",
+                                            "properties": {
+                                              "minN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "potwierdzenieN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              }
+                                            },
+                                            "required": [
+                                              "minN",
+                                              "potwierdzenieN"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "wins",
+                                          "losses",
+                                          "winRate",
+                                          "breakEvenWinRate",
+                                          "avgWinR",
+                                          "avgLossR",
+                                          "expectancyR",
+                                          "status",
+                                          "statusNazwa",
+                                          "statusPowod",
+                                          "opis",
+                                          "progi"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "live": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "n": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "wins": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "losses": {
+                                            "type": "integer",
+                                            "minimum": -9007199254740991,
+                                            "maximum": 9007199254740991
+                                          },
+                                          "winRate": {
+                                            "type": "object",
+                                            "properties": {
+                                              "p": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              }
+                                            },
+                                            "required": [
+                                              "p",
+                                              "low",
+                                              "high"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "breakEvenWinRate": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgWinR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "avgLossR": {
+                                            "anyOf": [
+                                              {
+                                                "type": "number"
+                                              },
+                                              {
+                                                "type": "null"
+                                              }
+                                            ]
+                                          },
+                                          "expectancyR": {
+                                            "type": "object",
+                                            "properties": {
+                                              "mean": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "low": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "high": {
+                                                "anyOf": [
+                                                  {
+                                                    "type": "number"
+                                                  },
+                                                  {
+                                                    "type": "null"
+                                                  }
+                                                ]
+                                              },
+                                              "orientacyjnie": {
+                                                "type": "boolean"
+                                              }
+                                            },
+                                            "required": [
+                                              "mean",
+                                              "low",
+                                              "high",
+                                              "orientacyjnie"
+                                            ],
+                                            "additionalProperties": false
+                                          },
+                                          "status": {
+                                            "type": "string",
+                                            "enum": [
+                                              "niewazny",
+                                              "niejednoznaczny",
+                                              "obiecujacy",
+                                              "potwierdzony"
+                                            ]
+                                          },
+                                          "statusNazwa": {
+                                            "type": "string"
+                                          },
+                                          "statusPowod": {
+                                            "type": "string"
+                                          },
+                                          "opis": {
+                                            "type": "string"
+                                          },
+                                          "progi": {
+                                            "type": "object",
+                                            "properties": {
+                                              "minN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              },
+                                              "potwierdzenieN": {
+                                                "type": "integer",
+                                                "minimum": -9007199254740991,
+                                                "maximum": 9007199254740991
+                                              }
+                                            },
+                                            "required": [
+                                              "minN",
+                                              "potwierdzenieN"
+                                            ],
+                                            "additionalProperties": false
+                                          }
+                                        },
+                                        "required": [
+                                          "n",
+                                          "wins",
+                                          "losses",
+                                          "winRate",
+                                          "breakEvenWinRate",
+                                          "avgWinR",
+                                          "avgLossR",
+                                          "expectancyR",
+                                          "status",
+                                          "statusNazwa",
+                                          "statusPowod",
+                                          "opis",
+                                          "progi"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "backtest",
+                                  "forward",
+                                  "demo",
+                                  "live"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "backtestToLive": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "backtestR": {
+                                        "type": "number"
+                                      },
+                                      "liveR": {
+                                        "type": "number"
+                                      },
+                                      "diffR": {
+                                        "type": "number"
+                                      },
+                                      "backtestN": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "liveN": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "orientacyjnie": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "backtestR",
+                                      "liveR",
+                                      "diffR",
+                                      "backtestN",
+                                      "liveN",
+                                      "orientacyjnie"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "bySource",
+                              "backtestToLive"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "version",
+                          "status",
+                          "thresholdsUsed",
+                          "stats"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "unversionedTrades": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
                     "examples": {
                       "type": "array",
                       "items": {
@@ -13483,6 +14406,8 @@
                     "thresholdsWarning",
                     "tradesLinked",
                     "stats",
+                    "statsByVersion",
+                    "unversionedTrades",
                     "examples"
                   ],
                   "additionalProperties": false
@@ -14397,6 +15322,154 @@
                                 ],
                                 "additionalProperties": false
                               },
+                              "rulesConfirmed": {
+                                "type": "boolean"
+                              },
+                              "rulesUsed": {
+                                "type": "object",
+                                "properties": {
+                                  "source": {
+                                    "type": "string",
+                                    "enum": [
+                                      "confirmed",
+                                      "unconfirmed_only",
+                                      "stricter_of_confirmed_and_unconfirmed"
+                                    ]
+                                  },
+                                  "confirmedRuleId": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "ddType": {
+                                    "type": "string",
+                                    "enum": [
+                                      "eod",
+                                      "intraday",
+                                      "static",
+                                      "trailing_to_static"
+                                    ]
+                                  },
+                                  "maxDdCents": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "ddLockCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "dailyLossCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "profitTargetCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "consistencyPct": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "minDays": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "maxContractsMini": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "maxContractsMicro": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "source",
+                                  "confirmedRuleId",
+                                  "ddType",
+                                  "maxDdCents",
+                                  "ddLockCents",
+                                  "dailyLossCents",
+                                  "profitTargetCents",
+                                  "consistencyPct",
+                                  "minDays",
+                                  "maxContractsMini",
+                                  "maxContractsMicro"
+                                ],
+                                "additionalProperties": false
+                              },
+                              "rulesNote": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
                               "riskSource": {
                                 "anyOf": [
                                   {
@@ -14889,6 +15962,9 @@
                               "currency",
                               "day",
                               "rules",
+                              "rulesConfirmed",
+                              "rulesUsed",
+                              "rulesNote",
                               "riskSource",
                               "state",
                               "contractWarnings"
@@ -16077,6 +17153,154 @@
                       ],
                       "additionalProperties": false
                     },
+                    "rulesConfirmed": {
+                      "type": "boolean"
+                    },
+                    "rulesUsed": {
+                      "type": "object",
+                      "properties": {
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "confirmed",
+                            "unconfirmed_only",
+                            "stricter_of_confirmed_and_unconfirmed"
+                          ]
+                        },
+                        "confirmedRuleId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "ddType": {
+                          "type": "string",
+                          "enum": [
+                            "eod",
+                            "intraday",
+                            "static",
+                            "trailing_to_static"
+                          ]
+                        },
+                        "maxDdCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "ddLockCents": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "dailyLossCents": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "profitTargetCents": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "consistencyPct": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "minDays": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maxContractsMini": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "maxContractsMicro": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "source",
+                        "confirmedRuleId",
+                        "ddType",
+                        "maxDdCents",
+                        "ddLockCents",
+                        "dailyLossCents",
+                        "profitTargetCents",
+                        "consistencyPct",
+                        "minDays",
+                        "maxContractsMini",
+                        "maxContractsMicro"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "rulesNote": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "riskSource": {
                       "anyOf": [
                         {
@@ -16569,6 +17793,9 @@
                     "currency",
                     "day",
                     "rules",
+                    "rulesConfirmed",
+                    "rulesUsed",
+                    "rulesNote",
                     "riskSource",
                     "state",
                     "contractWarnings"
@@ -18773,43 +20000,22 @@
                     ]
                   },
                   "commitmentWordsId": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   },
                   "prevCommitmentResult": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "enum": [
-                          "kept",
-                          "partial",
-                          "broken"
-                        ]
-                      },
-                      {
-                        "type": "null"
-                      }
+                    "type": "string",
+                    "enum": [
+                      "kept",
+                      "partial",
+                      "broken"
                     ]
                   },
                   "prevResultWordsId": {
-                    "anyOf": [
-                      {
-                        "type": "integer",
-                        "exclusiveMinimum": 0,
-                        "maximum": 9007199254740991
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "additionalProperties": false
@@ -18861,7 +20067,8 @@
                 "profile_term",
                 "day_conclusion",
                 "weekly_conclusion",
-                "strategy_detail"
+                "strategy_detail",
+                "trade_setup"
               ]
             }
           },
@@ -18926,7 +20133,8 @@
                               "profile_term",
                               "day_conclusion",
                               "weekly_conclusion",
-                              "strategy_detail"
+                              "strategy_detail",
+                              "trade_setup"
                             ]
                           },
                           "status": {
@@ -19139,7 +20347,8 @@
                             "profile_term",
                             "day_conclusion",
                             "weekly_conclusion",
-                            "strategy_detail"
+                            "strategy_detail",
+                            "trade_setup"
                           ]
                         },
                         "status": {
@@ -19764,6 +20973,118 @@
                         },
                         "required": [
                           "grade"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "claim": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "evidence": {
+                        "minItems": 1,
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              ]
+                            },
+                            "note": {
+                              "type": "string",
+                              "maxLength": 1000
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "evidenceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "tested",
+                          "partial",
+                          "inferred"
+                        ]
+                      },
+                      "n": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "target",
+                      "payload",
+                      "claim",
+                      "evidence",
+                      "evidenceLevel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "trade_setup"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "trade"
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "setupSlug": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9-]{0,79}$"
+                          }
+                        },
+                        "required": [
+                          "setupSlug"
                         ],
                         "additionalProperties": false
                       },

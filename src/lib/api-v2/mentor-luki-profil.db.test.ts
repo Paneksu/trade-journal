@@ -144,10 +144,42 @@ describe.skipIf(!MOZNA_NA_BAZIE)("profil, luki, mentor i rozstrzyganie sprzeczno
       zgodneZKontraktem("patch", "/mentor/claims/{id}", scal.json);
       expect(scal.json.status).toBe("merged");
       // ocena zgodnosci z filmem to decyzja uzytkownika: po niej API nie scala
-      await sql`update mentor_claims set status = 'review_ok' where id = ${c.id}`;
+      // ocena zgodnosci z filmem to decyzja uzytkownika: baza przepuszcza ja tylko z aktorem ui (A6, 15.10.2026)
+      let kodOceny: string | undefined;
+      try {
+        await sql`update mentor_claims set status = 'review_ok' where id = ${c.id}`;
+      } catch (e) {
+        kodOceny = (e as { code?: string }).code;
+      }
+      expect(kodOceny).toBe("TJ403");
+      await sql.begin(async (t) => {
+        await t`select set_config('tj.actor', 'ui', true)`;
+        await t`update mentor_claims set status = 'review_ok' where id = ${c.id}`;
+      });
       const po = await wywolaj(import("@/app/api/v2/mentor/claims/[id]/route"), "PATCH", `/mentor/claims/${c.id}`, { token: imp.token, cialo: { setupSlug: null } }, PARAMS({ id: String(c.id) }));
       expect(po.status).toBe(409);
       expect((await post([{ quote: "x", quoteSha256: sha("x"), tStartS: 1, claimType: "other" }], "nieistniejacy1")).status).toBe(404);
+    });
+
+    it("link do filmu budowany z id filmu, nie z adresu klienta: zrodlo z obcym adresem nadal daje youtube.com", async () => {
+      const obcy = await wywolaj(import("@/app/api/v2/mentor/sources/route"), "POST", "/mentor/sources", {
+        token: imp.token,
+        cialo: { videoId: `${VIDEO}7`, title: `Film obcy ${znacznik}`, url: "https://zlosliwa.example/phish?x=1" },
+      });
+      expect(obcy.status).toBe(201);
+      const cytat = "Cytat z filmu o obcym adresie.";
+      const claim = await wywolaj(import("@/app/api/v2/mentor/claims/route"), "POST", "/mentor/claims", {
+        token: imp.token,
+        cialo: { videoId: `${VIDEO}7`, claims: [{ quote: cytat, quoteSha256: sha(cytat), tStartS: 61, claimType: "other" }] },
+      });
+      expect(claim.status).toBe(201);
+      const lista = await wywolaj(import("@/app/api/v2/mentor/claims/route"), "GET", `/mentor/claims?videoId=${VIDEO}7`, { token: imp.token });
+      expect(lista.json.claims[0].link).toBe(`https://www.youtube.com/watch?v=${VIDEO}7&t=61`);
+      const { linkZDowodu } = await import("@/lib/api-v2/luki");
+      expect(linkZDowodu({ video: "abc123XYZ", t: 754 })).toBe("https://www.youtube.com/watch?v=abc123XYZ&t=754");
+      expect(linkZDowodu({ video: "x/../evil", t: 1 })).toBeNull();
+      expect(linkZDowodu({ video: "https://zlosliwa.example", t: 1 })).toBeNull();
+      expect(linkZDowodu(null)).toBeNull();
     });
 
     async function jakasNotatka(): Promise<number> {
@@ -306,7 +338,12 @@ describe.skipIf(!MOZNA_NA_BAZIE)("profil, luki, mentor i rozstrzyganie sprzeczno
       const bezInterpretacji = await zapiszSlowa(rw.token, `Bez interpretacji ${znacznik}`, { day: DZIEN });
       expect((await post({ wordsId: bezInterpretacji.id, correctionWordsId: korekta.id, afterInterpretation: "x" })).json.code).toBe("no_interpretation");
       expect((await post({ wordsId: slowa.id, correctionWordsId: slowa.id, afterInterpretation: "y" })).json.code).toBe("same_words");
+      const korektPrzed = (await sql`select count(*)::int as n from interpretation_corrections where words_id = ${slowa.id}`)[0].n;
       expect((await post({ wordsId: slowa.id, correctionWordsId: korekta.id, afterInterpretation: "z", term: "samo-haslo" })).json.code).toBe("term_meaning_required");
+      expect((await post({ wordsId: slowa.id, correctionWordsId: korekta.id, afterInterpretation: "z", termMeaning: "samo znaczenie" })).json.code).toBe("term_required");
+      // odmowa nie zostawia po sobie zapisu: ani korekty w rejestrze, ani zmienionej interpretacji (review B3)
+      expect((await sql`select count(*)::int as n from interpretation_corrections where words_id = ${slowa.id}`)[0].n).toBe(korektPrzed);
+      expect((await sql`select ai_interpretation from user_words where id = ${slowa.id}`)[0].ai_interpretation).toBe("Wejście po sweepie lokalnego low na 5m");
 
       const profil = await wywolaj(import("@/app/api/v2/profile/route"), "GET", "/profile", { token: ro.token });
       expect(profil.status).toBe(200);

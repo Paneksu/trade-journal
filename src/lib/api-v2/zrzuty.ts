@@ -43,6 +43,7 @@ export async function zastapZrzuty(
   interwaly: string[],
   zapis: Zapis,
   meta: MetaZrzutow = { capturedAt: [], chartState: [] },
+  requestId?: string,
 ): Promise<WynikZrzutow> {
   if (pliki.length === 0) {
     return { ok: false, status: 400, error: "Brak plików. Wyślij pola »shot« (jedno na zrzut) w multipart/form-data." };
@@ -95,6 +96,7 @@ export async function zastapZrzuty(
     };
   }
 
+  const przekroczonyLimit = { wartosc: false };
   const bladZapisu = await wgrajZrzuty(
     tradeId,
     sparujZInterwalami(pliki, interwaly).map((p, i) => ({
@@ -105,9 +107,12 @@ export async function zastapZrzuty(
     })),
     origin,
     zapis,
+    undefined,
+    { requestId, zastepujeOrigin: origin === "manual" ? undefined : origin, przekroczonyLimit },
   );
   if (bladZapisu) {
     // Czesc nowych plikow mogla juz wejsc; ponowienie zapytania zastapi je razem ze starymi.
+    if (przekroczonyLimit.wartosc) return { ok: false, status: 422, error: bladZapisu };
     return {
       ok: false,
       status: 500,

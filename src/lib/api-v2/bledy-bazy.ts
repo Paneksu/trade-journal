@@ -6,7 +6,7 @@
  * widzi surowego komunikatu Postgresa - ten trafia tylko do logow.
  */
 
-export type BladBazy = { code?: string; message?: string; constraint_name?: string; detail?: string };
+export type BladBazy = { code?: string; message?: string; constraint_name?: string; detail?: string; table_name?: string };
 
 /** Wyciaga blad Postgresa z wyjatku drizzle (`DrizzleQueryError.cause`) albo z surowego bledu postgres.js. */
 export function bladBazy(e: unknown): BladBazy | null {
@@ -45,11 +45,21 @@ export function opiszBladBazy(e: unknown): OdpowiedzBledu | null {
           "Zatwierdzać i odrzucać może wyłącznie użytkownik w aplikacji. Token API może tylko zgłosić propozycję (zakres propose).",
       };
     case "TJ422":
+      // Ten sam kod SQLSTATE sluzy dwóm sprawom: bramka progu n przy wersjach regul (tabela rule_versions)
+      // i niespojnosc danych w pozostalych triggerach (plan, werdykt, przeglad tygodnia).
+      if (b.table_name === "rule_versions") {
+        return {
+          status: 422,
+          kod: "below_threshold",
+          komunikat:
+            "Hipoteza ma za mało trade'ów (n poniżej progu), więc AI nie może zaproponować z niej reguły. Zbierz więcej danych albo zgłoś obserwację jako notatkę.",
+        };
+      }
       return {
         status: 422,
-        kod: "below_threshold",
+        kod: "inconsistent_data",
         komunikat:
-          "Hipoteza ma za mało trade'ów (n poniżej progu), więc AI nie może zaproponować z niej reguły. Zbierz więcej danych albo zgłoś obserwację jako notatkę.",
+          "Dane w zapisie są ze sobą sprzeczne (np. plan nie pasuje do trade'a, przegląd do poprzedniego tygodnia albo werdykt do swojego trade'a). Sprawdź powiązane identyfikatory i daty; szczegóły są w logach pod identyfikatorem zapytania.",
       };
     case "23505":
       return {

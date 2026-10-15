@@ -124,6 +124,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("plan zamrozony przed wejsciem (baza lokalna)",
     const d = await wywolaj(import("@/app/api/v2/trade-plans/[id]/addenda/route"), "POST", `/trade-plans/${id}/addenda`, { token: rw.token, cialo: { field: "stop_loss", newValue: 20285, wordsId: slowa.id } }, PARAMS({ id: String(id) }));
     expect(d.status).toBe(201);
     zgodneZKontraktem("post", "/trade-plans/{id}/addenda", d.json);
+    // idempotencja (review P5): ten sam dopisek ponownie = ten sam wiersz, 200
+    const powtorka = await wywolaj(import("@/app/api/v2/trade-plans/[id]/addenda/route"), "POST", `/trade-plans/${id}/addenda`, { token: rw.token, cialo: { field: "stop_loss", newValue: 20285, wordsId: slowa.id } }, PARAMS({ id: String(id) }));
+    expect(powtorka.status).toBe(200);
+    expect(powtorka.json.id).toBe(d.json.id);
     const e = await blad(sql`update trade_plan_addenda set new_value = '1'::jsonb where id = ${d.json.id}`);
     expect(e.code).toBe("TJ409");
     const s = await szczegoly(id);

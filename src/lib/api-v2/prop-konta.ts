@@ -1,11 +1,12 @@
 import "server-only";
-import { and, asc, desc, eq, gte, isNull, lte, max, min, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, max, min, ne, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 
 import { accounts, instruments, propFirmPresets, propLedger, propRules, settings, tradePlans, trades } from "@/lib/db/schema";
 import { tradingDay } from "@/lib/domain/calc";
 import {
   lacznaEkspozycjaNq,
+  ostrzejszeZasady,
   ostrzezenieKontraktow,
   stanKonta,
   type EkspozycjaNq,
@@ -218,11 +219,11 @@ export function dzienHandlowyTeraz(teraz: Date = new Date()): string {
   return tradingDay(teraz, "America/New_York");
 }
 
-async function transakcjeKonta(tx: Db, accountId: number, odDnia: string): Promise<TransakcjaKonta[]> {
+async function transakcjeKonta(tx: Db, accountId: number, odDnia: string, doDnia: string): Promise<TransakcjaKonta[]> {
   const wiersze = await tx
     .select({ dzien: trades.tradingDay, exitTime: trades.exitTime, entryTime: trades.entryTime, pnl: trades.pnl })
     .from(trades)
-    .where(and(eq(trades.accountId, accountId), eq(trades.status, "closed"), isNull(trades.backtestSessionId), gte(trades.tradingDay, odDnia)))
+    .where(and(eq(trades.accountId, accountId), eq(trades.status, "closed"), isNull(trades.backtestSessionId), gte(trades.tradingDay, odDnia), lte(trades.tradingDay, doDnia)))
     .orderBy(asc(trades.tradingDay), asc(trades.exitTime), asc(trades.id));
   const wynik: TransakcjaKonta[] = [];
   for (const w of wiersze) {
@@ -238,6 +239,21 @@ export type StatusKontaWynik = {
   currency: string;
   day: string;
   rules: ReturnType<typeof zRegulyKonta>;
+  rulesConfirmed: boolean;
+  rulesUsed: {
+    source: "confirmed" | "unconfirmed_only" | "stricter_of_confirmed_and_unconfirmed";
+    confirmedRuleId: number | null;
+    ddType: Regula["ddType"];
+    maxDdCents: number;
+    ddLockCents: number | null;
+    dailyLossCents: number | null;
+    profitTargetCents: number | null;
+    consistencyPct: number | null;
+    minDays: number | null;
+    maxContractsMini: number | null;
+    maxContractsMicro: number | null;
+  };
+  rulesNote: string | null;
   riskSource: "query" | "plan" | "default" | null;
   state: ReturnType<typeof stanKontaDoApi>;
   contractWarnings: { level: number; text: string }[];
@@ -252,7 +268,8 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
     return odrzuc(422, "no_rules", `Konto #${accountId} (${k.konto.name}) nie ma reguł prop obowiązujących w dniu ${dzien}. Przypnij preset: POST /api/v2/prop/accounts/${accountId}/rules (presety: GET /api/v2/prop/presets).`);
   }
   const [{ od }] = await tx.select({ od: min(propRules.validFrom) }).from(propRules).where(eq(propRules.accountId, accountId));
-  const transakcje = await transakcjeKonta(tx, accountId, od ?? obowiazujace.regula.validFrom);
+  // Stan na dzien `dzien`: pozniejsze trade'y nie moga wplywac na status "z przeszlosci" (review P3).
+  const transakcje = await transakcjeKonta(tx, accountId, od ?? obowiazujace.regula.validFrom, dzien);
   const [wyplata] = await tx.select({ d: max(propLedger.occurredOn) }).from(propLedger).where(and(eq(propLedger.accountId, accountId), eq(propLedger.kind, "payout")));
 
   let ryzyko: number | null = null;
@@ -275,8 +292,33 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
     }
   }
 
+  // Niepotwierdzone reguly (confirmed_at null): liczymy na OSTRZEJSZEJ z dwoch, ostatniej potwierdzonej i nowej,
+  // pole po polu (Slowa uzytkownika 15.10.2026: «Licz na ostrzejszej»). Potwierdza je uzytkownik w aplikacji.
+  const rulesConfirmed = obowiazujace.regula.confirmedAt !== null;
+  let zasady = naZasady(obowiazujace.regula);
+  let zrodloZasad: StatusKontaWynik["rulesUsed"]["source"] = "confirmed";
+  let idPotwierdzonej: number | null = rulesConfirmed ? obowiazujace.regula.id : null;
+  let notatkaZasad: string | null = null;
+  if (!rulesConfirmed) {
+    const [potw] = await tx
+      .select()
+      .from(propRules)
+      .where(and(eq(propRules.accountId, accountId), lte(propRules.validFrom, dzien), isNotNull(propRules.confirmedAt), ne(propRules.id, obowiazujace.regula.id)))
+      .orderBy(desc(propRules.validFrom))
+      .limit(1);
+    if (potw) {
+      zasady = ostrzejszeZasady(naZasady(potw), zasady).zasady;
+      zrodloZasad = "stricter_of_confirmed_and_unconfirmed";
+      idPotwierdzonej = potw.id;
+      notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, więc bufory liczę na ostrzejszej z dwóch: ostatniej potwierdzonej (od ${potw.validFrom}, #${potw.id}) i nowej. Potwierdź je w »Do decyzji«, gdy sprawdzisz regulamin.`;
+    } else {
+      zrodloZasad = "unconfirmed_only";
+      notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, a wcześniejszych potwierdzonych brak, więc liczę na nich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`;
+    }
+  }
+
   const stan = stanKonta({
-    zasady: naZasady(obowiazujace.regula),
+    zasady,
     saldoStartCents: k.konto.startingBalance,
     transakcje,
     dzis: dzien,
@@ -292,7 +334,7 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
     .where(and(eq(trades.accountId, accountId), eq(trades.status, "open")));
   const eks = lacznaEkspozycjaNq(otwarte.map((o) => ({ accountId, symbol: o.symbol, contracts: Number(o.contracts) })));
   const kont = eks.perKonto[0];
-  const ostrz = ostrzezenieKontraktow(naZasady(obowiazujace.regula), kont?.kontraktyNq ?? 0, kont?.kontraktyMnq ?? 0);
+  const ostrz = ostrzezenieKontraktow(zasady, kont?.kontraktyNq ?? 0, kont?.kontraktyMnq ?? 0);
 
   return {
     ok: true,
@@ -301,6 +343,21 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
     currency: k.konto.currency,
     day: dzien,
     rules: zRegulyKonta(obowiazujace.regula, obowiazujace.preset),
+    rulesConfirmed,
+    rulesUsed: {
+      source: zrodloZasad,
+      confirmedRuleId: idPotwierdzonej,
+      ddType: zasady.ddType,
+      maxDdCents: zasady.maxDdCents,
+      ddLockCents: zasady.ddLockCents,
+      dailyLossCents: zasady.dailyLossCents,
+      profitTargetCents: zasady.profitTargetCents,
+      consistencyPct: zasady.consistencyPct,
+      minDays: zasady.minDays,
+      maxContractsMini: zasady.maxContractsMini,
+      maxContractsMicro: zasady.maxContractsMicro,
+    },
+    rulesNote: notatkaZasad,
     riskSource: zrodloRyzyka,
     state: stanKontaDoApi(stan),
     contractWarnings: ostrz ? [{ level: ostrz.poziom, text: ostrz.tekst }] : [],

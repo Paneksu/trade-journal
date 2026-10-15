@@ -18,5 +18,5 @@ export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { p
   if (!d.success) return blad(400, "bad_request", "data: »" + surowa.slice(0, 20) + "« - " + (d.error.issues[0]?.message ?? "oczekiwano YYYY-MM-DD") + ".");
   const q = wczytajQuery(request, DzienQuery);
   if (!q.ok) return q.odpowiedz;
-  return dolaczZalaczniki(request, { rodzaj: "day", data: d.data, accountId: q.dane.accountId ?? null, sessionId: q.dane.sessionId ?? null }, api.zapis);
+  return dolaczZalaczniki(request, { rodzaj: "day", data: d.data, accountId: q.dane.accountId ?? null, sessionId: q.dane.sessionId ?? null }, api.zapis, api.requestId);
 });

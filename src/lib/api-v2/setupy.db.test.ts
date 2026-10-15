@@ -160,7 +160,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("setupy, wersje i statystyka z przedzialami (ba
 
     const wstaw = async (r: number, sesja: number | null) => {
       const id = await wstawTrade(sql, { kontoId, instrumentId, dzien: DZIEN, status: "closed", r, sesjaId: sesja });
-      await sql`update trades set setup_id = ${w.setup_id} where id = ${id}`;
+      await sql`update trades set setup_id = ${w.setup_id}, setup_version_id = ${w.id} where id = ${id}`;
     };
     for (let i = 0; i < 8; i += 1) await wstaw(2, null); // live: 8 x +2R
     for (let i = 0; i < 4; i += 1) await wstaw(-1, null); // live: 4 x -1R
@@ -192,6 +192,46 @@ describe.skipIf(!MOZNA_NA_BAZIE)("setupy, wersje i statystyka z przedzialami (ba
     expect(sz.json.tradesLinked).toBe(18);
   });
 
+  it("progi NIE dzialaja wstecz: wersja 2 z nizszym minN nie zmienia statusu trade'ow wersji 1; statystyka biezaca liczy tylko trade'y swojej wersji", async () => {
+    const s = await zaloz({ name: unikat("Setup progi wersjami"), ...ai, thresholds: { minN: 10, potwierdzenieN: 100 } });
+    const slug = s.json.slug as string;
+    const { przyjmijWersjeSetupu } = await import("@/lib/decyzje/wersje");
+    const [w1] = await sql`select sv.id, st.id as setup_id from setup_versions sv join setups st on st.id = sv.setup_id where st.slug = ${slug}`;
+    await przyjmijWersjeSetupu(w1.id);
+    for (let i = 0; i < 6; i += 1) {
+      const id = await wstawTrade(sql, { kontoId, instrumentId, dzien: DZIEN, status: "closed", r: 2 });
+      await sql`update trades set setup_id = ${w1.setup_id}, setup_version_id = ${w1.id} where id = ${id}`;
+    }
+    const przed = await szczegoly(slug);
+    expect(przed.json.stats.bySource.live).toMatchObject({ n: 6, status: "niewazny", statusPowod: "za_malo_danych" });
+
+    const v2 = await wersja(slug, { ...ai, thresholds: { minN: 3, potwierdzenieN: 100 }, stopRule: "Stop pod knotem" });
+    expect(v2.status, JSON.stringify(v2.json)).toBe(201);
+    const [w2] = await sql`select id from setup_versions where setup_id = ${w1.setup_id} and version = 2`;
+    await przyjmijWersjeSetupu(w2.id);
+
+    const po = await szczegoly(slug);
+    zgodneZKontraktem("get", "/setups/{slug}", po.json);
+    expect(po.json.thresholdsUsed).toEqual({ minN: 3, potwierdzenieN: 100 });
+    expect(po.json.stats.bySource.live).toBeNull(); // wersja 2 nie ma jeszcze wlasnych trade'ow
+    const wersja1 = po.json.statsByVersion.find((x: { version: number }) => x.version === 1);
+    expect(wersja1.thresholdsUsed).toEqual({ minN: 10, potwierdzenieN: 100 });
+    expect(wersja1.stats.bySource.live).toMatchObject({ n: 6, status: "niewazny", statusPowod: "za_malo_danych" }); // nie zmienil sie
+    expect(po.json.statsByVersion.find((x: { version: number }) => x.version === 2).stats.bySource.live).toBeNull();
+
+    // trade wykonany wg wersji 2 liczy sie do wersji 2 po jej progach
+    for (let i = 0; i < 3; i += 1) {
+      const id = await wstawTrade(sql, { kontoId, instrumentId, dzien: DZIEN, status: "closed", r: 2 });
+      await sql`update trades set setup_id = ${w1.setup_id}, setup_version_id = ${w2.id} where id = ${id}`;
+    }
+    const koniec = await szczegoly(slug);
+    expect(koniec.json.stats.bySource.live.n).toBe(3);
+    expect(koniec.json.stats.bySource.live.status).not.toBe("niewazny");
+    expect(koniec.json.statsByVersion.find((x: { version: number }) => x.version === 1).stats.bySource.live.status).toBe("niewazny");
+    expect(koniec.json.tradesLinked).toBe(9);
+    expect(koniec.json.unversionedTrades).toBe(0);
+  });
+
   it("n ponizej progu zadeklarowanego z gory = »nieważny«, nawet gdy wszystko wygrywa; bez zatwierdzonej wersji obowiazuja progi domyslne 20/100", async () => {
     const s = await zaloz({ name: unikat("Setup malej proby"), ...ai, thresholds: { minN: 30, potwierdzenieN: 100 } });
     const [w] = await sql`select sv.id, st.id as setup_id from setup_versions sv join setups st on st.id = sv.setup_id where st.slug = ${s.json.slug}`;
@@ -204,6 +244,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("setupy, wersje i statystyka z przedzialami (ba
     expect(bezWersji.json.stats.bySource.live).toMatchObject({ n: 10, status: "niewazny", statusPowod: "za_malo_danych" });
     const { przyjmijWersjeSetupu } = await import("@/lib/decyzje/wersje");
     await przyjmijWersjeSetupu(w.id);
+    await sql`update trades set setup_version_id = ${w.id} where setup_id = ${w.setup_id}`; // trade'y wykonane wg tej wersji
     const z = await szczegoly(s.json.slug);
     expect(z.json.thresholdsUsed).toEqual({ minN: 30, potwierdzenieN: 100 });
     expect(z.json.stats.bySource.live.opis).toContain("10 z wymaganych 30");

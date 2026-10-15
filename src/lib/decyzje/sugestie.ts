@@ -2,7 +2,7 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 
 import { utworzNotatke } from "@/lib/api-v2/notatki";
-import { zapisZAktorem, type Transakcja } from "@/lib/api-v2/zapis";
+import { zapisJakoUi, type Transakcja } from "@/lib/api-v2/zapis";
 import {
   aiSuggestions,
   interpretationCorrections,
@@ -11,6 +11,7 @@ import {
   profileTermSources,
   profileTerms,
   setupExamples,
+  setupVersions,
   tradeNoteLinks,
   tradeTags,
   trades,
@@ -78,6 +79,13 @@ async function zastosuj(tx: Transakcja, s: Sugestia): Promise<{ ok: true; ref: R
       if (!w) return { ok: false, komunikat: `Trade #${t.id} jest już przykładem tego rodzaju w tym setupie. Odrzuć sugestię.` };
       return { ok: true, ref: { setupExampleId: w.id } };
     }
+    case "trade_setup": {
+      const [tr] = await tx.select({ s: trades.setupId, v: trades.setupVersionId }).from(trades).where(eq(trades.id, t.id as number)).for("update").limit(1);
+      if (!tr) return { ok: false, komunikat: `Trade #${t.id} nie istnieje (mógł zostać skasowany).` };
+      const [wersja] = await tx.select({ id: setupVersions.id }).from(setupVersions).where(and(eq(setupVersions.setupId, p.setupId as number), eq(setupVersions.status, "approved"))).limit(1);
+      await tx.update(trades).set({ setupId: p.setupId as number, setupVersionId: wersja?.id ?? null }).where(eq(trades.id, t.id as number));
+      return { ok: true, ref: { previousSetupId: tr.s, previousSetupVersionId: tr.v } };
+    }
     case "process_grade": {
       const [tr] = await tx.select({ g: trades.processGrade, at: trades.processGradedAt }).from(trades).where(eq(trades.id, t.id as number)).for("update").limit(1);
       if (!tr) return { ok: false, komunikat: `Trade #${t.id} nie istnieje (mógł zostać skasowany).` };
@@ -118,7 +126,7 @@ async function zapiszWniosek(tx: Transakcja, id: number, tytul: string, tresc: s
 }
 
 export async function zatwierdzSugestie(id: number): Promise<WynikDecyzji> {
-  return zapisZAktorem("ui", async (tx) => {
+  return zapisJakoUi(async (tx) => {
     const s = await pobierz(tx, id);
     if (!s) return blad(`Sugestia #${id} nie istnieje.`);
     if (s.status !== "pending") return blad(`Sugestia #${id} ma status »${s.status}«, a zatwierdzić można tylko oczekującą. Odśwież listę.`);
@@ -130,7 +138,7 @@ export async function zatwierdzSugestie(id: number): Promise<WynikDecyzji> {
 }
 
 export async function odrzucSugestie(id: number): Promise<WynikDecyzji> {
-  return zapisZAktorem("ui", async (tx) => {
+  return zapisJakoUi(async (tx) => {
     const s = await pobierz(tx, id);
     if (!s) return blad(`Sugestia #${id} nie istnieje.`);
     if (s.status !== "pending") return blad(`Sugestia #${id} ma status »${s.status}«, a odrzucić można tylko oczekującą. Odśwież listę.`);
@@ -140,7 +148,7 @@ export async function odrzucSugestie(id: number): Promise<WynikDecyzji> {
 }
 
 export async function cofnijSugestie(id: number): Promise<WynikDecyzji> {
-  return zapisZAktorem("ui", async (tx) => {
+  return zapisJakoUi(async (tx) => {
     const s = await pobierz(tx, id);
     if (!s) return blad(`Sugestia #${id} nie istnieje.`);
     if (s.status !== "accepted" && s.status !== "applied") {
@@ -158,8 +166,25 @@ export async function cofnijSugestie(id: number): Promise<WynikDecyzji> {
       case "setup_example":
         if (typeof ref.setupExampleId === "number") await tx.delete(setupExamples).where(and(eq(setupExamples.id, ref.setupExampleId), eq(setupExamples.origin, "ai")));
         break;
+      case "trade_setup": {
+        const t = s.target as { id: number };
+        const [biezacy] = await tx.select({ s: trades.setupId }).from(trades).where(eq(trades.id, t.id)).limit(1);
+        if (biezacy && biezacy.s !== (s.payload as { setupId?: number }).setupId) {
+          return blad(`Trade #${t.id} ma teraz inny setup niż ten z sugestii, więc cofnięcie nadpisałoby późniejszą decyzję. Zmień setup trade'a ręcznie.`);
+        }
+        await tx
+          .update(trades)
+          .set({ setupId: (ref.previousSetupId as number | null | undefined) ?? null, setupVersionId: (ref.previousSetupVersionId as number | null | undefined) ?? null })
+          .where(eq(trades.id, t.id));
+        break;
+      }
       case "process_grade": {
         const t = s.target as { id: number };
+        const [obecny] = await tx.select({ g: trades.processGrade }).from(trades).where(eq(trades.id, t.id)).limit(1);
+        const zSugestii = (s.payload as { grade?: string }).grade;
+        if (obecny && obecny.g !== zSugestii) {
+          return blad(`Trade #${t.id} ma teraz ocenę procesu ${obecny.g ?? "(brak)"}, a sugestia ustawiła ${zSugestii}. Cofnięcie nadpisałoby Twoją późniejszą zmianę, więc go nie robię. Zmień ocenę ręcznie.`);
+        }
         const poprzednia = (ref.previousGrade as "A" | "B" | "C" | null | undefined) ?? null;
         await tx
           .update(trades)

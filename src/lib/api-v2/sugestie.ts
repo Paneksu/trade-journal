@@ -99,6 +99,15 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
       return { ok: true, payload: { setupSlug: s.slug, setupId: s.id, exampleKind: d.payload.exampleKind, screenshotId: d.payload.screenshotId ?? null, captionWordsId: d.payload.captionWordsId ?? null } };
     }
 
+    if (d.kind === "trade_setup") {
+      const [s] = await tx.select({ id: setups.id, slug: setups.slug, retiredAt: setups.retiredAt }).from(setups).where(eq(setups.slug, d.payload.setupSlug)).limit(1);
+      if (!s) return odrzuc(422, "unknown_reference", `pole payload.setupSlug: »${d.payload.setupSlug}« - nie ma takiego setupu (lista: GET /api/v2/setups).`);
+      if (s.retiredAt) return odrzuc(422, "setup_retired", `Setup »${s.slug}« jest wycofany i nie przyjmuje nowych przypisań.`);
+      const [tr] = await tx.select({ setupId: trades.setupId }).from(trades).where(eq(trades.id, t.id)).limit(1);
+      if (tr?.setupId === s.id) return odrzuc(409, "already_present", `Trade #${t.id} ma już przypisany setup »${s.slug}«.`);
+      return { ok: true, payload: { setupSlug: s.slug, setupId: s.id } };
+    }
+
     if (d.kind === "process_grade") {
       if (t.processGrade === d.payload.grade) return odrzuc(409, "already_present", `Trade #${t.id} ma już ocenę procesu ${d.payload.grade}.`);
       return { ok: true, payload: { grade: d.payload.grade } };

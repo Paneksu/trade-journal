@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button, ErrorMessage, Input, Label, SuccessMessage, Textarea } from "@/components/ui/base";
-import { decydujOSetupie, decydujOSprzecznosci, decydujOSugestii, decydujORegule, type DecyzjaState } from "@/lib/actions/decyzje";
+import { decydujOSetupie, decydujOSprzecznosci, decydujOSugestii, decydujORegule, potwierdzReguly, type DecyzjaState } from "@/lib/actions/decyzje";
 import { ROZSTRZYGNIECIE_OPISY, ROZSTRZYGNIECIA } from "@/lib/decyzje/rozstrzygniecia-opisy";
 
 /* Minimalne formularze decyzji (faza 2b); wyglad przebuduje faza 5. Walidacja jest po stronie serwera. */
@@ -54,12 +54,31 @@ export function DecyzjaReguly({ versionId, tekst }: { versionId: number; tekst: 
   );
 }
 
-export function DecyzjaSetupu({ versionId }: { versionId: number }) {
+const POLA_SETUPU: { pole: "stopRule" | "targetRule" | "beRule" | "invalidation" | "avoid"; etykieta: string }[] = [
+  { pole: "stopRule", etykieta: "Stop" },
+  { pole: "targetRule", etykieta: "Cel" },
+  { pole: "beRule", etykieta: "BE" },
+  { pole: "invalidation", etykieta: "Unieważnienie" },
+  { pole: "avoid", etykieta: "Czego unikać" },
+];
+
+export function DecyzjaSetupu({ versionId, wersja }: { versionId: number; wersja: Record<"stopRule" | "targetRule" | "beRule" | "invalidation" | "avoid", string | null> }) {
   const [stan, akcja] = useActionState<DecyzjaState, FormData>(decydujOSetupie, {});
   return (
     <form action={akcja} className="space-y-4 p-4">
       <input type="hidden" name="id" value={versionId} />
       <Przycisk decyzja="przyjmij" etykieta="Przyjmij wersję setupu" wariant="primary" />
+      <details className="space-y-2">
+        <summary className="cursor-pointer text-sm text-muted">Popraw i przyjmij</summary>
+        <p className="text-xs text-faint">Treść propozycji jest niezmienna: poprawka powstaje jako nowa wersja od Ciebie, a propozycja trafia do odrzuconych. Listę kontrolną i progi zmienia nowa wersja.</p>
+        {POLA_SETUPU.map(({ pole, etykieta }) => (
+          <div key={pole} className="space-y-1">
+            <Label htmlFor={`${pole}-${versionId}`}>{etykieta}</Label>
+            <Textarea id={`${pole}-${versionId}`} name={pole} defaultValue={wersja[pole] ?? ""} rows={2} />
+          </div>
+        ))}
+        <Przycisk decyzja="popraw" etykieta="Popraw i przyjmij" />
+      </details>
       <div className="space-y-1.5">
         <Label htmlFor={`powod-setup-${versionId}`} hint="Wymagany przy odrzuceniu.">
           Powód odrzucenia
@@ -67,6 +86,17 @@ export function DecyzjaSetupu({ versionId }: { versionId: number }) {
         <Input id={`powod-setup-${versionId}`} name="powod" maxLength={500} />
         <Przycisk decyzja="odrzuc" etykieta="Odrzuć z powodem" wariant="danger" />
       </div>
+      <Wynik stan={stan} />
+    </form>
+  );
+}
+
+export function PotwierdzenieReguly({ id }: { id: number }) {
+  const [stan, akcja] = useActionState<DecyzjaState, FormData>(potwierdzReguly, {});
+  return (
+    <form action={akcja} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="id" value={id} />
+      <Przycisk decyzja="potwierdz" etykieta="Potwierdzam zgodność z regulaminem" wariant="primary" />
       <Wynik stan={stan} />
     </form>
   );

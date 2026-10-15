@@ -48,7 +48,6 @@ export async function metrykiTygodnia(tx: Db, weekStart: string) {
       id: trades.id,
       tradingDay: trades.tradingDay,
       entryTime: trades.entryTime,
-      createdAt: trades.createdAt,
       processGrade: trades.processGrade,
       stopLoss: trades.stopLoss,
       pnl: trades.pnl,
@@ -205,9 +204,17 @@ export async function zapiszPrzeglad(
     }
   }
 
-  // JEDNO zobowiazanie na tydzien: po ustawieniu nie zmienia sie, tez na inne slowa.
-  if (obecny?.commitmentWordsId != null && d.commitmentWordsId != null && d.commitmentWordsId !== obecny.commitmentWordsId) {
-    return odrzuc(409, "commitment_set", `Przegląd ${weekStart} ma już zobowiązanie (słowa #${obecny.commitmentWordsId}). Na tydzień przypada jedno zobowiązanie; zmienić je może tylko użytkownik w aplikacji.`, { commitmentWordsId: obecny.commitmentWordsId });
+  // JEDNO zobowiazanie na tydzien i jego rozliczenie: po ustawieniu nie zmieniaja sie (409), a null ich nie kasuje
+  // (schemat go nie przyjmuje). Te same wartosci ponownie = brak zmiany. Drugie zabezpieczenie: trigger tj_weekly_once.
+  const ustawione: [string, unknown, unknown][] = [
+    ["commitmentWordsId", obecny?.commitmentWordsId, d.commitmentWordsId],
+    ["prevCommitmentResult", obecny?.prevCommitmentResult, d.prevCommitmentResult],
+    ["prevResultWordsId", obecny?.prevResultWordsId, d.prevResultWordsId],
+  ];
+  for (const [pole, bylo, jest] of ustawione) {
+    if (bylo != null && jest !== undefined && jest !== bylo) {
+      return odrzuc(409, "commitment_set", `Pole ${pole} przeglądu ${weekStart} ma już wartość (${String(bylo)}), a żądanie podaje inną (${String(jest)}). Na tydzień przypada jedno zobowiązanie i jedno rozliczenie; zmienić je może tylko użytkownik w aplikacji.`, { field: pole, current: bylo });
+    }
   }
 
   // Rozliczenie zobowiazania: dotyczy przegladu poprzedniego tygodnia, ktory MUSI mieć zobowiazanie.

@@ -23,6 +23,25 @@ export function wygladaNaHeic(bajty: Uint8Array): boolean {
   return ["heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"].includes(tekst(8, 12));
 }
 
+/**
+ * Najwiekszy deklarowany rozmiar obrazu w kontenerze HEIF, odczytany z metadanych (pudelka »ispe«:
+ * 4 bajty wersji i flag, potem szerokosc i wysokosc jako 32-bitowe liczby big-endian), BEZ dekodowania.
+ * `null`, gdy w pliku nie ma zadnego takiego pudelka. Pozwala odrzucic gigapikselowy obraz przed
+ * kosztowna praca dekodera (audyt 7).
+ */
+export function wymiaryHeic(bajty: Uint8Array): { width: number; height: number } | null {
+  const widok = new DataView(bajty.buffer, bajty.byteOffset, bajty.byteLength);
+  let najwiekszy: { width: number; height: number } | null = null;
+  for (let i = 4; i + 16 <= bajty.length; i += 1) {
+    if (bajty[i] === 0x69 && bajty[i + 1] === 0x73 && bajty[i + 2] === 0x70 && bajty[i + 3] === 0x65) {
+      const width = widok.getUint32(i + 8);
+      const height = widok.getUint32(i + 12);
+      if (width > 0 && height > 0 && (najwiekszy === null || width * height > najwiekszy.width * najwiekszy.height)) najwiekszy = { width, height };
+    }
+  }
+  return najwiekszy;
+}
+
 export async function dekodujHeic(buffer: Buffer): Promise<{ data: Buffer; width: number; height: number }> {
   if (!wygladaNaHeic(buffer)) {
     throw new BladHeic("Plik deklaruje typ HEIC/HEIF, ale jego nagłówek nie jest kontenerem HEIF (brak znacznika »ftyp« z marką heic/mif1). Wyeksportuj zdjęcie jako JPEG albo PNG.");

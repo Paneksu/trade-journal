@@ -1,10 +1,13 @@
 import "server-only";
-import { eq, sql } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { screenshots } from "@/lib/db/schema";
+import { opiszBladBazy } from "@/lib/api-v2/bledy-bazy";
 import type { Zapis } from "@/lib/api-v2/zapis";
-import { saveScreenshot } from "@/lib/screenshots";
+import { deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
+import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import type { ShotOwner } from "@/lib/uploads-path";
 
 /**
@@ -25,6 +28,17 @@ export type ZrzutZInterwalem = {
 };
 
 export type OriginZrzutu = "manual" | "tradingview" | "fxreplay";
+
+export type OpcjeWgrywania = {
+  /** Identyfikator zapytania do logow (bez niego powstaje losowy identyfikator zdarzenia). */
+  requestId?: string;
+  /** Zrzuty tego pochodzenia zaraz zostana zastapione, wiec nie liczą sie do limitu. */
+  zastepujeOrigin?: OriginZrzutu;
+  /** Ustawiane na true, gdy odmowa wynika z limitu (wolajacy zwraca 422, nie 500). */
+  przekroczonyLimit?: { wartosc: boolean };
+};
+
+class LimitZalacznikow extends Error {}
 
 type KolumnaWlasciciela = typeof screenshots.tradeId | typeof screenshots.dayNoteId | typeof screenshots.noteId;
 
@@ -56,38 +70,61 @@ export async function wgrajZalaczniki(
   /** Z bramy API: wstawienia ida w transakcji z tj.actor (ADR-030). Formularz UI nie podaje. */
   zapis?: Zapis,
   ids?: number[],
+  opcje: OpcjeWgrywania = {},
 ): Promise<string | null> {
   if (items.length === 0) return null;
-
-  const [stan] = await db
-    .select({ ostatni: sql<number>`coalesce(max(${screenshots.sortOrder}), -1)::int` })
-    .from(screenshots)
-    .where(eq(kolumna(owner), owner.id));
-  let sortOrder = (stan?.ostatni ?? -1) + 1;
+  const wstawioneTuId: number[] = ids ?? [];
 
   for (const { file, interval, capturedAt, chartState, caption } of items) {
+    let zapisany: Awaited<ReturnType<typeof saveScreenshot>> | null = null;
     try {
-      const saved = await saveScreenshot(owner, file);
-      const wiersz = {
-        ...(owner.kind === "trade" ? { tradeId: owner.id } : owner.kind === "day" ? { dayNoteId: owner.id } : { noteId: owner.id }),
-        file: saved.file,
-        thumbnail: saved.thumbnail,
-        width: saved.width,
-        height: saved.height,
-        sortOrder: sortOrder++,
-        interval,
-        origin,
-        sha256: saved.sha256,
-        capturedAt: capturedAt ?? new Date(),
-        chartState: chartState ?? null,
-        caption: caption ?? null,
+      zapisany = await saveScreenshot(owner, file);
+      const saved = zapisany;
+      // Limit i numeracja liczone POD BLOKADA DORADCZA wlasciciela (audyt 7): dwa rownolegle wgrania nie
+      // przekrocza limitu, a kolejnosc nie dubluje numerow. Zrzuty zastepowanego pochodzenia nie licza sie.
+      const wstaw = async (tx: Pick<typeof db, "execute" | "select" | "insert">) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.shots:${owner.kind}:${owner.id}`}, 0))`);
+        const wlasciciel = eq(kolumna(owner), owner.id);
+        const licza = opcje.zastepujeOrigin
+          ? and(wlasciciel, or(ne(screenshots.origin, opcje.zastepujeOrigin), wstawioneTuId.length ? inArray(screenshots.id, wstawioneTuId) : sql`false`))
+          : wlasciciel;
+        const [{ ile }] = await tx.select({ ile: sql<number>`count(*)::int` }).from(screenshots).where(licza);
+        const limit = bladLimitu(ile, 1);
+        if (limit) throw new LimitZalacznikow(`${limit} (maksimum ${MAX_ZRZUTOW} łącznie)`);
+        const [stan] = await tx.select({ ostatni: sql<number>`coalesce(max(${screenshots.sortOrder}), -1)::int` }).from(screenshots).where(wlasciciel);
+        return tx
+          .insert(screenshots)
+          .values({
+            ...(owner.kind === "trade" ? { tradeId: owner.id } : owner.kind === "day" ? { dayNoteId: owner.id } : { noteId: owner.id }),
+            file: saved.file,
+            thumbnail: saved.thumbnail,
+            width: saved.width,
+            height: saved.height,
+            sortOrder: (stan?.ostatni ?? -1) + 1,
+            interval,
+            origin,
+            sha256: saved.sha256,
+            capturedAt: capturedAt ?? new Date(),
+            chartState: chartState ?? null,
+            caption: caption ?? null,
+          })
+          .returning({ id: screenshots.id });
       };
-      const [wstawiony] = zapis
-        ? await zapis((tx) => tx.insert(screenshots).values(wiersz).returning({ id: screenshots.id }))
-        : await db.insert(screenshots).values(wiersz).returning({ id: screenshots.id });
-      if (ids && wstawiony) ids.push(wstawiony.id);
+      const [wstawiony] = zapis ? await zapis((tx) => wstaw(tx)) : await db.transaction((tx) => wstaw(tx));
+      if (wstawiony) wstawioneTuId.push(wstawiony.id);
     } catch (error) {
-      return `zrzut się nie wgrał: ${(error as Error).message}`;
+      if (zapisany) await deleteScreenshot(zapisany.file, zapisany.thumbnail).catch(() => {});
+      if (error instanceof LimitZalacznikow) {
+        if (opcje.przekroczonyLimit) opcje.przekroczonyLimit.wartosc = true;
+        return error.message;
+      }
+      // Szczegoly (sciezki, komunikaty sterownikow) tylko do logu; klient dostaje tekst ogolny z identyfikatorem.
+      const idZdarzenia = opcje.requestId ?? randomBytes(4).toString("hex");
+      console.error(`[zrzuty ${idZdarzenia}] zapis ${owner.kind} #${owner.id} nie powiódł się:`, error);
+      const opis = opiszBladBazy(error);
+      return opis
+        ? `zrzut się nie wgrał: ${opis.komunikat} (identyfikator ${idZdarzenia})`
+        : `zrzut się nie wgrał z powodu błędu serwera (szczegóły w logach pod identyfikatorem ${idZdarzenia})`;
     }
   }
   return null;
@@ -99,6 +136,7 @@ export async function wgrajZrzuty(
   origin: OriginZrzutu = "manual",
   zapis?: Zapis,
   ids?: number[],
+  opcje?: OpcjeWgrywania,
 ): Promise<string | null> {
-  return wgrajZalaczniki({ kind: "trade", id: tradeId }, items, origin, zapis, ids);
+  return wgrajZalaczniki({ kind: "trade", id: tradeId }, items, origin, zapis, ids, opcje);
 }

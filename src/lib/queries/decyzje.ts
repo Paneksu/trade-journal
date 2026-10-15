@@ -1,13 +1,16 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
-import { linkZeZnacznikiem } from "@/lib/api-v2/luki";
+import { linkMentora } from "@/lib/api-v2/luki";
 import { db } from "@/lib/db";
 import {
   aiSuggestions,
   mentorClaims,
   mentorSources,
+  accounts,
   notes,
+  propFirmPresets,
+  propRules,
   ruleVersions,
   rules,
   setups,
@@ -121,6 +124,34 @@ export async function propozycjeSetupow(): Promise<PropozycjaSetupu[]> {
   }));
 }
 
+export type ReguldoPotwierdzenia = {
+  id: number;
+  accountId: number;
+  accountName: string;
+  validFrom: string;
+  rule: typeof propRules.$inferSelect;
+  preset: { firm: string; program: string; phase: string; readOn: string; needsVerification: boolean } | null;
+};
+
+/** Reguly kont prop czekajace na potwierdzenie zgodnosci z regulaminem (najstarsze pierwsze). */
+export async function regulyKontDoPotwierdzenia(): Promise<ReguldoPotwierdzenia[]> {
+  const wiersze = await db
+    .select({ rule: propRules, accountName: accounts.name, firm: propFirmPresets.firm, program: propFirmPresets.program, phase: propFirmPresets.phase, readOn: propFirmPresets.readOn, needs: propFirmPresets.needsVerification })
+    .from(propRules)
+    .innerJoin(accounts, eq(propRules.accountId, accounts.id))
+    .leftJoin(propFirmPresets, eq(propRules.presetId, propFirmPresets.id))
+    .where(sql`${propRules.confirmedAt} is null`)
+    .orderBy(asc(propRules.createdAt), asc(propRules.id));
+  return wiersze.map((w) => ({
+    id: w.rule.id,
+    accountId: w.rule.accountId,
+    accountName: w.accountName,
+    validFrom: w.rule.validFrom,
+    rule: w.rule,
+    preset: w.firm === null ? null : { firm: w.firm, program: w.program!, phase: w.phase!, readOn: w.readOn!, needsVerification: w.needs ?? false },
+  }));
+}
+
 export async function sugestieDoDecyzji() {
   const oczekujace = await db.select().from(aiSuggestions).where(eq(aiSuggestions.status, "pending")).orderBy(asc(aiSuggestions.createdAt), asc(aiSuggestions.id));
   const zatwierdzone = await db
@@ -136,7 +167,8 @@ export async function licznikiDoDecyzji(): Promise<{ decyzje: number; rozstrzygn
   const [w] = await db.execute<{ decyzje: number; rozstrzygniecia: number }>(sql`
     select ((select count(*) from rule_versions where status = 'proposed')
           + (select count(*) from setup_versions where status = 'proposed')
-          + (select count(*) from ai_suggestions where status = 'pending'))::int as decyzje,
+          + (select count(*) from ai_suggestions where status = 'pending')
+          + (select count(*) from prop_rules where confirmed_at is null))::int as decyzje,
            (select count(*) from strategy_gaps where kind = 'mentor_conflict' and status in ('open', 'asked'))::int as rozstrzygniecia`);
   return { decyzje: Number(w?.decyzje ?? 0), rozstrzygniecia: Number(w?.rozstrzygniecia ?? 0) };
 }
@@ -188,7 +220,7 @@ export async function sprzecznosciDoRozstrzygniecia(): Promise<SprzecznoscDoRozs
       setup: setupSlug && setupName ? { slug: setupSlug, name: setupName } : null,
       tradeId: g.tradeId,
       noteId: g.noteId,
-      mentor: { quote: c.quote, tStartS: c.tStartS, videoTitle: s.title, link: linkZeZnacznikiem(s.url, c.tStartS) },
+      mentor: { quote: c.quote, tStartS: c.tStartS, videoTitle: s.title, link: linkMentora(s.videoId, c.tStartS) },
       slowaUzytkownika: slowa,
     });
   }

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { requireSession } from "@/lib/auth/guard";
+import { potwierdzReguleKonta } from "@/lib/decyzje/prop";
 import { rozstrzygnijSprzecznosc } from "@/lib/decyzje/rozstrzygniecia";
 import { cofnijSugestie, odrzucSugestie, zatwierdzSugestie, type WynikDecyzji } from "@/lib/decyzje/sugestie";
 import {
@@ -11,6 +12,7 @@ import {
   przyjmijWersjeReguly,
   przyjmijWersjeRegulyZPoprawka,
   przyjmijWersjeSetupu,
+  przyjmijWersjeSetupuZPoprawka,
 } from "@/lib/decyzje/wersje";
 
 /*
@@ -58,8 +60,22 @@ export async function decydujOSetupie(_p: DecyzjaState, d: FormData): Promise<De
   const decyzja = d.get("decyzja");
   let wynik: WynikDecyzji;
   if (decyzja === "przyjmij") wynik = await przyjmijWersjeSetupu(id);
-  else if (decyzja === "odrzuc") wynik = await odrzucWersjeSetupu(id, tekst(d, "powod"));
+  else if (decyzja === "popraw") {
+    const pola = ["stopRule", "targetRule", "beRule", "invalidation", "avoid"] as const;
+    const poprawki: Record<string, string> = {};
+    for (const p of pola) if (d.has(p)) poprawki[p] = tekst(d, p);
+    wynik = await przyjmijWersjeSetupuZPoprawka(id, poprawki);
+  } else if (decyzja === "odrzuc") wynik = await odrzucWersjeSetupu(id, tekst(d, "powod"));
   else return { error: "Nieznana decyzja. Wybierz: przyjmij albo odrzuć." };
+  revalidatePath("/decyzje");
+  return stan(wynik);
+}
+
+export async function potwierdzReguly(_p: DecyzjaState, d: FormData): Promise<DecyzjaState> {
+  await requireSession();
+  const id = liczba(d, "id");
+  if (id === null) return BRAK_ID;
+  const wynik = await potwierdzReguleKonta(id);
   revalidatePath("/decyzje");
   return stan(wynik);
 }

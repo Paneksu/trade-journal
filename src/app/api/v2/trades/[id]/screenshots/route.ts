@@ -10,5 +10,5 @@ type Ctx = { params: Promise<{ id: string }> };
  * Zastepuje zrzuty tego samego pochodzenia na trade'cie; recznych nie rusza.
  */
 export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { params }) =>
-  obsluzZrzuty(request, (await params).id, api.zapis),
+  obsluzZrzuty(request, (await params).id, api.zapis, api.requestId),
 );

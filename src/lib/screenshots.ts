@@ -4,7 +4,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 
-import { dekodujHeic, BladHeic, wygladaNaHeic } from "./heic";
+import { dekodujHeic, BladHeic, LIMIT_PIKSELI_HEIC, wygladaNaHeic, wymiaryHeic } from "./heic";
 import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./uploads-path";
 
 /**
@@ -47,9 +47,18 @@ export function bladPliku(upload: File): string | null {
 export async function bladZawartosci(upload: File): Promise<string | null> {
   const bajty = Buffer.from(await upload.arrayBuffer());
   if (HEIC.has(upload.type)) {
-    return wygladaNaHeic(bajty)
-      ? null
-      : `Plik »${upload.name}« deklaruje typ ${upload.type}, ale jego nagłówek nie jest kontenerem HEIF (brak znacznika »ftyp« z marką heic/mif1). Wyeksportuj zdjęcie jako JPEG albo PNG.`;
+    if (!wygladaNaHeic(bajty)) {
+      return `Plik »${upload.name}« deklaruje typ ${upload.type}, ale jego nagłówek nie jest kontenerem HEIF (brak znacznika »ftyp« z marką heic/mif1). Wyeksportuj zdjęcie jako JPEG albo PNG.`;
+    }
+    // Wymiary z metadanych kontenera, zanim dekoder zajmie pamiec na bufor RGBA (4 bajty na piksel).
+    const wymiary = wymiaryHeic(bajty);
+    if (wymiary === null) {
+      return `Plik »${upload.name}« nie podaje wymiarów obrazu (brak pudełka »ispe«), więc nie wiem, ile pamięci zająłby po rozpakowaniu. Wyeksportuj zdjęcie jako JPEG albo PNG.`;
+    }
+    if (wymiary.width * wymiary.height > LIMIT_PIKSELI_HEIC) {
+      return `Plik »${upload.name}« ma ${wymiary.width}x${wymiary.height} px (${wymiary.width * wymiary.height} px), a limit to ${LIMIT_PIKSELI_HEIC} px. Zmniejsz zdjęcie przed wysłaniem.`;
+    }
+    return null;
   }
   try {
     const meta = await sharp(bajty, { limitInputPixels: 40_000_000 }).metadata();

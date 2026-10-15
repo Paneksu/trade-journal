@@ -19,5 +19,5 @@ export const POST = withApi<Ctx>({ scopes: ["write"] }, async (request, api, { p
   if (!w.ok) return w.odpowiedz;
   const wynik = await api.zapis((tx) => dopiszDoPlanu(tx, id.dane, w.dane));
   if (!wynik.ok) return blad(wynik.status, wynik.kod, wynik.komunikat);
-  return odpowiedz(zDopiska(wynik.dopisek), 201);
+  return odpowiedz(zDopiska(wynik.dopisek), wynik.utworzony ? 201 : 200);
 });

@@ -138,6 +138,12 @@ export const DowodWerdyktuSchema = z.strictObject({
     .array(z.strictObject({ t: czas, o: liczba, h: liczba, l: liczba, c: liczba }))
     .min(1)
     .max(5_000),
+  /**
+   * Dlugosc jednej swiecy w minutach. Obowiazkowa przy ocenie »chart«: `t` to czas OTWARCIA swiecy,
+   * wiec swieca konczy sie o `t + interwal`, a ocena na moment decyzji nie moze widziec swiecy,
+   * ktora konczy sie po wejsciu (np. 15-minutowa swieca z 14:30 obejmuje wejscie o 14:35).
+   */
+  intervalMinutes: z.number().int().min(1).max(10_080).optional(),
   screenshots: z
     .array(z.strictObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/, { message: "oczekiwano 64 znaków hex (małe litery)" }) }))
     .max(40)
@@ -171,6 +177,9 @@ export const OcenaSchema = z
     ruleChecks: z.array(RegulaSchema).max(MAX_REGUL).default([]),
   })
   .superRefine((o, ctx) => {
+    if (o.basis === "chart" && o.evidence !== undefined && o.evidence.intervalMinutes === undefined) {
+      ctx.addIssue({ code: "custom", path: ["evidence", "intervalMinutes"], message: "przy basis = chart podaj intervalMinutes (długość świecy w minutach, np. 5): bez niej nie da się sprawdzić, czy świeca skończyła się przed wejściem" });
+    }
     if (o.rulesetVersion !== undefined && o.evidence === undefined) {
       ctx.addIssue({ code: "custom", path: ["rulesetVersion"], message: "rulesetVersion ma sens tylko razem z evidence (werdykt niezmienny)" });
     }

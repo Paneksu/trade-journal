@@ -211,10 +211,10 @@ export const PrzegladTygodniaZapisSchema = z.strictObject({
   /** Slowa uzytkownika: wnioski tygodnia. */
   conclusionsWordsId: id.nullish(),
   /** JEDNO zobowiazanie na kolejny tydzien (slowa uzytkownika). Po ustawieniu nie zmienia sie. */
-  commitmentWordsId: id.nullish(),
-  /** Rozliczenie zobowiazania z poprzedniego tygodnia. */
-  prevCommitmentResult: z.enum(["kept", "partial", "broken"]).nullish(),
-  prevResultWordsId: id.nullish(),
+  commitmentWordsId: id.optional(),
+  /** Rozliczenie zobowiazania z poprzedniego tygodnia (raz ustawione nie zmienia sie; null nie kasuje). */
+  prevCommitmentResult: z.enum(["kept", "partial", "broken"]).optional(),
+  prevResultWordsId: id.optional(),
 });
 
 /* --- Kolejka AI (MUST 10, 15) ---------------------------------------------------------- */
@@ -270,6 +270,13 @@ export const SugestiaUtworzSchema = z.discriminatedUnion("kind", [
     ...bazaSugestii,
   }),
   z.strictObject({
+    kind: z.literal("trade_setup"),
+    target: celTrade,
+    /** Przypisanie setupu do trade'u przez AI: liczy sie w statystykach setupu dopiero po zatwierdzeniu w UI. */
+    payload: z.strictObject({ setupSlug: slug }),
+    ...bazaSugestii,
+  }),
+  z.strictObject({
     kind: z.literal("profile_term"),
     target: celProfil,
     payload: z.strictObject({ term: z.string().min(1).max(200), meaning: z.string().min(1).max(500), wordsIds: z.array(id).max(20).default([]) }),
@@ -302,7 +309,7 @@ export const SugestiaUtworzSchema = z.discriminatedUnion("kind", [
 
 export const SugestieListaQuery = z.strictObject({
   status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"]).optional(),
-  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail"]).optional(),
+  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup"]).optional(),
   tradeId: idZQuery.optional(),
   ...strona,
 });

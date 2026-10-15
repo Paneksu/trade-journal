@@ -120,6 +120,15 @@ export async function zapiszKorekteInterpretacji(
     return { ok: false, status: 422, kod: "no_change", komunikat: "pole afterInterpretation: jest identyczne z obecną interpretacją, więc to nie jest poprawka." };
   }
 
+  // Sprawdzenie hasla PRZED pierwszym zapisem: odmowa po wstawieniu korekty zostawilaby ja w bazie (transakcja
+  // z `ok: false` jest zatwierdzana), a klient dostalby blad i ponowil.
+  if (d.term !== undefined && d.termMeaning === undefined) {
+    return { ok: false, status: 422, kod: "term_meaning_required", komunikat: "pole termMeaning: razem z term podaj znaczenie hasła (np. »FVG@5m po sweepie«)." };
+  }
+  if (d.termMeaning !== undefined && d.term === undefined) {
+    return { ok: false, status: 422, kod: "term_required", komunikat: "pole term: razem z termMeaning podaj samo hasło (np. »FVG@5m«)." };
+  }
+
   const [wpis] = await tx
     .insert(interpretationCorrections)
     .values({
@@ -137,10 +146,7 @@ export async function zapiszKorekteInterpretacji(
 
   let termSuggestionId: number | null = null;
   if (d.term !== undefined) {
-    if (d.termMeaning === undefined) {
-      return { ok: false, status: 422, kod: "term_meaning_required", komunikat: "pole termMeaning: razem z term podaj znaczenie hasła (np. »FVG@5m po sweepie«)." };
-    }
-    const payload = { term: d.term, meaning: d.termMeaning, wordsIds: [d.wordsId, d.correctionWordsId] };
+    const payload = { term: d.term, meaning: d.termMeaning!, wordsIds: [d.wordsId, d.correctionWordsId] };
     const [istnieje] = await tx
       .select({ id: aiSuggestions.id })
       .from(aiSuggestions)

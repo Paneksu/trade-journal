@@ -80,6 +80,11 @@ export async function szczegolyTradu(tx: Db, id: number) {
   const sprawdzenia = idsOcen.length ? await tx.select().from(tradeRuleChecks).where(inArray(tradeRuleChecks.reviewId, idsOcen)).orderBy(asc(tradeRuleChecks.ruleId)) : [];
 
   const ukryj = tr.status !== "closed" && oceny.length > 0;
+  // Razem z wynikiem chowamy wszystko, co moze go zdradzic (review): oceny po fakcie (basis = history) i korekty do nich,
+  // wnioski (lesson) oraz notatki trade'a, ktore uzytkownik mogl dopisac juz po wyniku. Slepa ocena ma byc slepa.
+  const historyIds = new Set(oceny.filter((o) => o.basis === "history").map((o) => o.id));
+  const widoczneOceny = ukryj ? oceny.filter((o) => !historyIds.has(o.id) && !(o.overridesReviewId !== null && historyIds.has(o.overridesReviewId))) : oceny;
+  const ukryteOceny = oceny.length - widoczneOceny.length;
   const dzienOceny = tr.tradingDay ?? tr.entryTime.toISOString().slice(0, 10);
 
   const wyjscia = ukryj ? [] : await tx.select().from(tradeExits).where(eq(tradeExits.tradeId, id)).orderBy(asc(tradeExits.sortOrder), asc(tradeExits.id));
@@ -113,8 +118,8 @@ export async function szczegolyTradu(tx: Db, id: number) {
       takeProfit: liczba(tr.takeProfit),
       tradingDay: tr.tradingDay,
       marketSession: tr.marketSession,
-      note: tr.note,
-      moodNote: tr.moodNote,
+      note: ukryj ? null : tr.note,
+      moodNote: ukryj ? null : tr.moodNote,
       readiness: tr.readiness,
       tags: tagi,
       processGrade: tr.processGrade,
@@ -128,6 +133,8 @@ export async function szczegolyTradu(tx: Db, id: number) {
     },
     resultHidden: ukryj,
     resultHiddenReason: ukryj ? "Trade nie jest zamknięty, a ma werdykt AI wydany przed wynikiem. Wynik pokaże się po zamknięciu." : null,
+    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.basis=history"] : [],
+    hiddenReviews: ukryteOceny,
     result: ukryj
       ? null
       : {
@@ -160,7 +167,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
       width: z.width,
       height: z.height,
     })),
-    reviews: oceny.map((o) => {
+    reviews: widoczneOceny.map((o) => {
       const reguly = sprawdzenia.filter((s) => s.reviewId === o.id);
       const korekty = oceny.filter((x) => x.overridesReviewId === o.id).map((x) => x.id);
       return {
@@ -169,7 +176,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
         basis: o.basis,
         setupType: o.setupType,
         summaryMd: o.summaryMd,
-        lesson: o.lesson,
+        lesson: ukryj ? null : o.lesson,
         brainVerdict: o.brainVerdict,
         brainPlan: o.brainPlan ?? null,
         model: o.model,

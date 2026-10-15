@@ -32,7 +32,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("przeglad tygodnia procesowy (baza lokalna)", (
     await sql`delete from weekly_reviews where week_start in (${T1}, ${T2})`;
   });
   afterAll(async () => {
-    await sql`update weekly_reviews set prev_review_id = null, prev_commitment_result = null, prev_result_words_id = null where week_start in (${T1}, ${T2})`;
+    await sql.begin(async (t) => {
+      await t`select set_config('tj.actor', 'ui', true)`; // zobowiazanie i rozliczenie zmienia tylko UI (trigger tj_weekly_once)
+      await t`update weekly_reviews set prev_review_id = null, prev_commitment_result = null, prev_result_words_id = null where week_start in (${T1}, ${T2})`;
+    });
     await sql`delete from weekly_reviews where week_start in (${T1}, ${T2})`;
     await sql`delete from day_notes where day between ${T1} and '1986-03-09'`;
     await sql`delete from trades where account_id = ${kontoId}`;
@@ -165,9 +168,52 @@ describe.skipIf(!MOZNA_NA_BAZIE)("przeglad tygodnia procesowy (baza lokalna)", (
     expect(po.json.commitmentToSettle).toBeNull();
   });
 
+  it("zobowiazanie i rozliczenie raz ustawione nie zmieniaja sie: null = 400, inna wartosc = 409, a SQL bez aktora ui dostaje TJ409 z bazy", async () => {
+    const [stan] = await sql`select commitment_words_id, prev_commitment_result, prev_result_words_id from weekly_reviews where week_start = ${T2}`;
+    expect(stan.prev_commitment_result).toBe("partial");
+    const inne = await zapiszSlowa(rw.token, "Inny wynik rozliczenia.", { day: T2, role: "weekly.result" });
+    const innyWynik = await zapisz(T2, { prevCommitmentResult: "kept" });
+    expect(innyWynik.status).toBe(409);
+    expect(innyWynik.json.code).toBe("commitment_set");
+    expect(innyWynik.json.field).toBe("prevCommitmentResult");
+    expect((await zapisz(T2, { prevResultWordsId: inne.id })).status).toBe(409);
+    expect((await zapisz(T2, { prevCommitmentResult: "partial", prevResultWordsId: stan.prev_result_words_id })).status).toBe(200); // to samo = ok
+    for (const pole of ["commitmentWordsId", "prevCommitmentResult", "prevResultWordsId"]) {
+      const nul = await zapisz(T1, { [pole]: null });
+      expect(nul.status, pole).toBe(400); // null nie kasuje
+    }
+    const [po] = await sql`select prev_commitment_result, prev_result_words_id from weekly_reviews where week_start = ${T2}`;
+    expect(po).toEqual({ prev_commitment_result: "partial", prev_result_words_id: stan.prev_result_words_id });
+
+    const { zapisZAktorem } = await import("./zapis");
+    const { sql: dsql } = await import("drizzle-orm");
+    let kod: string | undefined;
+    try {
+      await zapisZAktorem(`api:${rw.id}`, (tx) => tx.execute(dsql`update weekly_reviews set commitment_words_id = null where week_start = ${T1}`));
+    } catch (e) {
+      kod = (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code;
+    }
+    expect(kod).toBe("TJ409");
+  });
+
+  it("niespojne dane z triggera (TJ422) dostaja kod inconsistent_data, nie below_threshold (prawdziwy blad bazy)", async () => {
+    const { opiszBladBazy } = await import("./bledy-bazy");
+    const [t1] = await sql`select id from weekly_reviews where week_start = ${T2}`;
+    let e: unknown;
+    try {
+      // przeglad z 24.02 rozlicza przeglad z 10.03, czyli z PRZYSZLOSCI
+      await sql`insert into weekly_reviews (week_start, prev_review_id) values ('1986-02-24', ${t1.id})`;
+    } catch (err) {
+      e = err;
+    }
+    expect(e, "trigger powinien odrzucic zly prev_review_id").toBeDefined();
+    expect((e as { code?: string }).code).toBe("TJ422");
+    expect(opiszBladBazy(e)).toMatchObject({ status: 422, kod: "inconsistent_data" });
+  });
+
   it("zatwierdzony przeglad zatwierdza tylko UI; potem API go nie zmienia (409); poniedzialek wymagany", async () => {
     // API nie ma zakresu approve: proba ustawienia statusu z aktorem api:* konczy sie TJ403
-    const { zapisZAktorem } = await import("./zapis");
+    const { zapisZAktorem, zapisJakoUi } = await import("./zapis");
     const { sql: dsql } = await import("drizzle-orm");
     const sprobuj = async (aktor: string) => {
       try {
@@ -178,7 +224,8 @@ describe.skipIf(!MOZNA_NA_BAZIE)("przeglad tygodnia procesowy (baza lokalna)", (
       }
     };
     expect(await sprobuj(`api:${rw.id}`)).toBe("TJ403");
-    expect(await sprobuj("ui")).toBeNull();
+    await zapisJakoUi((tx) => tx.execute(dsql`update weekly_reviews set status = 'approved', approved_at = now() where week_start = ${T2}`));
+    expect((await sql`select status from weekly_reviews where week_start = ${T2}`)[0].status).toBe("approved");
     const zablokowany = await zapisz(T2, { draftMd: "Poprawka po zatwierdzeniu." });
     expect(zablokowany.status).toBe(409);
     expect(zablokowany.json.code).toBe("review_approved");

@@ -137,7 +137,7 @@ Kontrakt i schematy odpowiedzi: `docs/openapi-v2.json`. Tabele: `docs/v2/model-d
 | `GET`/`POST /strategy-gaps`, `POST .../:id/ask` | read, propose, write | luki i sprzeczności mentor kontra praktyka; rozstrzyga tylko UI |
 | `/mentor/sources`, `/mentor/claims` | read/write + **import** | import filmów i cytatów (bez zakresu `import` każda trasa = `403`) |
 
-Filtr `externalRef` działa na `GET /rules` i `GET /hypotheses`.
+Filtr `externalRef` działa na `GET /rules` i `GET /hypotheses`.Filtr `externalRef` działa na `GET /rules` i `GET /hypotheses`.Poprawki po przeglądzie (15.10.2026): `POST /trades/:id/reviews` z `basis = chart` wymaga `evidence.intervalMinutes` (świeca musi się skończyć przed wejściem); `POST .../override`, `POST /trade-plans/:id/addenda` i `POST /notes/:id/additions` są idempotentne (powtórka = 200, ten sam wiersz); `GET /setups/:slug` zwraca `statsByVersion` (progi nie działają wstecz) i `unversionedTrades`; `GET /prop/accounts/:id/status` zwraca `rulesConfirmed`, `rulesUsed`, `rulesNote`; `GET /trades/:id` ma `hiddenFields` i `hiddenReviews`; nowy rodzaj sugestii `trade_setup`. Szczegóły: ADR-033, sekcja »Faza 2b, poprawki po audycie i review«.
 
 ### Ekrany decyzji użytkownika (bez AI)
 

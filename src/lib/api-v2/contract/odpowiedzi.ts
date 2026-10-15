@@ -460,6 +460,17 @@ export const SetupSzczegolyOdpowiedz = z.strictObject({
   thresholdsWarning: tekstNull,
   tradesLinked: calk,
   stats: StatystykaPoZrodlachOut,
+  /** Statystyka osobno dla kazdej zatwierdzonej wersji, wedlug JEJ progow (progi nie dzialaja wstecz). */
+  statsByVersion: z.array(
+    z.strictObject({
+      version: calk,
+      status: z.enum(["approved", "superseded"]),
+      thresholdsUsed: z.strictObject({ minN: calk, potwierdzenieN: calk }),
+      stats: StatystykaPoZrodlachOut,
+    }),
+  ),
+  /** Trade'y z tym setupem, ale bez wersji (sprzed wersjonowania): poza statystyka wersji. */
+  unversionedTrades: calk,
   examples: z.array(
     z.strictObject({
       id: calk,
@@ -589,6 +600,23 @@ export const PropStatusOdpowiedz = z.strictObject({
   currency: z.string(),
   day: z.string(),
   rules: PropRegulyOut,
+  /** Czy reguly obowiazujace w tym dniu potwierdzil uzytkownik w aplikacji (R29). */
+  rulesConfirmed: z.boolean(),
+  /** Reguly, na ktorych policzono bufory: niepotwierdzone liczymy na ostrzejszej z dwoch (ostatnia potwierdzona i nowa). */
+  rulesUsed: z.strictObject({
+    source: z.enum(["confirmed", "unconfirmed_only", "stricter_of_confirmed_and_unconfirmed"]),
+    confirmedRuleId: calkNull,
+    ddType: z.enum(["eod", "intraday", "static", "trailing_to_static"]),
+    maxDdCents: calk,
+    ddLockCents: calkNull,
+    dailyLossCents: calkNull,
+    profitTargetCents: calkNull,
+    consistencyPct: liczbaNull,
+    minDays: calkNull,
+    maxContractsMini: calkNull,
+    maxContractsMicro: calkNull,
+  }),
+  rulesNote: tekstNull,
   riskSource: z.enum(["query", "plan", "default"]).nullable(),
   state: StanKontaOut,
   contractWarnings: z.array(z.strictObject({ level: z.number(), text: z.string() })),
@@ -687,7 +715,7 @@ export const PrzegladZapisOdpowiedz = z.strictObject({ created: z.boolean(), rev
 
 export const SugestiaOut = z.strictObject({
   id: calk,
-  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail"]),
+  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup"]),
   status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"]),
   target: obiekt,
   payload: obiekt,
@@ -925,6 +953,9 @@ export const TradeSzczegolyOdpowiedz = z.strictObject({
   /** true = wynik ukryty: trade nie jest zamkniety, a ma werdykt AI wydany przed wynikiem. */
   resultHidden: z.boolean(),
   resultHiddenReason: tekstNull,
+  /** Co jeszcze ukryto razem z wynikiem (oceny po fakcie, wnioski, notatki trade'a) i ile ocen po fakcie pominieto. */
+  hiddenFields: z.array(z.string()),
+  hiddenReviews: calk,
   result: z
     .strictObject({
       exitPrice: liczbaNull,

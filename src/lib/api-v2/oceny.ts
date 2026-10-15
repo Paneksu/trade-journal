@@ -45,7 +45,7 @@ export type WynikOceny =
       unknownRules: string[];
       lookAhead: { moglZnacDzien: boolean; powod: string } | null;
     }
-  | { ok: false; status: 404 | 409 | 422; kod?: string; error: string; dodatkowe?: Record<string, unknown> };
+  | { ok: false; status: 404 | 409 | 422; kod?: string; komunikat: string; dodatkowe?: Record<string, unknown> };
 
 const KOD_REGULY = /^R-\d{3,}$/;
 
@@ -64,7 +64,7 @@ export async function zapiszOcene(
     return {
       ok: false,
       status: 404,
-      error: `Trade #${tradeId} nie istnieje (mógł zostać skasowany w aplikacji). Sprawdź id w odpowiedzi POST /api/ingest/trades albo w GET /api/ingest/trades.`,
+      komunikat: `Trade #${tradeId} nie istnieje (mógł zostać skasowany w aplikacji). Sprawdź id w odpowiedzi POST /api/ingest/trades albo w GET /api/ingest/trades.`,
     };
   }
   if (o.evidence !== undefined) return zapiszWerdyktNiezmienny(trade, o, zapis, tokenId);
@@ -100,7 +100,7 @@ export async function zapiszOcene(
         ok: false as const,
         status: 409 as const,
         kod: "verdict_immutable",
-        error: `Trade #${tradeId} ma już niezmienny werdykt AI »${o.basis}« (z as_of). Werdyktu z dowodem nie podmienia się: jeśli się z nim nie zgadzasz, zapisz korektę użytkownika (POST /api/v2/trades/${tradeId}/reviews/<id>/override). Starą ocenę bez dowodu można podmienić tylko do chwili, gdy dostanie as_of.`,
+        komunikat: `Trade #${tradeId} ma już niezmienny werdykt AI »${o.basis}« (z as_of). Werdyktu z dowodem nie podmienia się: jeśli się z nim nie zgadzasz, zapisz korektę użytkownika (POST /api/v2/trades/${tradeId}/reviews/<id>/override). Starą ocenę bez dowodu można podmienić tylko do chwili, gdy dostanie as_of.`,
       };
     }
 
@@ -220,12 +220,23 @@ async function zapiszWerdyktNiezmienny(
   const najpozniejsza = swiece[swiece.length - 1].t;
 
   // "Zero zagladania": ocena z wykresu na moment decyzji nie moze widziec swiecy pozniejszych niz wejscie.
-  if (o.basis === "chart" && najpozniejsza.getTime() > trade.entryTime.getTime()) {
+  // Swieca (`t` = czas otwarcia) musi sie skonczyc najpozniej w chwili wejscia: t + interwal <= entryTime.
+  const interwalMs = (dowod.intervalMinutes ?? 0) * 60_000;
+  const koniecNajpozniejszej = najpozniejsza.getTime() + interwalMs;
+  if (o.basis === "chart" && koniecNajpozniejszej > trade.entryTime.getTime()) {
     return {
       ok: false,
       status: 422,
       kod: "look_ahead",
-      error: `pole evidence.candles: świeca z ${najpozniejsza.toISOString()} jest późniejsza niż wejście (${trade.entryTime.toISOString()}). Ocena »chart« ma powstać na moment decyzji i nie wolno jej widzieć przyszłości; ocenę po fakcie wyślij z basis = history.`,
+      komunikat: `pole evidence.candles: świeca otwarta ${najpozniejsza.toISOString()} (${dowod.intervalMinutes ?? 0} min) kończy się ${new Date(koniecNajpozniejszej).toISOString()}, a wejście było ${trade.entryTime.toISOString()}. Ocena »chart« ma powstać na moment decyzji i nie wolno jej widzieć przyszłości (świeca musi się skończyć najpóźniej w chwili wejścia); ocenę po fakcie wyślij z basis = history.`,
+    };
+  }
+  if (o.basis === "chart" && o.evidenceCutoff && o.evidenceCutoff.getTime() > trade.entryTime.getTime()) {
+    return {
+      ok: false,
+      status: 422,
+      kod: "look_ahead",
+      komunikat: `pole evidenceCutoff: ${o.evidenceCutoff.toISOString()} jest późniejsze niż wejście (${trade.entryTime.toISOString()}). Przy ocenie »chart« odcięcie danych nie może wybiegać poza moment decyzji.`,
     };
   }
   const odciecie = o.evidenceCutoff ?? najpozniejsza;
@@ -234,7 +245,7 @@ async function zapiszWerdyktNiezmienny(
       ok: false,
       status: 422,
       kod: "look_ahead",
-      error: `pole evidenceCutoff: ${odciecie.toISOString()} jest wcześniejsze niż najpóźniejsza przekazana świeca (${najpozniejsza.toISOString()}). Odcięcie danych musi obejmować wszystko, co AI widziało.`,
+      komunikat: `pole evidenceCutoff: ${odciecie.toISOString()} jest wcześniejsze niż najpóźniejsza przekazana świeca (${najpozniejsza.toISOString()}). Odcięcie danych musi obejmować wszystko, co AI widziało.`,
     };
   }
 
@@ -251,13 +262,14 @@ async function zapiszWerdyktNiezmienny(
         ok: false,
         status: 422,
         kod: "unknown_screenshot",
-        error: `pole evidence.screenshots: sha256 ${brak.map((b) => `»${b}«`).join(", ")} nie należy do żadnego zrzutu trade'a #${trade.id}. Wyślij zrzuty (POST /api/v2/trades/${trade.id}/screenshots) przed werdyktem i podaj skróty z ich odpowiedzi.`,
+        komunikat: `pole evidence.screenshots: sha256 ${brak.map((b) => `»${b}«`).join(", ")} nie należy do żadnego zrzutu trade'a #${trade.id}. Wyślij zrzuty (POST /api/v2/trades/${trade.id}/screenshots) przed werdyktem i podaj skróty z ich odpowiedzi.`,
         dodatkowe: { missing: brak },
       };
     }
   }
 
   const manifest = {
+    ...(dowod.intervalMinutes !== undefined ? { intervalMinutes: dowod.intervalMinutes } : {}),
     candles: swiece.map((s) => ({ t: s.t.toISOString(), o: s.o, h: s.h, l: s.l, c: s.c })),
     screenshots: sha.map((s) => ({ sha256: s })),
   };
@@ -269,7 +281,7 @@ async function zapiszWerdyktNiezmienny(
     const biezacy = ust?.v ?? 0;
     const zestaw = o.rulesetVersion ?? biezacy;
     if (zestaw > biezacy) {
-      return { ok: false as const, status: 422 as const, kod: "unknown_ruleset", error: `pole rulesetVersion: ${zestaw} jest większy niż bieżący numer zestawu reguł (${biezacy}); odczytaj go z GET /api/v2/rules (rulesVersion).` };
+      return { ok: false as const, status: 422 as const, kod: "unknown_ruleset", komunikat: `pole rulesetVersion: ${zestaw} jest większy niż bieżący numer zestawu reguł (${biezacy}); odczytaj go z GET /api/v2/rules (rulesVersion).` };
     }
 
     const [istniejacy] = await tx
@@ -341,7 +353,7 @@ async function zapiszWerdyktNiezmienny(
           ok: false as const,
           status: 409 as const,
           kod: "verdict_immutable",
-          error: `Trade #${trade.id} ma już niezmienny werdykt AI »${o.basis}« wydany ${istniejacy.asOf.toISOString()} (dowody ${istniejacy.evidenceHash?.slice(0, 12)}…). Treść wysłana teraz jest inna, a werdykt z as_of nie podlega podmianie. Jeśli to korekta użytkownika, zapisz ją jako user_override: POST /api/v2/trades/${trade.id}/reviews/${istniejacy.id}/override.`,
+          komunikat: `Trade #${trade.id} ma już niezmienny werdykt AI »${o.basis}« wydany ${istniejacy.asOf.toISOString()} (dowody ${istniejacy.evidenceHash?.slice(0, 12)}…). Treść wysłana teraz jest inna, a werdykt z as_of nie podlega podmianie. Jeśli to korekta użytkownika, zapisz ją jako user_override: POST /api/v2/trades/${trade.id}/reviews/${istniejacy.id}/override.`,
           dodatkowe: { reviewId: istniejacy.id, asOf: istniejacy.asOf.toISOString() },
         };
       }
@@ -393,8 +405,8 @@ async function zapiszWerdyktNiezmienny(
 /* --- Korekta uzytkownika (user_override) ----------------------------------------------------------- */
 
 export type WynikKorekty =
-  | { ok: true; reviewId: number; overridesReviewId: number; asOf: string | null; evidenceHash: string; ruleChecks: number }
-  | { ok: false; status: 404 | 422; kod: string; error: string };
+  | { ok: true; reviewId: number; overridesReviewId: number; asOf: string | null; evidenceHash: string; ruleChecks: number; utworzona: boolean }
+  | { ok: false; status: 404 | 422; kod: string; komunikat: string };
 
 export async function zapiszKorekte(
   tradeId: number,
@@ -406,25 +418,52 @@ export async function zapiszKorekte(
   return zapis(async (tx) => {
     const [oryginal] = await tx.select().from(tradeReviews).where(and(eq(tradeReviews.id, reviewId), eq(tradeReviews.tradeId, tradeId))).limit(1);
     if (!oryginal) {
-      return { ok: false as const, status: 404 as const, kod: "not_found", error: `Werdykt #${reviewId} nie należy do trade'a #${tradeId} albo nie istnieje.` };
+      return { ok: false as const, status: 404 as const, kod: "not_found", komunikat: `Werdykt #${reviewId} nie należy do trade'a #${tradeId} albo nie istnieje.` };
     }
     if (oryginal.kind !== "ai") {
-      return { ok: false as const, status: 422 as const, kod: "not_ai_verdict", error: `Werdykt #${reviewId} to korekta użytkownika. Koryguje się werdykty AI; kolejną korektę wskaż na pierwotnym werdykcie AI (#${oryginal.overridesReviewId}).` };
+      return { ok: false as const, status: 422 as const, kod: "not_ai_verdict", komunikat: `Werdykt #${reviewId} to korekta użytkownika. Koryguje się werdykty AI; kolejną korektę wskaż na pierwotnym werdykcie AI (#${oryginal.overridesReviewId}).` };
     }
-    const [slowa] = await tx.execute<{ id: number }>(sql`select id from user_words where id = ${d.wordsId}`);
+    const [slowa] = await tx.execute<{ id: number; trade_id: number | null; day: string | null }>(sql`select id, trade_id, day::text as day from user_words where id = ${d.wordsId}`);
     if (!slowa) {
-      return { ok: false as const, status: 422 as const, kod: "unknown_reference", error: `pole wordsId: słowa użytkownika #${d.wordsId} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).` };
+      return { ok: false as const, status: 422 as const, kod: "unknown_reference", komunikat: `pole wordsId: słowa użytkownika #${d.wordsId} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).` };
+    }
+    // Korekta werdyktu musi stac na slowach o TYM trade'u albo jego dniu handlowym (audyt 3): cudze slowa
+    // z innego dnia nie uzasadniaja korekty i zaciemniaja, kto i dlaczego zmienil ocene.
+    const [tr] = await tx.select({ tradingDay: trades.tradingDay }).from(trades).where(eq(trades.id, tradeId)).limit(1);
+    const dzienTradu = tr?.tradingDay ?? null;
+    if (slowa.trade_id !== tradeId && !(slowa.trade_id === null && slowa.day !== null && slowa.day === dzienTradu)) {
+      return {
+        ok: false as const,
+        status: 422 as const,
+        kod: "words_not_for_trade",
+        komunikat: `pole wordsId: słowa #${d.wordsId} nie dotyczą trade'a #${tradeId} (mają trade ${slowa.trade_id ?? "brak"}, dzień ${slowa.day ?? "brak"}; dzień handlowy trade'a: ${dzienTradu ?? "brak"}). Zapisz uzasadnienie korekty z tradeId = ${tradeId} albo z day = ${dzienTradu ?? "dniem trade'a"} (POST /api/v2/user-words).`,
+      };
     }
 
     const stare = await tx.select().from(tradeRuleChecks).where(eq(tradeRuleChecks.reviewId, oryginal.id)).orderBy(asc(tradeRuleChecks.ruleId));
     const manifest = {
       overrides: { reviewId: oryginal.id, evidenceHash: oryginal.evidenceHash },
       wordsId: d.wordsId,
+      setupType: d.setupType === undefined ? null : d.setupType,
+      summaryMd: d.summaryMd === undefined ? null : d.summaryMd,
+      lesson: d.lesson === undefined ? null : d.lesson,
       brainVerdict: d.brainVerdict === undefined ? oryginal.brainVerdict : d.brainVerdict,
       ruleChecks: d.ruleChecks.length > 0 ? d.ruleChecks.map((r) => ({ ruleId: r.ruleId, verdict: r.verdict })) : "bez zmian",
     };
     const evidenceHash = skrotTekstu(kanonicznyJson(manifest));
     const [ust] = await tx.select({ v: settings.rulesetVersion }).from(settings).where(eq(settings.id, 1)).limit(1);
+
+    // Idempotencja (review P5): ta sama korekta (werdykt, slowa, tresc) wyslana ponownie to ten sam wiersz (200).
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.override:${oryginal.id}:${evidenceHash}`}, 0))`);
+    const [juz] = await tx
+      .select({ id: tradeReviews.id, asOf: tradeReviews.asOf })
+      .from(tradeReviews)
+      .where(and(eq(tradeReviews.overridesReviewId, oryginal.id), eq(tradeReviews.kind, "user_override"), eq(tradeReviews.evidenceHash, evidenceHash)))
+      .limit(1);
+    if (juz) {
+      const [{ ile }] = await tx.select({ ile: sql<number>`count(*)::int` }).from(tradeRuleChecks).where(eq(tradeRuleChecks.reviewId, juz.id));
+      return { ok: true as const, reviewId: juz.id, overridesReviewId: oryginal.id, asOf: juz.asOf?.toISOString() ?? null, evidenceHash, ruleChecks: ile, utworzona: false };
+    }
 
     const [nowy] = await tx
       .insert(tradeReviews)
@@ -453,6 +492,6 @@ export async function zapiszKorekte(
     for (const r of nowe) {
       await tx.insert(tradeRuleChecks).values({ reviewId: nowy.id, ...r, userVerdict: null });
     }
-    return { ok: true as const, reviewId: nowy.id, overridesReviewId: oryginal.id, asOf: nowy.asOf?.toISOString() ?? null, evidenceHash, ruleChecks: nowe.length };
+    return { ok: true as const, reviewId: nowy.id, overridesReviewId: oryginal.id, asOf: nowy.asOf?.toISOString() ?? null, evidenceHash, ruleChecks: nowe.length, utworzona: true };
   });
 }

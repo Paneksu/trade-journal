@@ -117,3 +117,26 @@ describe("straznik: moduly API v2 nie zmieniaja zatwierdzen", () => {
     expect(zrodlo).not.toMatch(/tj\.actor['"]?\s*,\s*['"]ui['"]/);
   });
 });
+
+describe("straznik: trasa API nie moze zapisac jako uzytkownik (audyt 6, 15.10.2026)", () => {
+  const trasy = wszystkiePliki(KORZEN).filter((p) => /\.(ts|tsx)$/.test(p));
+  const moduly = readdirSync(LIB)
+    .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts") && n !== "zapis.ts")
+    .map((n) => path.join(LIB, n));
+
+  it("jest co sprawdzac", () => {
+    expect(trasy.length).toBeGreaterThan(30);
+    expect(moduly.length).toBeGreaterThan(10);
+  });
+
+  it.each([...trasy, ...moduly].map((p) => [path.relative(path.resolve(__dirname, "../.."), p).replaceAll("\\", "/"), p]))(
+    "%s nie uzywa zapisJakoUi, aktora »ui« ani modulow decyzji i akcji uzytkownika",
+    (_n, plik) => {
+      const zrodlo = bezKomentarzy(readFileSync(plik, "utf8"));
+      expect(zrodlo).not.toMatch(/zapisJakoUi/);
+      expect(zrodlo).not.toMatch(/zapisZAktorem\(\s*["'`]ui["'`]/);
+      expect(zrodlo).not.toMatch(/from\s+["']@\/lib\/decyzje(\/|["'])/);
+      expect(zrodlo).not.toMatch(/from\s+["']@\/lib\/actions(\/|["'])/);
+    },
+  );
+});

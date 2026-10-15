@@ -4,6 +4,7 @@ import type { z } from "zod";
 
 import {
   accounts,
+  aiSuggestions,
   backtestSessions,
   instruments,
   setups,
@@ -223,17 +224,58 @@ async function sprawdzTrade(tx: Db, tradeId: number, w: WymaganiaTradu): Promise
   return { ok: true };
 }
 
-/** Plan -> trade: setup, wersja setupu i zestaw regul zapisywane RAZ (tylko gdy pola trade'a sa puste). */
+/**
+ * Plan -> trade: zestaw regul zapisywany RAZ (tylko gdy pole trade'a jest puste).
+ *
+ * Setup trade'a (a przez niego statystyki setupu) wchodzi od razu WYLACZNIE wtedy, gdy wynika z planu
+ * zamrozonego PRZED wejsciem, ktorego teza to slowa uzytkownika (Slowa uzytkownika 15.10.2026:
+ * «Plan z moich slow = zatwierdzenie»). Kazde inne przypisanie przez AI idzie kolejka potwierdzen
+ * (ai_suggestions, rodzaj trade_setup) i liczy sie dopiero po zatwierdzeniu w UI.
+ */
 async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
   if (plan.tradeId === null) return;
+  const [tr] = await tx.select({ entryTime: trades.entryTime, setupId: trades.setupId }).from(trades).where(eq(trades.id, plan.tradeId)).limit(1);
+  if (!tr) return;
+  const zSlowUzytkownika = plan.thesisWordsId !== null && plan.frozenAt.getTime() <= tr.entryTime.getTime();
+
   await tx
     .update(trades)
     .set({
-      setupId: sql`coalesce(${trades.setupId}, ${plan.setupId})`,
-      setupVersionId: sql`coalesce(${trades.setupVersionId}, ${plan.setupVersionId})`,
+      ...(zSlowUzytkownika
+        ? {
+            setupId: sql`coalesce(${trades.setupId}, ${plan.setupId})`,
+            setupVersionId: sql`coalesce(${trades.setupVersionId}, ${plan.setupVersionId})`,
+          }
+        : {}),
       rulesetVersion: sql`coalesce(${trades.rulesetVersion}, ${plan.rulesetVersion})`,
     })
     .where(eq(trades.id, plan.tradeId));
+
+  if (!zSlowUzytkownika && plan.setupId !== null && tr.setupId === null) {
+    const [setup] = await tx.select({ slug: setups.slug }).from(setups).where(eq(setups.id, plan.setupId)).limit(1);
+    if (!setup) return;
+    const payload = { setupSlug: setup.slug, setupId: plan.setupId };
+    const cel = { type: "trade", id: plan.tradeId };
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.suggestion:trade_setup:${plan.tradeId}`}, 0))`);
+    const [juz] = await tx
+      .select({ id: aiSuggestions.id })
+      .from(aiSuggestions)
+      .where(and(eq(aiSuggestions.kind, "trade_setup"), sql`${aiSuggestions.target} = ${JSON.stringify(cel)}::jsonb`, sql`${aiSuggestions.payload} = ${JSON.stringify(payload)}::jsonb`))
+      .limit(1);
+    if (!juz) {
+      await tx.insert(aiSuggestions).values({
+        kind: "trade_setup",
+        target: cel,
+        payload,
+        claim: `Plan #${plan.id} wskazuje setup »${setup.slug}« dla trade'a #${plan.tradeId}, ale ${plan.thesisWordsId === null ? "plan nie ma tezy ze słów użytkownika" : "plan powstał po wejściu"}, więc przypisanie czeka na Twoje zatwierdzenie.`,
+        evidence: [{ type: "trade_plan", ref: plan.id, note: "przypisanie setupu z planu bez słów użytkownika przed wejściem" }],
+        evidenceLevel: "inferred",
+        n: null,
+        createdByTokenId: plan.createdByTokenId,
+        status: "pending",
+      });
+    }
+  }
 }
 
 export async function przypnijPlan(tx: Transakcja, planId: number, tradeId: number): Promise<WynikPlanu> {
@@ -255,16 +297,32 @@ export async function dopiszDoPlanu(
   tx: Transakcja,
   planId: number,
   d: z.output<typeof PlanDopisekSchema>,
-): Promise<{ ok: true; dopisek: typeof tradePlanAddenda.$inferSelect } | Extract<WynikPlanu, { ok: false }>> {
+): Promise<{ ok: true; dopisek: typeof tradePlanAddenda.$inferSelect; utworzony: boolean } | Extract<WynikPlanu, { ok: false }>> {
   const [plan] = await tx.select({ id: tradePlans.id }).from(tradePlans).where(eq(tradePlans.id, planId)).limit(1);
   if (!plan) return odrzuc(404, "not_found", `Plan #${planId} nie istnieje.`);
   const brak = await istnieja(tx, [d.wordsId]);
   if (brak !== null) return odrzuc(422, "unknown_reference", `pole wordsId: słowa użytkownika #${brak} nie istnieją (zapisz je najpierw przez POST /api/v2/user-words).`);
+  // Idempotencja (review P5): ten sam dopisek (plan, pole, wartosc, slowa) wyslany ponownie to ten sam wiersz (200).
+  const nowaWartosc = d.newValue === undefined ? null : d.newValue;
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.planadd:${planId}:${d.field ?? ""}:${d.wordsId}:${JSON.stringify(nowaWartosc)}`}, 0))`);
+  const [juz] = await tx
+    .select()
+    .from(tradePlanAddenda)
+    .where(
+      and(
+        eq(tradePlanAddenda.planId, planId),
+        sql`${tradePlanAddenda.field} is not distinct from ${d.field ?? null}`,
+        eq(tradePlanAddenda.wordsId, d.wordsId),
+        sql`${tradePlanAddenda.newValue} is not distinct from ${JSON.stringify(nowaWartosc)}::jsonb`,
+      ),
+    )
+    .limit(1);
+  if (juz) return { ok: true, dopisek: juz, utworzony: false };
   const [dopisek] = await tx
     .insert(tradePlanAddenda)
-    .values({ planId, field: d.field ?? null, newValue: d.newValue === undefined ? null : d.newValue, wordsId: d.wordsId })
+    .values({ planId, field: d.field ?? null, newValue: nowaWartosc, wordsId: d.wordsId })
     .returning();
-  return { ok: true, dopisek };
+  return { ok: true, dopisek, utworzony: true };
 }
 
 export function zDopiska(a: typeof tradePlanAddenda.$inferSelect) {

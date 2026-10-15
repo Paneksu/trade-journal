@@ -92,7 +92,7 @@ export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis,
   if (!w.ok) return w.odpowiedz;
 
   const wynik = await zapiszOcene(id.dane, w.dane, zapis, tokenId);
-  if (!wynik.ok) return blad(wynik.status, wynik.kod ?? "not_found", wynik.error, wynik.dodatkowe ?? {});
+  if (!wynik.ok) return blad(wynik.status, wynik.kod ?? "not_found", wynik.komunikat, wynik.dodatkowe ?? {});
   return odpowiedz(wynik, wynik.created ? 201 : 200);
 }
 
@@ -106,7 +106,7 @@ export async function obsluzOcene(request: Request, idRaw: string, zapis: Zapis,
  * Zrzuty AI (tradingview / fxreplay) zastepuja wszystkie zrzuty tego pochodzenia na trade'cie;
  * origin = manual (zdjecie od uzytkownika) tylko DOPISUJE i niczego nie kasuje.
  */
-export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis): Promise<Response> {
+export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis, requestId?: string): Promise<Response> {
   const id = idZAdresu(idRaw, "id trade'a");
   if (!id.ok) return id.odpowiedz;
 
@@ -126,7 +126,7 @@ export async function obsluzZrzuty(request: Request, idRaw: string, zapis: Zapis
   const meta = wczytajMetaZrzutow(form);
   if (!meta.ok) return blad(400, "bad_request", meta.error);
 
-  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly, zapis, meta.meta);
+  const wynik = await zastapZrzuty(id.dane, o.origin, pliki, interwaly, zapis, meta.meta, requestId);
   if (!wynik.ok) {
     const kod = wynik.status === 404 ? "not_found" : wynik.status === 500 ? "internal_error" : "validation_failed";
     return blad(wynik.status, kod, wynik.error);

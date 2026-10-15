@@ -270,4 +270,68 @@ describe.skipIf(!MOZNA_NA_BAZIE)("moduł prop: presety, reguly konta, bufory i k
     const sa = po.json.accounts.find((x: { accountId: number }) => x.accountId === a);
     expect(sa.contractWarnings[0].text).toContain("4 przy limicie 3");
   });
+
+  it("niepotwierdzone reguly: bufory na OSTRZEJSZEJ z dwoch (potwierdzonej i nowej), rulesConfirmed=false ze znacznikiem; po potwierdzeniu w UI liczy sie nowa", async () => {
+    const id = await kontoProp();
+    const stara = await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 200_000, dailyLossCents: 80_000 });
+    const nowa = await reguly(id, { validFrom: "2026-06-01", ddType: "static", maxDdCents: 400_000, dailyLossCents: 150_000 });
+    expect(stara.status).toBe(201);
+    expect(nowa.status).toBe(201);
+    await wstawTrade(sql, { kontoId: id, instrumentId, dzien: "2026-07-01", status: "closed", r: -50_000 / 40000 });
+
+    const { potwierdzReguleKonta } = await import("@/lib/decyzje/prop");
+    // brak potwierdzonych: liczy na nowej, ale mowi, ze niepotwierdzona
+    const bez = await status(id, "?day=2026-07-01");
+    zgodneZKontraktem("get", "/prop/accounts/{id}/status", bez.json);
+    expect(bez.json.rulesConfirmed).toBe(false);
+    expect(bez.json.rulesUsed.source).toBe("unconfirmed_only");
+    expect(bez.json.state.drawdownBufferCents).toBe(350_000);
+
+    expect((await potwierdzReguleKonta(stara.json.id)).ok).toBe(true);
+    const ostrzejsza = await status(id, "?day=2026-07-01");
+    zgodneZKontraktem("get", "/prop/accounts/{id}/status", ostrzejsza.json);
+    expect(ostrzejsza.json.rulesConfirmed).toBe(false);
+    expect(ostrzejsza.json.rulesNote).toContain("ostrzejszej");
+    expect(ostrzejsza.json.rulesUsed).toMatchObject({ source: "stricter_of_confirmed_and_unconfirmed", confirmedRuleId: stara.json.id, maxDdCents: 200_000, dailyLossCents: 80_000 });
+    expect(ostrzejsza.json.state.drawdownBufferCents).toBe(150_000); // 200 000 - 50 000, nie 350 000 z luzniejszej nowej
+    expect(ostrzejsza.json.state.dailyLossBufferCents).toBe(30_000);
+    expect(ostrzejsza.json.rules.maxDdCents).toBe(400_000); // regula zapisana jest taka, jaka przyszla; ostrzejsza to tylko podstawa liczenia
+
+    expect((await potwierdzReguleKonta(nowa.json.id)).ok).toBe(true);
+    expect((await potwierdzReguleKonta(nowa.json.id)).ok).toBe(false); // drugi raz
+    const po = await status(id, "?day=2026-07-01");
+    expect(po.json.rulesConfirmed).toBe(true);
+    expect(po.json.rulesUsed.source).toBe("confirmed");
+    expect(po.json.state.drawdownBufferCents).toBe(350_000);
+    expect(po.json.rulesNote).toBeNull();
+  });
+
+  it("potwierdzic reguly moze tylko UI: SQL z aktorem api:* dostaje TJ403, a wstawienie juz potwierdzonej reguly tez", async () => {
+    const id = await kontoProp();
+    const r = await reguly(id, { validFrom: "2026-02-01", ddType: "static", maxDdCents: 300_000 });
+    const { zapisZAktorem } = await import("./zapis");
+    const { sql: dsql } = await import("drizzle-orm");
+    const probuj = async (f: () => Promise<unknown>) => {
+      try {
+        await f();
+        return null;
+      } catch (e) {
+        return (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code ?? null;
+      }
+    };
+    expect(await probuj(() => zapisZAktorem(`api:${rw.id}`, (tx) => tx.execute(dsql`update prop_rules set confirmed_at = now() where id = ${r.json.id}`)))).toBe("TJ403");
+    expect(await probuj(() => zapisZAktorem(`api:${rw.id}`, (tx) => tx.execute(dsql`insert into prop_rules (account_id, valid_from, dd_type, max_dd_cents, confirmed_at) values (${id}, '2026-03-01', 'static', 100000, now())`)))).toBe("TJ403");
+    expect((await sql`select confirmed_at from prop_rules where id = ${r.json.id}`)[0].confirmed_at).toBeNull();
+  });
+
+  it("stan na dzien z przeszlosci nie widzi pozniejszych trade'ow (P3): trade z dnia po zapytaniu nie rusza salda ani buforow", async () => {
+    const id = await kontoProp();
+    expect((await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 500_000 })).status).toBe(201);
+    await wstawTrade(sql, { kontoId: id, instrumentId, dzien: "2026-03-02", status: "closed", r: -1 });
+    await wstawTrade(sql, { kontoId: id, instrumentId, dzien: "2026-03-10", status: "closed", r: -2 });
+    const wtedy = await status(id, "?day=2026-03-05");
+    expect(wtedy.json.state.balanceCents).toBe(5_000_000 - 40_000);
+    const pozniej = await status(id, "?day=2026-03-10");
+    expect(pozniej.json.state.balanceCents).toBe(5_000_000 - 120_000);
+  });
 });

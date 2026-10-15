@@ -335,7 +335,7 @@ if (!TEST_URL) {
 
 
 
-  describe("migracje 0017-0027 na prawdziwej bazie", () => {
+  describe("migracje 0017-0028 na prawdziwej bazie", () => {
     beforeAll(async () => {
       // 1) migrator drizzle (jak `npm run db:migrate`: jedna transakcja na cala serie)
       await reset();
@@ -346,7 +346,7 @@ if (!TEST_URL) {
       // 2) scripts/migrate.mjs (jak start kontenera: transakcja na plik); to ta baza zostaje do testow
       await reset();
       const wyjscie1 = migrateSkryptem();
-      expect(wyjscie1).toContain("0027_mentor_luki");
+      expect(wyjscie1).toContain("0028_poprawki_po_przegladzie");
       odciskSkrypt = await odcisk();
       const wyjscie2 = migrateSkryptem();
       expect(wyjscie2).toContain("nic nowego");
@@ -1706,8 +1706,12 @@ if (!TEST_URL) {
           INSERT INTO prop_rules (account_id, preset_id, valid_from, dd_type, max_dd_cents, dd_lock_cents, extra)
           VALUES (${k.accountId}, ${p.id}, '2026-10-01', 'trailing_to_static', 200000, 200000, '{"trail_basis":"eod"}'::jsonb) RETURNING id`;
         // kazda wartosc nadpisywalna zwyklym UPDATE
-        await sql`UPDATE prop_rules SET max_dd_cents = 250000, daily_loss_cents = 100000, consistency_pct = 40, confirmed_at = now(),
+        // potwierdzenie (confirmed_at) robi tylko UI (0028), reszta wartosci zwyklym UPDATE
+        await sql`UPDATE prop_rules SET max_dd_cents = 250000, daily_loss_cents = 100000, consistency_pct = 40,
                   extra = '{"trail_basis":"intraday"}'::jsonb WHERE id = ${r.id}`;
+        expect((await blad(sql`UPDATE prop_rules SET confirmed_at = now() WHERE id = ${r.id}`)).code).toBe("TJ403");
+        await jako("ui", (tx) => tx`UPDATE prop_rules SET confirmed_at = now() WHERE id = ${r.id}`);
+        expect((await sql`SELECT confirmed_at IS NOT NULL AS c FROM prop_rules WHERE id = ${r.id}`)[0].c).toBe(true);
         expect((await sql`SELECT consistency_pct::text AS c FROM prop_rules WHERE id = ${r.id}`)[0].c).toBe("40.00");
         const dup = await blad(sql`INSERT INTO prop_rules (account_id, valid_from, dd_type, max_dd_cents) VALUES (${k.accountId}, '2026-10-01', 'eod', 1000)`);
         expect(dup.constraint_name).toBe("prop_rules_account_valid_uq");
@@ -1867,7 +1871,10 @@ if (!TEST_URL) {
             tx.unsafe(`UPDATE mentor_claims SET ${set} WHERE id = ${c.id}`), kolumna);
         }
         // zmienne: streszczenie AI, status
-        await sql`UPDATE mentor_claims SET paraphrase = 'streszczenie', status = 'review_ok' WHERE id = ${c.id}`;
+        await sql`UPDATE mentor_claims SET paraphrase = 'streszczenie', status = 'merged' WHERE id = ${c.id}`;
+        // ocena zgodnosci z filmem (review_ok / review_bad) to decyzja uzytkownika (0028)
+        expect((await blad(sql`UPDATE mentor_claims SET status = 'review_ok' WHERE id = ${c.id}`)).code).toBe("TJ403");
+        await jako("ui", (tx) => tx`UPDATE mentor_claims SET status = 'review_ok' WHERE id = ${c.id}`);
         expect((await blad(sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zr.id}, ${cytat}, 12, 'concept')`)).constraint_name).toBe("mentor_claims_source_quote_uq");
         await sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, claim_type) VALUES (${zr.id}, ${cytat}, 99, 'concept')`;
         expect((await blad(sql`INSERT INTO mentor_claims (source_id, quote, t_start_s, t_end_s, claim_type) VALUES (${zr.id}, 'x', 10, 5, 'concept')`)).constraint_name).toBe("mentor_claims_t_end");
@@ -1875,7 +1882,7 @@ if (!TEST_URL) {
         expect((await blad(sql`INSERT INTO mentor_sources (platform, video_id, title, url) VALUES ('youtube', ${(await sql`SELECT video_id FROM mentor_sources WHERE id = ${zr.id}`)[0].video_id}, 't', 'https://x')`)).constraint_name).toBe("mentor_sources_video_uq");
         // kasowanie notatki, do ktorej wlaczono twierdzenie, tylko zeruje merged_note_id (kolumna poza ochrona)
         const nid = await nowaNotatka(sql, unik("Wlaczone"), { kind: "concept" });
-        await sql`UPDATE mentor_claims SET merged_note_id = ${nid}, status = 'merged' WHERE id = ${c.id}`;
+        await sql`UPDATE mentor_claims SET merged_note_id = ${nid} WHERE id = ${c.id}`;
         await sql`DELETE FROM notes WHERE id = ${nid}`;
         expect((await sql`SELECT merged_note_id FROM mentor_claims WHERE id = ${c.id}`)[0].merged_note_id).toBeNull();
         // film z twierdzeniami kasuje sie razem z nimi, o ile nic na nie nie wskazuje
@@ -2178,21 +2185,21 @@ if (!TEST_URL) {
 
       const rollback = (nr: string) => readFileSync(path.join(ROOT, "docs", "v2", "rollback", `${nr}_down.sql`), "utf8");
 
-      it("0027_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
+      it("0028_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
         // wzorce: stan bazy po migracjach 0000..N zbudowany od zera osobnym przebiegiem
         const wzorzec = new Map<number, string>();
-        for (let n = 19; n <= 27; n++) wzorzec.set(n, await odciskPoMigracji(n));
-        // 0027 zbudowane od zera osobnym migratorem to ten sam katalog, co po scripts/migrate.mjs
+        for (let n = 19; n <= 28; n++) wzorzec.set(n, await odciskPoMigracji(n));
+        // 0028 zbudowane od zera osobnym migratorem to ten sam katalog, co po scripts/migrate.mjs
         await reset();
         migrateSkryptem();
         const przed = await odcisk();
-        expect(przed).toBe(wzorzec.get(27));
+        expect(przed).toBe(wzorzec.get(28));
         expect(przed).toBe(odciskSkrypt);
         expect((await sql`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(138);
 
         const admin = postgres(url, { max: 1, onnotice: () => {} });
         try {
-          for (const n of [27, 26, 25, 24, 23, 22, 21, 20]) {
+          for (const n of [28, 27, 26, 25, 24, 23, 22, 21, 20]) {
             const nr = `00${n}`;
             await admin.begin(async (tx) => {
               await tx.unsafe(rollback(nr));
@@ -2205,7 +2212,7 @@ if (!TEST_URL) {
             SELECT proname FROM pg_proc WHERE pronamespace = 'public'::regnamespace
               AND proname IN ('tj_guard_null_only', 'tj_ai_suggestion_flow', 'tj_note_addition_insert', 'tj_plan_guard',
                               'tj_review_override_check', 'tj_rule_check_guard', 'tj_log_threshold_change',
-                              'tj_weekly_prev_check', 'tj_mentor_claim_hash')`;
+                              'tj_weekly_prev_check', 'tj_mentor_claim_hash', 'tj_weekly_once')`;
           expect(funkcje2b.map((f) => f.proname)).toEqual([]);
 
           // faza 2: jak dotad
@@ -2245,7 +2252,7 @@ if (!TEST_URL) {
         // ponowne zastosowanie przez scripts/migrate.mjs
         const wyjscie = migrateSkryptem();
         for (const tag of ["0017_api_tokens", "0018_notatki", "0019_auth_events_token_fk", "0020_proces_playbook", "0021_plan_werdykt",
-          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki"]) {
+          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki", "0028_poprawki_po_przegladzie"]) {
           expect(wyjscie).toContain(tag);
         }
         expect(await odcisk()).toBe(przed);

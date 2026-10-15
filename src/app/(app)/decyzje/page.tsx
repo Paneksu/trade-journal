@@ -1,10 +1,11 @@
 import Link from "next/link";
 
-import { DecyzjaReguly, DecyzjaSetupu, DecyzjaSugestii } from "@/components/decyzje/formularze";
+import { DecyzjaReguly, DecyzjaSetupu, DecyzjaSugestii, PotwierdzenieReguly } from "@/components/decyzje/formularze";
 import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
+import { linkZDowodu } from "@/lib/api-v2/luki";
 import { dateTime } from "@/lib/format";
-import { licznikiDoDecyzji, propozycjeRegul, propozycjeSetupow, sugestieDoDecyzji } from "@/lib/queries/decyzje";
+import { licznikiDoDecyzji, propozycjeRegul, propozycjeSetupow, regulyKontDoPotwierdzenia, sugestieDoDecyzji } from "@/lib/queries/decyzje";
 
 export const metadata = { title: "Do decyzji — Dziennik tradingowy" };
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ const RODZAJE: Record<string, string> = {
   trade_link: "Powiązanie trade'u z notatką",
   setup_example: "Przykład setupu",
   process_grade: "Ocena procesu",
+  trade_setup: "Setup trade'u",
   profile_term: "Hasło słownika",
   day_conclusion: "Wniosek dnia",
   weekly_conclusion: "Wniosek tygodnia",
@@ -39,7 +41,7 @@ function opisCelu(target: Record<string, unknown>): string {
 
 export default async function DoDecyzjiPage() {
   await requireSession();
-  const [reguly, setupy, sugestie, liczniki] = await Promise.all([propozycjeRegul(), propozycjeSetupow(), sugestieDoDecyzji(), licznikiDoDecyzji()]);
+  const [reguly, setupy, sugestie, liczniki, regulyKont] = await Promise.all([propozycjeRegul(), propozycjeSetupow(), sugestieDoDecyzji(), licznikiDoDecyzji(), regulyKontDoPotwierdzenia()]);
   const regula = reguly[0];
   const setup = setupy[0];
 
@@ -97,6 +99,13 @@ export default async function DoDecyzjiPage() {
               {regula.evidence != null && (
                 <div>
                   <p className="etykieta">Dowody</p>
+                  {linkZDowodu(regula.evidence) && (
+                    <p className="text-sm">
+                      <a href={linkZDowodu(regula.evidence)!} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                        Film mentora w miejscu cytatu
+                      </a>
+                    </p>
+                  )}
                   <Dowod dane={regula.evidence} />
                 </div>
               )}
@@ -138,10 +147,57 @@ export default async function DoDecyzjiPage() {
                 <dd className="font-mono text-xs text-text">{JSON.stringify(setup.wersja.thresholds)}</dd>
               </dl>
               {setup.wersja.counterargument && <p className="text-sm text-text">Kontrargument: {setup.wersja.counterargument}</p>}
+              {linkZDowodu(setup.wersja.evidence) && (
+                <p className="text-sm">
+                  <a href={linkZDowodu(setup.wersja.evidence)!} target="_blank" rel="noopener noreferrer" className="text-accent underline">
+                    Film mentora w miejscu cytatu
+                  </a>
+                </p>
+              )}
               {setup.wersja.evidence != null && <Dowod dane={setup.wersja.evidence} />}
             </div>
-            <DecyzjaSetupu key={setup.versionId} versionId={setup.versionId} />
+            <DecyzjaSetupu
+              key={setup.versionId}
+              versionId={setup.versionId}
+              wersja={{ stopRule: setup.wersja.stopRule, targetRule: setup.wersja.targetRule, beRule: setup.wersja.beRule, invalidation: setup.wersja.invalidation, avoid: setup.wersja.avoid }}
+            />
           </div>
+        )}
+      </Panel>
+
+      <Panel
+        title="Reguły kont prop do potwierdzenia"
+        description="Dopóki nie potwierdzisz, że wartości zgadzają się z regulaminem firmy, bufory liczę na ostrzejszej z dwóch reguł: ostatniej potwierdzonej i nowej."
+      >
+        {regulyKont.length === 0 ? (
+          <EmptyState title="Wszystkie reguły kont są potwierdzone" />
+        ) : (
+          <ul className="divide-y divide-line">
+            {regulyKont.map((r) => (
+              <li key={r.id} className="space-y-2 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge>niepotwierdzone</Badge>
+                  {r.preset && <Badge>{r.preset.firm} · {r.preset.program} · {r.preset.phase}</Badge>}
+                  {r.preset?.needsVerification && <Badge>preset do weryfikacji</Badge>}
+                  <span className="text-sm text-text">{r.accountName}</span>
+                  <span className="text-xs text-faint">obowiązują od {r.validFrom}</span>
+                </div>
+                <dl className="grid gap-1 text-sm sm:grid-cols-[12rem_1fr]">
+                  <dt className="text-faint">Typ DD</dt>
+                  <dd className="text-text">{r.rule.ddType}</dd>
+                  <dt className="text-faint">Maks. DD</dt>
+                  <dd className="text-text">{(r.rule.maxDdCents / 100).toFixed(2)} USD</dd>
+                  <dt className="text-faint">Dzienny limit straty</dt>
+                  <dd className="text-text">{r.rule.dailyLossCents === null ? "brak" : `${(r.rule.dailyLossCents / 100).toFixed(2)} USD`}</dd>
+                  <dt className="text-faint">Consistency</dt>
+                  <dd className="text-text">{r.rule.consistencyPct === null ? "brak" : `${r.rule.consistencyPct}%`}</dd>
+                  <dt className="text-faint">Źródło</dt>
+                  <dd className="break-all text-text">{r.rule.sourceUrl ?? "brak"}{r.preset ? ` (odczytane ${r.preset.readOn})` : ""}</dd>
+                </dl>
+                <PotwierdzenieReguly id={r.id} />
+              </li>
+            ))}
+          </ul>
         )}
       </Panel>
 
