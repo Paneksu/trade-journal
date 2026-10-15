@@ -1,6 +1,7 @@
 import { signOut } from "@/lib/actions/auth";
 import { requireSession } from "@/lib/auth/guard";
-import { MobileBar, Sidebar } from "@/components/layout/nav";
+import { MobileBar, Sidebar, TopBar } from "@/components/layout/nav";
+import { Paleta } from "@/components/layout/paleta";
 import { licznikiDoDecyzji } from "@/lib/queries/decyzje";
 
 /* Kazdy ekran dziennika czyta dane uzytkownika przy zadaniu.
@@ -17,12 +18,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   });
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-tresc">
       <Sidebar signOutAction={signOut} liczniki={liczniki} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <MobileBar signOutAction={signOut} liczniki={liczniki} />
-        <main className="min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-6">{children}</main>
+        <TopBar />
+        {/* Wzor: tresc 968 px wysrodkowana obok paska bocznego (pomiar.json, kontener). Margines 16 przy 375.
+            Dol 96 px na telefonie: dolny pasek 64 px + oddech. */}
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-24 sm:px-6 lg:px-8 lg:pt-8 lg:pb-12">{children}</main>
       </div>
+      <MobileBar signOutAction={signOut} liczniki={liczniki} />
+      <Paleta />
     </div>
   );
 }

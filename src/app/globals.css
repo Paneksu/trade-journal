@@ -1,59 +1,118 @@
 @import "tailwindcss";
 
 /*
-  Tokeny wizualne dziennika. Motyw wylacznie ciemny - aplikacja jest terminalem
-  danych, a nie strona. Zielen i czerwien sa zarezerwowane dla zysku i straty;
-  nigdzie indziej ich nie uzywamy, zeby kolor niosl jedna informacje.
-  Kontrasty policzone na pikselach, wszystkie tekstowe >= 4.5:1.
+  Tokeny wizualne dziennika (UI v2, faza 5b, 15.10.2026). Zrodlo decyzji:
+  docs/design/kierunek.md (ZAAKCEPTOWANY 14.10.2026, szkielet A: Mercury),
+  pomiar wzoru: docs/design/wzory/pomiar.json.
+
+  "Wzor daje forme, marka daje tozsamosc": barwy i kroje sa MARKI (dawne
+  wartosci #hex przepisane 1:1 na OKLCH, hex w komentarzu), skala, odstepy,
+  promienie i ruch sa ze WZORU (Mercury dashboard, Playwright 14.10.2026).
+
+  Motyw wylacznie ciemny - aplikacja jest terminalem danych, a nie strona.
+  Zielen i czerwien sa zarezerwowane dla zysku i straty; nigdzie indziej ich
+  nie uzywamy, zeby kolor niosl jedna informacje. Akcent dostaja wylacznie:
+  glowna pigulka akcji ekranu, aktywny element nawigacji i zakladki, pasek
+  bufora prop, linki [[...]] i klodka zamrozonego planu (kierunek.md,
+  "Role rules"). Kontrasty policzone na pikselach, tekstowe >= 4.5:1.
+
+  Nazwy tokenow (--color-surface, --color-muted, ...) zostaja stare: ekrany
+  sprzed fazy 5 korzystaja z nich przez klasy Tailwinda i nie moga sie zepsuc.
 */
 @theme {
-  --color-bg: #0b0e12;
-  --color-surface: #12161c;
-  --color-surface-2: #191f26;
-  --color-surface-3: #212932;
-  --color-line: #262e38;
-  --color-line-strong: #35404d;
+  /* Powierzchnie. Kolejnosc jasnosci jak we wzorze (Mercury: pasek boczny 16,16,26 < tlo tresci 23,23,33
+     < karta 30,30,42). Marka ma te same trzy stopnie: #0b0e12 < #12161c < #191f26, wiec role wzoru
+     dostaja barwy marki 1:1 (kierunek.md: granaty Mercury -> powierzchnie klienta). */
+  --color-sidebar: oklch(16.24% 0.0098 255.7); /* #0b0e12 marka, rola: pasek boczny i dolny */
+  --color-tresc: oklch(19.88% 0.0136 258.4); /* #12161c marka, rola: tlo obszaru tresci */
+  --color-panel: oklch(23.64% 0.0162 252.5); /* #191f26 marka, rola: karta i panel */
+  --color-bg: oklch(16.24% 0.0098 255.7); /* #0b0e12 marka */
+  --color-surface: oklch(19.88% 0.0136 258.4); /* #12161c marka, tlo karty */
+  --color-surface-2: oklch(23.64% 0.0162 252.5); /* #191f26 marka, hover wiersza */
+  --color-surface-3: oklch(27.72% 0.0202 251.6); /* #212932 marka, pigulka neutralna */
+  --color-line: oklch(29.79% 0.0214 254.2); /* #262e38 marka, rola ramki "biel 12%" ze wzoru */
+  --color-line-strong: oklch(36.69% 0.0268 252.8); /* #35404d marka */
 
-  --color-text: #e7ecf1;
-  --color-muted: #97a3b0;
-  --color-faint: #838f9d;
+  --color-text: oklch(94.07% 0.0086 247.9); /* #e7ecf1 */
+  --color-muted: oklch(71.01% 0.0234 250.3); /* #97a3b0 */
+  --color-faint: oklch(64.5% 0.0252 252.3); /* #838f9d */
 
-  --color-accent: #e8a44c;
-  --color-accent-strong: #f5b968;
-  --color-accent-dim: #3a2c17;
+  --color-accent: oklch(76.81% 0.1308 70.5); /* #e8a44c marka */
+  --color-accent-strong: oklch(82.47% 0.1204 73.1); /* #f5b968 */
+  --color-accent-dim: oklch(30.35% 0.0394 76.5); /* #3a2c17, wzor: tlo aktywnej zakladki = akcent 20% */
 
-  --color-profit: #46c08b;
-  --color-profit-dim: #14312a;
-  --color-loss: #e5654f;
-  --color-loss-dim: #37201d;
+  --color-profit: oklch(72.59% 0.134 161.2); /* #46c08b */
+  --color-profit-dim: oklch(28.81% 0.0376 175.7); /* #14312a */
+  --color-loss: oklch(66.09% 0.164 31.7); /* #e5654f */
+  --color-loss-dim: oklch(27.25% 0.0365 27.8); /* #37201d */
   /* Jasniejsze warianty wylacznie na barwionym tle (kalendarz). Na cieplym
      kaflu podstawowa zielen ma 3,6:1, a te odmiany trzymaja 4,5:1. */
-  --color-profit-bright: #6fd6a8;
-  --color-loss-bright: #f08a78;
-  /* Wynik zerowy (BE). Byl identyczny z --color-faint (#838f9d, kontrast
-     1,00 miedzy nimi) - na kaflu BE wiersz wyniku nie roznil sie niczym od
-     metadaty pod spodem (recenzja 2026-08-30, znalezisko 7). Jasniejszy
-     odcien, miedzy --color-muted a --color-text: 11,32:1 na tle --color-bg
-     (mierzone na pikselach), 1,93:1 wobec --color-faint. */
-  --color-flat: #bfc7d0;
+  --color-profit-bright: oklch(80.14% 0.118 162.8); /* #6fd6a8 */
+  --color-loss-bright: oklch(73.87% 0.128 31); /* #f08a78 */
+  /* Wynik zerowy (BE): 11,32:1 na tle --color-bg (mierzone na pikselach),
+     1,93:1 wobec --color-faint (recenzja 2026-08-30, znalezisko 7). */
+  --color-flat: oklch(82.62% 0.0154 251.2); /* #bfc7d0 */
 
-  --color-viz-1: #e8a44c;
-  --color-viz-2: #5aa9e6;
-  --color-viz-3: #46c08b;
-  --color-viz-4: #b98ce0;
-  --color-viz-5: #e5654f;
-  --color-viz-6: #4fd1c5;
-  --color-viz-7: #d9c05a;
-  --color-viz-8: #8fa3b8;
+  --color-viz-1: oklch(76.81% 0.1308 70.5); /* #e8a44c */
+  --color-viz-2: oklch(70.99% 0.1188 243.9); /* #5aa9e6 */
+  --color-viz-3: oklch(72.59% 0.134 161.2); /* #46c08b */
+  --color-viz-4: oklch(71.42% 0.1277 308.1); /* #b98ce0 */
+  --color-viz-5: oklch(66.09% 0.164 31.7); /* #e5654f */
+  --color-viz-6: oklch(78.64% 0.1143 186.6); /* #4fd1c5 */
+  --color-viz-7: oklch(80.91% 0.125 95.7); /* #d9c05a */
+  --color-viz-8: oklch(70.7% 0.0382 249.7); /* #8fa3b8 */
 
   --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, "SFMono-Regular", monospace;
 
-  --radius-control: 6px;
-  --radius-panel: 10px;
+  /* Skala typografii ze wzoru (pomiar.json; 1440 i 375 identycznie), krój marki.
+     Nazwy = rola rozmiaru, nie poziom HTML. Waga 500 zamiast 380 (Plex nie ma 380). */
+  --text-tytul: 1.75rem; /* wzor: naglowek strony 28/36 */
+  --text-tytul--line-height: 2.25rem;
+  --text-liczba: 1.75rem; /* wzor: liczba bohater 28/36, tracking -0.03em */
+  --text-liczba--line-height: 2.25rem;
+  --text-liczba--letter-spacing: -0.03em;
+  --text-sekcja: 1.1875rem; /* wzor: naglowek sekcji 19/28 */
+  --text-sekcja--line-height: 1.75rem;
+  --text-karta: 0.9375rem; /* wzor: etykieta karty i pozycja nawigacji 15/24 */
+  --text-karta--line-height: 1.5rem;
+  --text-meta: 0.8125rem; /* wzor: tekst drugorzedny 13/20, +0.1px */
+  --text-meta--line-height: 1.25rem;
+  --text-meta--letter-spacing: 0.006em;
+  --text-grupa: 0.75rem; /* wzor: etykieta grupy nawigacji 12/20, +0.2px */
+  --text-grupa--line-height: 1.25rem;
+  --text-grupa--letter-spacing: 0.016em;
 
-  --shadow-panel: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-pop: 0 12px 32px -8px rgb(0 0 0 / 0.65);
+  /* Kontener tresci: wzor 968 px wysrodkowany obok paska bocznego. */
+  --container-tresc: 60.5rem;
+  /* Pasek boczny 220 px (wzor). */
+  --spacing-pasek: 13.75rem;
+
+  /* Promienie: kontrolka, zakladka i pigulka-wiersz, karta, pelny (rounded-full). */
+  --radius-control: 6px;
+  --radius-tab: 8px; /* wzor: zakladka aktywna r=8 */
+  --radius-panel: 12px; /* wzor: karta r=12 (bylo 10 px) */
+
+  /* Cienie: karty bez cienia, glebie niesie ramka (wzor: cien none, ramka 1 px).
+     Cien zostaje tylko dla warstw nad trescia (menu, szuflada, paleta). */
+  --shadow-panel: none;
+  --shadow-pop: 0 2px 4px oklch(5% 0.01 255 / 0.4), 0 16px 40px -8px oklch(5% 0.01 255 / 0.7);
+
+  /* Ruch ze wzoru: tlo i kolor 160 ms ease-out, linki 200 ms. Brak animacji wejscia. */
+  --ease-wzor: cubic-bezier(0, 0, 0.58, 1);
+}
+
+/* Tokeny bez klas Tailwinda: czasy i warstwy (zwykle zmienne w :root). */
+:root {
+  --czas-stan: 160ms; /* wzor: background-color, color 160ms ease-out */
+  --czas-link: 200ms; /* wzor: linki color 200ms ease-out */
+  --czas-warstwa: 220ms; /* szuflada i paleta; wzor milczy, ruch.md: czas stanu */
+
+  --z-przyklejone: 100;
+  --z-dropdown: 200;
+  --z-nakladka: 300;
+  --z-modal: 400;
+  --z-powiadomienie: 500;
 }
 
 @layer base {
@@ -122,11 +181,14 @@
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #45525f;
+    background: oklch(43.24% 0.0272 248.5); /* #45525f */
   }
 }
 
 @layer components {
+  /* Stary panel (ekrany sprzed fazy 5) zostaje na dawnej powierzchni #12161c i bez przesuniecia
+     stopni w srodku: jego kontrasty (kafle kalendarza, podpisy faint) byly mierzone na tym tle.
+     Glebie karty (#191f26) dostaja ekrany UI v2 przez .karta; stare ekrany dostana ja przy przebudowie. */
   .panel {
     /* Panel bywa dzieckiem siatki. Bez `min-width: 0` najszerszy wiersz w srodku
        rozpycha cala kolumne i strona zaczyna sie przewijac w bok na telefonie. */
@@ -137,12 +199,41 @@
     box-shadow: var(--shadow-panel);
   }
 
+  /* Karta UI v2 (wzor: Mercury, r=12, ramka 1 px, padding 24, bez cienia). */
+  .karta {
+    min-width: 0;
+    background-color: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-panel);
+  }
+
+  /* Wewnatrz karty kazda powierzchnia idzie stopien wyzej, zeby pola, hover i pigulki nie zlewaly sie
+     z tlem karty (karta ma barwe dawnego surface-2). Ten sam mechanizm dla starych paneli. */
+  .karta {
+    --color-surface: oklch(23.64% 0.0162 252.5); /* #191f26 = tlo karty */
+    --color-surface-2: oklch(26.53% 0.0181 251.9); /* #1f262e: faint 4,64:1, muted 5,95:1 (zmierzone) */
+    --color-surface-3: oklch(30.54% 0.0197 251.5); /* #283039, tylko pod tekst text/muted (faint < 4,5:1) */
+  }
+
   .etykieta {
     font-size: 11px;
     line-height: 1.2;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-faint);
+  }
+
+  /* Liczba w Plex Mono z cyframi tabelarycznymi: znak marki w kazdej liczbie. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Stany interakcji UI v2 na tokenach czasu ze wzoru. */
+  .przejscie {
+    transition-property: background-color, color, border-color;
+    transition-duration: var(--czas-stan);
+    transition-timing-function: var(--ease-wzor);
   }
 }
 
@@ -153,5 +244,6 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

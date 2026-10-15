@@ -125,3 +125,37 @@ export function SourceSwitch({ active }: { active: string }) {
     />
   );
 }
+
+/**
+ * Przełącznik widoku listy trade'ów (UI v2, wzór 2c): Lista / Galeria. Zostawia filtry z adresu,
+ * żeby ten sam zestaw trade'ów dało się obejrzeć w obu widokach. Aktywna pozycja jak zakładka
+ * we wzorze (r=8, tło akcentu 20%).
+ */
+export function WidokSwitch({ active }: { active: "lista" | "galeria" }) {
+  const params = useSearchParams();
+  const query = params.toString();
+  const opcje = [
+    { value: "lista", label: "Lista", href: `/trades${query ? `?${query}` : ""}` },
+    { value: "galeria", label: "Galeria", href: `/galeria${query ? `?${query}` : ""}` },
+  ] as const;
+  return (
+    <div role="group" aria-label="Widok" className="inline-flex gap-0.5 rounded-[var(--radius-tab)] border border-line bg-panel p-0.5">
+      {opcje.map((o) => {
+        const selected = o.value === active;
+        return (
+          <Link
+            key={o.value}
+            href={o.href}
+            aria-current={selected ? "true" : undefined}
+            className={cx(
+              "przejscie inline-flex h-7 items-center rounded-[6px] px-3 text-meta",
+              selected ? "bg-accent-dim text-accent-strong" : "text-muted hover:bg-surface-2 hover:text-text",
+            )}
+          >
+            {o.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}

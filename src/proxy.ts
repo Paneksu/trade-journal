@@ -11,7 +11,8 @@ import { readToken, SESSION_COOKIE } from "@/lib/auth/token";
  * W Next 16 plik nazywa sie `proxy`, a nie `middleware`, i chodzi na Node.
  */
 
-const PUBLIC = ["/login", "/_next", "/favicon", "/robots.txt", "/api/health"];
+/* Ikony i manifest PWA sa publiczne: przegladarka pobiera je bez ciasteczka (instalacja, ekran logowania). */
+const PUBLIC = ["/login", "/_next", "/favicon", "/robots.txt", "/api/health", "/icons/", "/manifest.webmanifest"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

@@ -7,6 +7,8 @@ export type Shot = {
   height: number | null;
   /** Interwal, z jakiego pochodzi ten obraz - ADR-015. Osobny od interwalu tagu. */
   interval: string | null;
+  /** UI v2 (zakładka Zrzuty): pochodzenie i czas zrzutu, np. "tradingview · 09:41". Tylko do odczytu. */
+  pochodzenie?: string | null;
 };
 
 /**

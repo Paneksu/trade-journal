@@ -1,4 +1,6 @@
-import { Badge, Panel } from "@/components/ui/base";
+import { Lock } from "lucide-react";
+
+import { Markdown } from "@/components/trade/markdown";
 import { ZdanieORegule } from "@/components/trades/zdanie-o-regule";
 import { cx } from "@/lib/classes";
 import {
@@ -13,13 +15,19 @@ import type { Werdykt } from "@/lib/domain/zgodnosc";
 import { dateTime, num, price } from "@/lib/format";
 import type { OcenaZRegulami } from "@/lib/queries/oceny";
 
-/* Werdykt reguly to zawsze tekst + kolor, nigdy sam kolor. */
+/*
+ * Werdykt reguly to zawsze tekst + znak, nigdy sam kolor. UI v2: zielen i czerwien sa tylko dla
+ * wyniku (kierunek.md, „Co zostaje z marki”), wiec zlamana regula dostaje akcent (rola ostrzezenia,
+ * jak progi prop), zgodna neutralny kontur.
+ */
 const WERDYKT_KLASY: Record<Werdykt, string> = {
-  pass: "border-profit/50 bg-profit-dim text-profit-bright",
-  fail: "border-loss/50 bg-loss-dim text-loss-bright",
-  na: "border-line-strong text-muted",
-  unclear: "border-accent/50 bg-accent-dim text-accent-strong",
+  pass: "border-line-strong text-text",
+  fail: "border-accent/60 bg-accent-dim text-accent-strong",
+  na: "border-line text-muted",
+  unclear: "border-dashed border-line-strong text-muted",
 };
+
+const WERDYKT_ZNAK: Record<Werdykt, string> = { pass: "✓", fail: "✗", na: "–", unclear: "?" };
 
 type DaneTradu = {
   id: number;
@@ -31,6 +39,14 @@ type DaneTradu = {
   exchangeTimezone: string;
 };
 
+export type MetaWerdyktu = {
+  asOf: string | null;
+  evidenceHash: string | null;
+  rulesetVersion: number | null;
+  lookAhead: boolean | null;
+  model: string | null;
+};
+
 const liczbaLubNull = (w: string | number | null | undefined): number | null => {
   if (w === null || w === undefined || w === "") return null;
   const n = Number(w);
@@ -38,16 +54,29 @@ const liczbaLubNull = (w: string | number | null | undefined): number | null => 
 };
 
 /**
- * Panel "Ocena AI" (ADR-028). Tekst z oceny pochodzi z zewnatrz (API), wiec
- * wszedzie idzie jako zwykly tekst z `whitespace-pre-wrap`, nigdy jako HTML.
- * Najnowsza ocena rozwinieta, starsze zwiniete.
+ * Panel "Ocena AI" (ADR-028; UI v2 wzór 3w: panel „Basis” z parallel.ai, Refero 1f946f8c): uzasadnienie,
+ * pod nim numerowane dowody [1] [2] = warunki reguły z dowodem, `as_of`, hash, wersja reguł. Tekst z AI
+ * renderuje `Markdown` (bez surowego HTML). Najnowsza ocena rozwinięta, starsze zwinięte. Wynik trade'a
+ * zakryty paskiem, dopóki trade z werdyktem nie jest zamknięty (`wynikUkryty`, MUST 2).
  */
-export function OcenaAiPanel({ trade, oceny }: { trade: DaneTradu; oceny: OcenaZRegulami[] }) {
+export function OcenaAiPanel({
+  trade,
+  oceny,
+  meta,
+  wynikUkryty = false,
+}: {
+  trade: DaneTradu;
+  oceny: OcenaZRegulami[];
+  meta?: Map<number, MetaWerdyktu>;
+  wynikUkryty?: boolean;
+}) {
   if (oceny.length === 0) {
     return (
-      <Panel title="Ocena AI" description="Mózg oceni ten trade względem reguł.">
-        <p className="px-4 py-6 text-sm text-faint">Ten trade nie ma jeszcze oceny.</p>
-      </Panel>
+      <section className="panel karta p-5 sm:p-6">
+        <h2 className="text-sekcja text-text">Ocena AI</h2>
+        <p className="mt-1 text-meta text-muted">Mózg oceni ten trade względem reguł, zanim zobaczy wynik.</p>
+        <p className="mt-6 text-meta text-faint">Ten trade nie ma jeszcze oceny.</p>
+      </section>
     );
   }
 
@@ -55,29 +84,38 @@ export function OcenaAiPanel({ trade, oceny }: { trade: DaneTradu; oceny: OcenaZ
   const [najnowsza, ...starsze] = posortowane;
 
   return (
-    <Panel
-      title="Ocena AI"
-      description="Co powiedział mózg i jak to wyszło względem reguł. Nie zmienia wyniku trade'a."
-    >
-      <OcenaTresc trade={trade} ocena={najnowsza} />
+    <section className="panel karta overflow-hidden">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
+        <div>
+          <h2 className="text-sekcja text-text">Ocena AI</h2>
+          <p className="mt-0.5 text-meta text-muted">Interpretacja AI z chwili decyzji. Nie zmienia wyniku trade&apos;a.</p>
+        </div>
+        <span className="inline-flex h-6 items-center rounded-full border border-line-strong px-2 text-grupa text-muted">interpretacja AI</span>
+      </header>
+      {wynikUkryty && (
+        <p className="flex items-center gap-2 border-b border-line bg-accent-dim px-5 py-2.5 text-meta text-accent-strong sm:px-6">
+          <Lock size={14} aria-hidden /> Wynik ukryty do zamknięcia trade&apos;a: werdykt powstał przed wynikiem i ma tak zostać.
+        </p>
+      )}
+      <OcenaTresc trade={trade} ocena={najnowsza} meta={meta?.get(najnowsza.id)} />
       {starsze.length > 0 && (
         <div className="border-t border-line">
           {starsze.map((o) => (
             <details key={o.id} className="border-b border-line last:border-b-0">
-              <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 px-4 py-2.5 text-sm text-muted hover:text-text">
+              <summary className="przejscie flex cursor-pointer flex-wrap items-center gap-x-2 px-5 py-3 text-meta text-muted hover:text-text sm:px-6">
                 Starsza ocena: {PODSTAWA_NAZWY[o.basis]}
-                <span className="liczba text-xs text-faint">{dateTime(o.createdAt, trade.exchangeTimezone)}</span>
+                <span className="num text-faint">{dateTime(o.createdAt, trade.exchangeTimezone)}</span>
               </summary>
-              <OcenaTresc trade={trade} ocena={o} />
+              <OcenaTresc trade={trade} ocena={o} meta={meta?.get(o.id)} />
             </details>
           ))}
         </div>
       )}
-    </Panel>
+    </section>
   );
 }
 
-function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami }) {
+function OcenaTresc({ trade, ocena, meta }: { trade: DaneTradu; ocena: OcenaZRegulami; meta?: MetaWerdyktu }) {
   const plan = ocena.brainPlan;
   const wiersze = porownajPlan(
     plan,
@@ -92,49 +130,42 @@ function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami 
   const maPlan = wiersze.some((w) => w.mozg !== null);
 
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        <Badge title={PODSTAWA_OPISY[ocena.basis]}>{PODSTAWA_NAZWY[ocena.basis]}</Badge>
+    <div data-ocena className="space-y-6 px-5 py-5 sm:px-6">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-meta">
+        <span title={PODSTAWA_OPISY[ocena.basis]} className="inline-flex h-6 items-center rounded-full border border-line-strong px-2 text-muted">
+          {PODSTAWA_NAZWY[ocena.basis]}
+        </span>
         {ocena.setupType && (
-          <span className="text-sm text-text">
-            <span className="etykieta mr-1.5">Setup</span>
+          <span className="text-text">
+            <span className="mr-1.5 text-muted">Setup</span>
             {ocena.setupType}
           </span>
         )}
-        <span className="liczba text-xs text-faint">
+        <span className="num text-faint">
           {dateTime(ocena.createdAt, trade.exchangeTimezone)}
           {ocena.brainVersion && <> · wersja mózgu {ocena.brainVersion.slice(0, 8)}</>}
         </span>
       </div>
 
-      <div className="rounded-[var(--radius-control)] border border-line bg-surface-2 p-3">
+      <div className="rounded-[var(--radius-tab)] border border-line bg-bg/40 p-4">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <p className="etykieta">Werdykt mózgu</p>
-          <p className="text-base font-semibold text-text">
-            {ocena.brainVerdict ? WERDYKT_MOZGU_NAZWY[ocena.brainVerdict] : "brak"}
-          </p>
-          <p
-            className={cx(
-              "text-sm",
-              decyzja.wynik === "zgodna" && "text-profit",
-              decyzja.wynik === "odstepstwo" && "text-accent",
-              decyzja.wynik === "brak" && "text-faint",
-            )}
-          >
+          <p className="text-meta text-muted">Werdykt mózgu</p>
+          <p className="text-karta font-semibold text-text">{ocena.brainVerdict ? WERDYKT_MOZGU_NAZWY[ocena.brainVerdict] : "brak"}</p>
+          <p className={cx("text-meta", decyzja.wynik === "odstepstwo" ? "text-accent-strong" : decyzja.wynik === "brak" ? "text-faint" : "text-muted")}>
             {decyzja.opis}
           </p>
         </div>
 
         {maPlan && (
           <div className="mt-3 overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-meta">
               <caption className="sr-only">Plan mózgu obok tego, co zrobiłeś, z różnicą w tickach</caption>
               <thead>
-                <tr className="border-b border-line">
-                  <th scope="col" className="etykieta py-1.5 pr-3 text-left">Poziom</th>
-                  <th scope="col" className="etykieta px-2 py-1.5 text-right">Plan mózgu</th>
-                  <th scope="col" className="etykieta px-2 py-1.5 text-right">Ty</th>
-                  <th scope="col" className="etykieta py-1.5 pl-3 text-right">Różnica</th>
+                <tr className="border-b border-line text-muted">
+                  <th scope="col" className="py-1.5 pr-3 text-left font-normal">Poziom</th>
+                  <th scope="col" className="px-2 py-1.5 text-right font-normal">Plan mózgu</th>
+                  <th scope="col" className="px-2 py-1.5 text-right font-normal">Ty</th>
+                  <th scope="col" className="py-1.5 pl-3 text-right font-normal">Różnica</th>
                 </tr>
               </thead>
               <tbody>
@@ -143,9 +174,9 @@ function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami 
                     <th scope="row" className="py-1.5 pr-3 text-left font-normal text-muted">
                       {w.etykieta}
                     </th>
-                    <td className="liczba px-2 py-1.5 text-right">{price(w.mozg, trade.tickSize)}</td>
-                    <td className="liczba px-2 py-1.5 text-right">{price(w.uzytkownik, trade.tickSize)}</td>
-                    <td className="liczba py-1.5 pl-3 text-right text-muted">
+                    <td className="num px-2 py-1.5 text-right">{price(w.mozg, trade.tickSize)}</td>
+                    <td className="num px-2 py-1.5 text-right">{price(w.uzytkownik, trade.tickSize)}</td>
+                    <td className="num py-1.5 pl-3 text-right text-muted">
                       {w.roznicaTickow === null
                         ? "—"
                         : `${w.roznicaTickow > 0 ? "+" : ""}${num(w.roznicaTickow, Number.isInteger(w.roznicaTickow) ? 0 : 2)} tick.`}
@@ -157,7 +188,7 @@ function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami 
           </div>
         )}
         {typeof plan?.interwalWejscia === "string" && plan.interwalWejscia !== "" && (
-          <p className="mt-2 text-xs text-faint">
+          <p className="mt-2 text-meta text-faint">
             Wejście szukane na {plan.interwalWejscia}
             {/* Stare wiersze mogly zapisac plan bez walidacji typow. */}
             {Array.isArray(plan.interwalyKontekstu) && plan.interwalyKontekstu.length > 0
@@ -170,58 +201,71 @@ function OcenaTresc({ trade, ocena }: { trade: DaneTradu; ocena: OcenaZRegulami 
 
       {ocena.summaryMd && (
         <div>
-          <p className="etykieta">Co było inne</p>
-          <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-text">{ocena.summaryMd}</p>
+          <h3 className="mb-2 text-karta text-text">Uzasadnienie</h3>
+          <Markdown>{ocena.summaryMd}</Markdown>
         </div>
       )}
 
       <div>
-        <p className="etykieta mb-1.5">Reguły</p>
+        <h3 className="mb-2 text-karta text-text">Dowody</h3>
         {ocena.reguly.length === 0 ? (
-          <p className="text-sm text-faint">Ocena nie sprawdzała żadnych reguł.</p>
+          <p className="text-meta text-faint">Ocena nie sprawdzała żadnych reguł.</p>
         ) : (
-          <ul className="divide-y divide-line rounded-[var(--radius-control)] border border-line">
-            {ocena.reguly.map((r) => (
-              <li
-                key={r.id}
-                className="grid gap-x-4 gap-y-2 px-3 py-2.5 text-sm md:grid-cols-[minmax(0,2fr)_auto_minmax(0,2fr)_auto] md:items-start"
-              >
-                <div className="min-w-0">
-                  <span className="liczba text-xs text-accent">{r.ruleId}</span>
-                  <p className="mt-0.5 whitespace-pre-wrap text-text">{r.ruleText}</p>
+          <ol className="flex flex-col gap-4">
+            {ocena.reguly.map((r, i) => (
+              <li key={r.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-2">
+                <span className="num pt-0.5 text-meta text-faint">[{i + 1}]</span>
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="num text-meta text-accent">{r.ruleId}</span>
+                    <span className="sr-only">Werdykt: </span>
+                    <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border px-2 text-grupa whitespace-nowrap", WERDYKT_KLASY[r.verdict])}>
+                      <span aria-hidden>{WERDYKT_ZNAK[r.verdict]}</span>
+                      {WERDYKT_REGULY_NAZWY[r.verdict]}
+                    </span>
+                  </div>
+                  <p className="text-karta whitespace-pre-wrap text-text">{r.ruleText}</p>
+                  <p className="text-meta whitespace-pre-wrap text-muted">
+                    <span className="mr-1.5 text-faint">Dowód</span>
+                    {r.evidence ?? "—"}
+                  </p>
+                  <ZdanieORegule tradeId={trade.id} checkId={r.id} ruleId={r.ruleId} poczatkowe={r.userVerdict} />
                 </div>
-                <div>
-                  <span className="sr-only">Werdykt: </span>
-                  <span
-                    className={cx(
-                      "inline-flex rounded-[var(--radius-control)] border px-1.5 py-0.5 text-xs whitespace-nowrap",
-                      WERDYKT_KLASY[r.verdict],
-                    )}
-                  >
-                    {WERDYKT_REGULY_NAZWY[r.verdict]}
-                  </span>
-                </div>
-                <p className="min-w-0 whitespace-pre-wrap text-muted">
-                  <span className="etykieta mr-1.5 md:hidden">Dowód</span>
-                  {r.evidence ?? "—"}
-                </p>
-                <ZdanieORegule
-                  tradeId={trade.id}
-                  checkId={r.id}
-                  ruleId={r.ruleId}
-                  poczatkowe={r.userVerdict}
-                />
               </li>
             ))}
-          </ul>
+          </ol>
         )}
       </div>
 
       {ocena.lesson && (
-        <div className="border-l-2 border-accent bg-accent-dim px-3 py-2">
-          <p className="etykieta text-accent-strong">Lekcja</p>
-          <p className="mt-0.5 text-sm whitespace-pre-wrap text-text">{ocena.lesson}</p>
+        <div className="border-l-2 border-accent pl-3">
+          <p className="text-meta text-accent-strong">Lekcja</p>
+          <Markdown className="mt-0.5">{ocena.lesson}</Markdown>
         </div>
+      )}
+
+      {meta && (meta.asOf || meta.evidenceHash) && (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-4 text-meta sm:grid-cols-4">
+          <div>
+            <dt className="text-faint">as_of</dt>
+            <dd className="num text-muted">{meta.asOf ? dateTime(meta.asOf, trade.exchangeTimezone) : "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-faint">Hash danych</dt>
+            <dd className="num text-muted" title={meta.evidenceHash ?? undefined}>{meta.evidenceHash ? meta.evidenceHash.slice(0, 12) : "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-faint">Wersja reguł</dt>
+            <dd className="num text-muted">{meta.rulesetVersion ?? "—"}</dd>
+          </div>
+          <div>
+            <dt className="text-faint">Model</dt>
+            <dd className="num text-muted">
+              {meta.model ?? "—"}
+              {meta.lookAhead && <span className="block text-accent-strong">mógł znać ten dzień</span>}
+            </dd>
+          </div>
+        </dl>
       )}
     </div>
   );

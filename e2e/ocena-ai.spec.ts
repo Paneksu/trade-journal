@@ -110,7 +110,7 @@ test.describe("ocena AI w interfejsie", () => {
 
     const caly = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: "Ocena AI" }) });
     // Najnowsza ocena (rozwinięta); starsza siedzi w <details>.
-    const panel = caly.locator("div.space-y-4").first();
+    const panel = caly.locator("[data-ocena]").first();
     await expect(panel.getByText("Wejdź", { exact: true })).toBeVisible();
     await expect(panel.getByText("Mózg radził wejść, wszedłeś.")).toBeVisible();
     await expect(panel.getByText("Z wykresu, przed wynikiem").first()).toBeVisible();

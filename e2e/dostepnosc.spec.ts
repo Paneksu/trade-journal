@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
  */
 
 const EKRANY = [
-  { nazwa: "pulpit", adres: "/" },
+  { nazwa: "dziś", adres: "/" },
   { nazwa: "trade'y", adres: "/trades" },
   { nazwa: "statystyki", adres: "/stats" },
   { nazwa: "kalendarz", adres: "/calendar" },

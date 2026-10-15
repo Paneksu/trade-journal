@@ -102,6 +102,11 @@ export function ScreenshotGrid({
               ) : (
                 s.interval && <IntervalBadge interval={s.interval} />
               )}
+              {s.pochodzenie && (
+                <span className="num pointer-events-none absolute top-2 left-2 rounded-[var(--radius-control)] border border-line-strong bg-bg px-1.5 py-0.5 text-xs text-muted">
+                  {s.pochodzenie}
+                </span>
+              )}
               {onUsun && <UsunZrzut id={s.id} onUsun={onUsun} />}
             </figure>
           ))}

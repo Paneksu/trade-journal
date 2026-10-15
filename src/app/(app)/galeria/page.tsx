@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { GalleryGrid } from "@/components/gallery/gallery-grid";
-import { SourceSwitch } from "@/components/layout/toolbar";
+import { SourceSwitch, WidokSwitch } from "@/components/layout/toolbar";
 import { FilterBar } from "@/components/trades/filter-bar";
 import { requireSession } from "@/lib/auth/guard";
 import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
@@ -69,6 +69,8 @@ export default async function GaleriaPage({
           <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Galeria</h1>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {/* UI v2: Galeria to widok listy trade'ów (wzór 2c); przełącznik zostawia filtry. */}
+          <WidokSwitch active="galeria" />
           <SourceSwitch
             active={zrodloPrzelacznika(filtry.source)}
           />

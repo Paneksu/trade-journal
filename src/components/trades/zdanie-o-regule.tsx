@@ -63,8 +63,9 @@ export function ZdanieORegule({
   return (
     <div>
       <div className="flex flex-wrap gap-1.5">
-        {przycisk("agree", "Zgadzam się", "border-profit/60 bg-profit-dim text-profit-bright")}
-        {przycisk("disagree", "Nie zgadzam się", "border-loss/60 bg-loss-dim text-loss-bright")}
+        {/* UI v2: zielen i czerwien tylko dla wyniku, nigdy na przyciskach (kierunek.md, Role rules). */}
+        {przycisk("agree", "Zgadzam się", "border-accent/60 bg-accent-dim text-accent-strong")}
+        {przycisk("disagree", "Nie zgadzam się", "border-text/60 bg-surface-3 text-text")}
       </div>
       {blad && (
         <p role="alert" className="mt-1 text-xs text-loss">

@@ -20,7 +20,9 @@ function liczbaZTekstu(tekst: string): number {
 }
 
 async function wynik(page: Page): Promise<number> {
-  const kafelek = page.locator("div.panel").filter({ hasText: "Wynik" }).first();
+  /* UI v2 (faza 5): "/" to ekran Dzis (rytual dnia), a globalny wynik netto zostal w KPI statystyk.
+     Kafelek po etykiecie, bo slowo "Wynik" pada tez w panelu filtrow. */
+  const kafelek = page.locator("div.panel").filter({ has: page.locator("p.etykieta", { hasText: /^Wynik$/ }) }).first();
   const wartosc = await kafelek.locator("p.liczba").first().innerText();
   return liczbaZTekstu(wartosc);
 }
@@ -71,7 +73,7 @@ test("nowy trade liczy wynik zgodnie z parametrami kontraktu", async ({ page }) 
 });
 
 test("zapisany trade zmienia wynik netto na pulpicie o swoją kwotę", async ({ page }) => {
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const przed = await wynik(page);
 
   await page.goto("/trades/new");
@@ -85,7 +87,7 @@ test("zapisany trade zmienia wynik netto na pulpicie o swoją kwotę", async ({ 
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
 
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const po = await wynik(page);
 
   // 40 tickow ES po 12,50 USD = 500 USD.
@@ -188,6 +190,8 @@ test("zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu", async ({
 
   await page.getByRole("button", { name: "Zapisz trade" }).click();
   await expect(page).toHaveURL(/\/trades\/\d+$/);
+  // UI v2 (faza 5): zrzuty mają własną zakładkę na karcie trade'a.
+  await page.goto(`${page.url()}?zakladka=zrzuty`);
 
   const obrazy = page.locator('img[src^="/api/screenshots/"]');
   await expect(obrazy).toHaveCount(2);
@@ -743,7 +747,7 @@ test("trade nie wzięty z dodatnim wynikiem nie rusza KPI pulpitu, ale liczy si�
   // asercja "dokladnie 1" pekalaby przy kazdym powtornym uruchomieniu.
   const dzien = losowyDzien();
 
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const przed = await wynik(page);
 
   await page.goto("/trades/new");
@@ -761,7 +765,7 @@ test("trade nie wzięty z dodatnim wynikiem nie rusza KPI pulpitu, ale liczy si�
 
   // Pulpit: dokladnie ta sama kwota co przed zapisem - "missed" nie wchodzi
   // do closedOnly, wiec KPI nie moze drgnac.
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const po = await wynik(page);
   expect(Number((po - przed).toFixed(2))).toBe(0);
 
@@ -999,7 +1003,7 @@ test("pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wyn
   // liczby trade'ow danego dnia, tylko deltę KPI globalnego pulpitu).
   const dzien = "2021-06-15";
 
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const przed = await wynik(page);
 
   await page.goto("/trades/new");
@@ -1039,7 +1043,7 @@ test("pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wyn
   // Pulpit: dokladnie ta sama kwota co przed zapisem. Pozycja czesciowo
   // zamknieta ma status "open", wiec closedOnly (queries/trades.ts) ja
   // pomija - stan wyjsciowy zmierzony PRZED zapisem, nie zalozony.
-  await page.goto("/?zakres=wszystko");
+  await page.goto("/stats");
   const po = await wynik(page);
   expect(Number((po - przed).toFixed(2))).toBe(0);
 });

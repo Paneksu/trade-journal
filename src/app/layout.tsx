@@ -21,6 +21,16 @@ export const metadata: Metadata = {
   title: "Dziennik tradingowy",
   description: "Prywatny dziennik transakcji i backtestow.",
   robots: { index: false, follow: false },
+  applicationName: "Dziennik",
+  /* Znak FVG V1 (docs/design/znak/runda-4-fvg/v1-bycza-ce, decyzja uzytkownika 14.10.2026). */
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "16x16 32x32" },
+      { url: "/icons/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon-180.png", sizes: "180x180" }],
+  },
+  appleWebApp: { capable: true, title: "Dziennik", statusBarStyle: "black-translucent" },
 };
 
 export const viewport: Viewport = {

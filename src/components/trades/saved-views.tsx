@@ -96,7 +96,7 @@ export function SavedViews({
           {state.error && <ErrorMessage>{state.error}</ErrorMessage>}
         </form>
       ) : (
-        <Button size="s" variant="quiet" onClick={() => setOpen(true)} disabled={!currentQuery}>
+        <Button size="s" variant="quiet" onClick={() => setOpen(true)} disabled={!currentQuery} className="disabled:text-faint disabled:opacity-100">
           <Bookmark size={12} aria-hidden />
           Zapisz obecny widok
         </Button>
