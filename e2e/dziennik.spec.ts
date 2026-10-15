@@ -644,7 +644,7 @@ test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }
    *  3. ponowny zapis bez zmian nie mnozy wierszy.
    */
   await page.goto("/trades");
-  const wiersz = page.locator("table tbody tr").first();
+  const wiersz = page.locator("table tbody tr[data-trade]").first();
   await wiersz.locator("a").first().click();
   await page.getByRole("link", { name: /edytuj/i }).first().click();
   await page.waitForURL(/\/edit$/);
@@ -699,14 +699,14 @@ test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }
 test("pole kierunku pojawia sie tylko przy stracie, nie przy wygranej", async ({ page }) => {
   // ADR-018: przy wygranej pytanie nie ma sensu, bo trafnosc wynika z wyniku.
   await page.goto("/trades?wynik=zysk");
-  await page.locator("table tbody tr").first().locator("a").first().click();
+  await page.locator("table tbody tr[data-trade]").first().locator("a").first().click();
   await page.getByRole("link", { name: /edytuj/i }).first().click();
   await page.waitForURL(/\/edit$/);
   await expect(page.locator('input[name="directionCorrect"]')).toHaveCount(0);
   await expect(page.getByText(/kierunek trafiony/i).first()).toBeVisible();
 
   await page.goto("/trades?wynik=strata");
-  await page.locator("table tbody tr").first().locator("a").first().click();
+  await page.locator("table tbody tr[data-trade]").first().locator("a").first().click();
   await page.getByRole("link", { name: /edytuj/i }).first().click();
   await page.waitForURL(/\/edit$/);
   await expect(page.locator('input[name="directionCorrect"]')).toHaveCount(1);
@@ -716,7 +716,8 @@ test("pole kierunku pojawia sie tylko przy stracie, nie przy wygranej", async ({
 
 test("galeria pokazuje kafle ze zrzutem i filtruje po tagu", async ({ page }) => {
   await page.goto("/galeria");
-  await expect(page.getByRole("heading", { name: "Galeria" })).toBeVisible();
+  // UI v2: galeria ma ten sam nagłówek co lista; aktywny widok mówi przełącznik Lista / Galeria.
+  await expect(page.getByRole("group", { name: "Widok" }).getByRole("link", { name: "Galeria" })).toHaveAttribute("aria-current", "true");
 
   const kafle = page.locator("main ul > li");
   const ile = await kafle.count();

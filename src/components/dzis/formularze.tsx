@@ -75,6 +75,7 @@ export function FormularzPrzedSesja({
   energy,
   preSession,
   uniewaznienie,
+  szeroki = false,
 }: {
   dzien: string;
   bias: "long" | "short" | "neutral" | null;
@@ -83,47 +84,76 @@ export function FormularzPrzedSesja({
   energy: number | null;
   preSession: string | null;
   uniewaznienie: string | null;
+  szeroki?: boolean;
 }) {
   const [stan, akcja, trwa] = useActionState<ActionState, FormData>(zapiszPrzedSesja, {});
+  const bias_ = (
+    <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
+      <div>
+        <Etykieta htmlFor="rytual-bias">Bias dnia</Etykieta>
+        <select id="rytual-bias" name="bias" defaultValue={bias ?? ""} className={cx(POLE, "h-10 cursor-pointer")}>
+          <option value="">nie ustalony</option>
+          <option value="long">long</option>
+          <option value="short">short</option>
+          <option value="neutral">neutralny</option>
+        </select>
+      </div>
+      <div>
+        <Etykieta htmlFor="rytual-max">Maks. trade&apos;ów</Etykieta>
+        <input id="rytual-max" name="maxTrades" type="number" min={1} max={20} inputMode="numeric" defaultValue={maxTrades ?? ""} className={cx(POLE, "num h-10")} />
+      </div>
+    </div>
+  );
+  const skale = (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <Skala nazwa="sleep" etykieta="Sen" wartosc={sleep} />
+      <Skala nazwa="energy" etykieta="Energia" wartosc={energy} />
+    </div>
+  );
+  const uniew = (
+    <div>
+      <Etykieta htmlFor="rytual-uniewaznienie" opis="zapisane dosłownie">
+        Unieważnienie
+      </Etykieta>
+      <textarea
+        id="rytual-uniewaznienie"
+        name="invalidation"
+        rows={2}
+        defaultValue={uniewaznienie ?? ""}
+        placeholder="Co musi się stać, żeby bias przestał obowiązywać"
+        className={cx(POLE, "resize-y")}
+      />
+    </div>
+  );
+  const plan = (
+    <div>
+      <Etykieta htmlFor="rytual-plan">Plan na sesję</Etykieta>
+      <textarea id="rytual-plan" name="preSession" rows={3} defaultValue={preSession ?? ""} className={cx(POLE, "resize-y")} />
+    </div>
+  );
   return (
     <form action={akcja} className="space-y-4">
       <input type="hidden" name="day" value={dzien} />
-      <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
-        <div>
-          <Etykieta htmlFor="rytual-bias">Bias dnia</Etykieta>
-          <select id="rytual-bias" name="bias" defaultValue={bias ?? ""} className={cx(POLE, "h-10 cursor-pointer")}>
-            <option value="">nie ustalony</option>
-            <option value="long">long</option>
-            <option value="short">short</option>
-            <option value="neutral">neutralny</option>
-          </select>
+      {szeroki ? (
+        /* Pełna szerokość (gdy „Po sesji” jest zwinięte): dwie kolumny, bez pustej połowy karty. */
+        <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
+          <div className="space-y-4">
+            {bias_}
+            {skale}
+          </div>
+          <div className="space-y-4">
+            {uniew}
+            {plan}
+          </div>
         </div>
-        <div>
-          <Etykieta htmlFor="rytual-max">Maks. trade&apos;ów</Etykieta>
-          <input id="rytual-max" name="maxTrades" type="number" min={1} max={20} inputMode="numeric" defaultValue={maxTrades ?? ""} className={cx(POLE, "num h-10")} />
-        </div>
-      </div>
-      <div>
-        <Etykieta htmlFor="rytual-uniewaznienie" opis="zapisane dosłownie">
-          Unieważnienie
-        </Etykieta>
-        <textarea
-          id="rytual-uniewaznienie"
-          name="invalidation"
-          rows={2}
-          defaultValue={uniewaznienie ?? ""}
-          placeholder="Co musi się stać, żeby bias przestał obowiązywać"
-          className={cx(POLE, "resize-y")}
-        />
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Skala nazwa="sleep" etykieta="Sen" wartosc={sleep} />
-        <Skala nazwa="energy" etykieta="Energia" wartosc={energy} />
-      </div>
-      <div>
-        <Etykieta htmlFor="rytual-plan">Plan na sesję</Etykieta>
-        <textarea id="rytual-plan" name="preSession" rows={3} defaultValue={preSession ?? ""} className={cx(POLE, "resize-y")} />
-      </div>
+      ) : (
+        <>
+          {bias_}
+          {uniew}
+          {skale}
+          {plan}
+        </>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={trwa} className={cx(klasaPigulki(true), "disabled:opacity-60")}>
           {trwa ? "Zapisuję…" : "Zapisz rytuał"}
@@ -212,19 +242,17 @@ export function ChecklistaRegul({
         const jest = zaznaczone.includes(r.code);
         return (
           <li key={r.code}>
-            <label className="przejscie flex cursor-pointer items-start gap-3 rounded-[var(--radius-tab)] px-2 py-2 hover:bg-surface-2">
+            <label className="przejscie flex cursor-pointer items-baseline gap-3 rounded-[var(--radius-tab)] px-2 py-1.5 hover:bg-surface-2">
               <input
                 type="checkbox"
                 checked={jest}
                 onChange={() => przelacz(r.code)}
-                className="mt-0.5 size-4 shrink-0 cursor-pointer accent-accent"
+                className="size-4 shrink-0 translate-y-0.5 cursor-pointer accent-accent"
               />
-              <span className="min-w-0 flex-1">
-                <span className={cx("block text-meta", jest ? "text-faint line-through" : "text-text")}>{r.title}</span>
-                <span className="num text-grupa text-faint">
-                  {r.code}
-                  {r.hard && " · twarda"}
-                </span>
+              <span className={cx("min-w-0 flex-1 text-meta", jest ? "text-faint line-through" : "text-text")}>{r.title}</span>
+              <span className="num shrink-0 text-grupa text-faint" title={r.hard ? "reguła twarda" : undefined}>
+                {r.code}
+                {r.hard && "*"}
               </span>
             </label>
           </li>

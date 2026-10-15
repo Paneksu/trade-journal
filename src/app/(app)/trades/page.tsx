@@ -1,16 +1,11 @@
-import { Plus } from "lucide-react";
-
-import { FilterBar } from "@/components/trades/filter-bar";
 import { Ksiega, type WierszKsiegi } from "@/components/trades/ksiega";
-import { SavedViews } from "@/components/trades/saved-views";
-import { SourceSwitch, WidokSwitch } from "@/components/layout/toolbar";
-import { NaglowekStrony, Pigulka, Strona } from "@/components/ui/v2";
+import { NaglowekListy } from "@/components/trades/naglowek-listy";
+import { LiczbaBohater, Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
-import { cx } from "@/lib/classes";
 import { wilson } from "@/lib/domain/stats-ci";
 import { computeStats } from "@/lib/domain/stats";
 import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
-import { money, percent, pnlClass, rValue } from "@/lib/format";
+import { money, percent, rValue } from "@/lib/format";
 import { getAccounts, getFields, getInstruments, getProgi, getSavedViews, getTags } from "@/lib/queries/dictionaries";
 import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
 import { getRegulyOcen } from "@/lib/queries/oceny";
@@ -76,65 +71,49 @@ export default async function TradesPage({
 
   return (
     <Strona className="space-y-6">
-      <NaglowekStrony
-        tytul="Trade'y"
-        akcje={
-          <Pigulka href="/trades/new" glowna>
-            <Plus size={15} aria-hidden /> Nowy trade
-          </Pigulka>
-        }
+      <NaglowekListy
+        widok="lista"
+        zrodlo={zrodloPrzelacznika(filters.source)}
+        accounts={accounts}
+        instruments={instruments}
+        tags={tags}
+        fields={fields}
+        reguly={reguly}
+        aktywneFiltry={activeFilterCount(filters)}
+        widoki={views.map((v) => ({ id: v.id, name: v.name, filters: v.filters }))}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <WidokSwitch active="lista" />
-        <SourceSwitch active={zrodloPrzelacznika(filters.source)} />
-      </div>
-
-      <div className="panel overflow-hidden">
-        <FilterBar
-          accounts={accounts}
-          instruments={instruments}
-          tags={tags}
-          fields={fields}
-          reguly={reguly}
-          activeCount={activeFilterCount(filters)}
-          embedded
-        />
-        <SavedViews views={views.map((v) => ({ id: v.id, name: v.name, filters: v.filters }))} />
-      </div>
-
-      {/* Trzy liczby nad księgą (wzór: Net change / Money in / Money out). */}
+      {/* Liczba bohater nad księgą (wzór: saldo z paskiem, Mercury accounts/credit). R przed USD
+          (kierunek.md: R zamiast $); każda liczba z n i przedziałem (MUST 5). */}
       {filters.missed === "tylko" ? (
         <p className="text-meta text-faint">
           Pominięte trade&apos;y nie mają wyniku, więc nie wchodzą do podsumowania: filtr pokazuje tylko listę poniżej.
         </p>
       ) : (
-        <dl className="grid grid-cols-2 gap-x-8 gap-y-4 sm:flex sm:flex-wrap">
-          <div>
-            <dt className="text-meta text-muted">Wynik netto</dt>
-            <dd className={cx("num mt-0.5 text-sekcja", pnlClass(stats.pnl))}>{money(stats.pnl, { currency, sign: true })}</dd>
-          </div>
-          <div>
-            <dt className="text-meta text-muted">Suma R</dt>
-            <dd className={cx("num mt-0.5 text-sekcja", pnlClass(stats.sumR))}>{rValue(stats.sumR)}</dd>
-          </div>
-          <div>
-            <dt className="text-meta text-muted">Skuteczność</dt>
-            <dd className="num mt-0.5 text-sekcja text-text">
-              {percent(w.p)}
-              <span className="ml-1.5 text-meta text-faint">
-                {w.low === null || w.high === null ? "" : `95%: ${Math.round(w.low * 100)}–${Math.round(w.high * 100)}`}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-meta text-muted">Zamknięte</dt>
-            <dd className="num mt-0.5 text-sekcja text-text">
-              n = {stats.count}
-              {stats.count > 0 && stats.count < 30 && <span className="ml-1.5 text-meta text-faint">orientacyjnie</span>}
-            </dd>
-          </div>
-        </dl>
+        <section aria-labelledby="suma-r" className="max-w-[460px] space-y-2.5">
+          <p id="suma-r" className="text-karta text-text">
+            Suma R <span className="text-meta text-muted">· n = {stats.count}</span>
+          </p>
+          <LiczbaBohater tekst={stats.count === 0 ? "0.00R" : rValue(stats.sumR)} />
+          {stats.count > 0 && (
+            <div
+              role="img"
+              aria-label={`Zyski ${stats.wins}, break-even ${stats.be}, straty ${stats.losses}`}
+              className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-3"
+            >
+              <span className="h-full bg-profit" style={{ width: `${(stats.wins / stats.count) * 100}%` }} />
+              <span className="h-full bg-flat" style={{ width: `${(stats.be / stats.count) * 100}%` }} />
+              <span className="h-full bg-loss" style={{ width: `${(stats.losses / stats.count) * 100}%` }} />
+            </div>
+          )}
+          <p className="num text-meta text-muted">
+            <span className="text-text">{percent(w.p)}</span> skuteczności
+            <span className="hidden sm:inline">
+              {w.low !== null && w.high !== null && <> (95%: {Math.round(w.low * 100)}–{Math.round(w.high * 100)})</>}
+              {stats.count > 0 && stats.count < 30 && " · orientacyjnie"} · {money(stats.pnl, { currency, sign: true })}
+            </span>
+          </p>
+        </section>
       )}
 
       <Ksiega wiersze={wiersze} tags={tags} />

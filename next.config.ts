@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
   // Biblioteki z binariami natywnymi nie moga isc przez bundler.
   // heic-decode / libheif-js: dekoder HEIC w WebAssembly (kilka MB), wiec nie przez bundler.
   serverExternalPackages: ["sharp", "postgres", "heic-decode", "libheif-js"],
+  // Znaczek Next w rogu ekranu tylko przeszkadza na zrzutach do akceptacji designu (bramka etapu 1,
+  // runda 2). Dotyczy wylacznie serwera deweloperskiego; produkcja go nie ma.
+  devIndicators: false,
   experimental: {
     // Formularze wysylaja zrzuty ekranu przez Server Actions.
     serverActions: { bodySizeLimit: "12mb" },

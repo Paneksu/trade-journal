@@ -1,8 +1,8 @@
 import Link from "next/link";
 
 import { GalleryGrid } from "@/components/gallery/gallery-grid";
-import { SourceSwitch, WidokSwitch } from "@/components/layout/toolbar";
-import { FilterBar } from "@/components/trades/filter-bar";
+import { NaglowekListy } from "@/components/trades/naglowek-listy";
+import { Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { zrodloPrzelacznika } from "@/lib/domain/zrodla";
 import { cx } from "@/lib/classes";
@@ -62,36 +62,20 @@ export default async function GaleriaPage({
   const stron = Math.max(1, Math.ceil(ile / ROZMIAR_STRONY));
 
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="etykieta">Dziennik</p>
-          <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Galeria</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {/* UI v2: Galeria to widok listy trade'ów (wzór 2c); przełącznik zostawia filtry. */}
-          <WidokSwitch active="galeria" />
-          <SourceSwitch
-            active={zrodloPrzelacznika(filtry.source)}
-          />
-          <p className="text-sm text-faint">
-            {ile === 0 ? "brak trade'ów" : `${ile} trade'ów · strona ${strona} z ${stron}`}
-          </p>
-        </div>
-      </header>
-
-      <div className="panel">
-        <FilterBar
-          accounts={accounts}
-          instruments={instruments}
-          tags={tags}
-          fields={fields}
-          reguly={reguly}
-          activeCount={activeFilterCount(filtry)}
-          embedded
-          domyslnieOtwarty={false}
-        />
-      </div>
+    <Strona className="space-y-6">
+      <NaglowekListy
+        widok="galeria"
+        zrodlo={zrodloPrzelacznika(filtry.source)}
+        accounts={accounts}
+        instruments={instruments}
+        tags={tags}
+        fields={fields}
+        reguly={reguly}
+        aktywneFiltry={activeFilterCount(filtry)}
+        widoki={null}
+        domyslnieOtwarty={false}
+        podpis={ile === 0 ? "brak trade'ów" : `${ile} trade'ów · strona ${strona} z ${stron}`}
+      />
 
       {trades.length === 0 ? (
         <p className="panel px-4 py-8 text-center text-sm text-faint">
@@ -122,7 +106,7 @@ export default async function GaleriaPage({
           </LinkStrony>
         </nav>
       )}
-    </div>
+    </Strona>
   );
 }
 

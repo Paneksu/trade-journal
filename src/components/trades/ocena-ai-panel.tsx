@@ -84,11 +84,11 @@ export function OcenaAiPanel({
   const [najnowsza, ...starsze] = posortowane;
 
   return (
-    <section className="panel karta overflow-hidden">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
+    <section className="panel karta overflow-hidden max-sm:-mx-4 max-sm:rounded-none max-sm:border-x-0">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 sm:items-start sm:px-6 sm:py-4">
         <div>
           <h2 className="text-sekcja text-text">Ocena AI</h2>
-          <p className="mt-0.5 text-meta text-muted">Interpretacja AI z chwili decyzji. Nie zmienia wyniku trade&apos;a.</p>
+          <p className="mt-0.5 hidden text-meta text-muted sm:block">Interpretacja AI z chwili decyzji. Nie zmienia wyniku trade&apos;a.</p>
         </div>
         <span className="inline-flex h-6 items-center rounded-full border border-line-strong px-2 text-grupa text-muted">interpretacja AI</span>
       </header>
@@ -147,7 +147,8 @@ function OcenaTresc({ trade, ocena, meta }: { trade: DaneTradu; ocena: OcenaZReg
         </span>
       </div>
 
-      <div className="rounded-[var(--radius-tab)] border border-line bg-bg/40 p-4">
+      {/* Bez ramki w ramce (bramka etapu 1, runda 2): blok werdyktu oddziela tylko linia. */}
+      <div className="border-y border-line py-4">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <p className="text-meta text-muted">Werdykt mózgu</p>
           <p className="text-karta font-semibold text-text">{ocena.brainVerdict ? WERDYKT_MOZGU_NAZWY[ocena.brainVerdict] : "brak"}</p>
@@ -217,7 +218,7 @@ function OcenaTresc({ trade, ocena, meta }: { trade: DaneTradu; ocena: OcenaZReg
                 <span className="num pt-0.5 text-meta text-faint">[{i + 1}]</span>
                 <div className="min-w-0 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="num text-meta text-accent">{r.ruleId}</span>
+                    <span className="num text-meta text-muted">{r.ruleId}</span>
                     <span className="sr-only">Werdykt: </span>
                     <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border px-2 text-grupa whitespace-nowrap", WERDYKT_KLASY[r.verdict])}>
                       <span aria-hidden>{WERDYKT_ZNAK[r.verdict]}</span>
@@ -245,7 +246,13 @@ function OcenaTresc({ trade, ocena, meta }: { trade: DaneTradu; ocena: OcenaZReg
       )}
 
       {meta && (meta.asOf || meta.evidenceHash) && (
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-4 text-meta sm:grid-cols-4">
+        <p className="num border-t border-line pt-3 text-grupa text-muted sm:hidden">
+          as_of {meta.asOf ? dateTime(meta.asOf, trade.exchangeTimezone).slice(-5) : "—"} · {meta.evidenceHash ? meta.evidenceHash.slice(0, 8) : "—"} · reguły v{meta.rulesetVersion ?? "—"}
+          {meta.lookAhead && <span className="text-accent-strong"> · model mógł znać dzień</span>}
+        </p>
+      )}
+      {meta && (meta.asOf || meta.evidenceHash) && (
+        <dl className="hidden grid-cols-4 gap-x-4 gap-y-2 border-t border-line pt-4 text-meta sm:grid">
           <div>
             <dt className="text-faint">as_of</dt>
             <dd className="num text-muted">{meta.asOf ? dateTime(meta.asOf, trade.exchangeTimezone) : "—"}</dd>

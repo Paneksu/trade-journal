@@ -2,7 +2,7 @@ import "server-only";
 
 import { db } from "@/lib/db";
 import { odczytajDzien } from "@/lib/api-v2/dni";
-import { dzienHandlowyTeraz, przegladProp } from "@/lib/api-v2/prop-konta";
+import { dzienHandlowyTeraz, ksiegaKonta, przegladProp } from "@/lib/api-v2/prop-konta";
 import { listaRegul } from "@/lib/api-v2/reguly";
 import { ukryteTrady } from "@/lib/api-v2/ukrycie-wyniku";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
@@ -59,6 +59,11 @@ export async function daneDzis() {
   const tradeyDnia = ostatnie.filter((t) => t.tradingDay === dzis).sort((a, b) => a.entryTime.getTime() - b.entryTime.getTime());
   const ukryte = await ukryteTrady(db, tradeyDnia.map((t) => t.id));
 
+  // Księga kosztów i wypłat wszystkich kont prop: realny zwrot netto (MUST 7).
+  const ksiegi = await Promise.all(prop.accounts.map((k) => ksiegaKonta(db, k.accountId)));
+  const netto = ksiegi.reduce((s, k) => s + (k.ok ? k.summary.netCents : 0), 0);
+  const wplywy = ksiegi.reduce((s, k) => s + (k.ok ? k.summary.inflowsCents : 0), 0);
+
   const krzywa = krzywaR(ostatnie);
   const zamknieteDnia = closedOnly(tradeyDnia).filter((t) => !ukryte.has(t.id));
   const rDnia = zamknieteDnia.reduce((s, t) => s + (t.rMultiple ?? 0), 0);
@@ -74,6 +79,7 @@ export async function daneDzis() {
     dzien,
     uniewaznienie: niewazny,
     prop,
+    ksiega: { nettoCents: netto, wplywyCents: wplywy },
     reguly: reguly.rules.filter((r) => r.current !== null),
     rulesVersion: reguly.rulesVersion,
     tradeyDnia,

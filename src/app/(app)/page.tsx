@@ -3,7 +3,7 @@ import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock, Plus } from "lucide-r
 
 import { KrzywaR } from "@/components/dzis/krzywa-r";
 import { ChecklistaRegul, FormularzPoSesji, FormularzPrzedSesja } from "@/components/dzis/formularze";
-import { Chip, ChipProcesu, Karta, LiczbaBohater, NaglowekSekcji, NaglowekStrony, PasekZuzycia, Pigulka, Strona } from "@/components/ui/v2";
+import { ChipProcesu, Karta, LiczbaBohater, NaglowekSekcji, NaglowekStrony, PasekZuzycia, Pigulka, Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { maWynik } from "@/lib/domain/status";
@@ -48,7 +48,7 @@ export default async function DzisPage() {
       <NaglowekStrony tytul="Dziś" podtytul={`${dataDlugaZDniem(d.dzis)} · dzień handlowy NY`} />
 
       {/* Pigułki akcji pod nagłówkiem (wzór: Send / Transfer / Deposit …). Akcent tylko na głównej. */}
-      <nav aria-label="Akcje dnia" data-przyciecie-zamierzone className="-mx-4 -mt-1 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+      <nav aria-label="Akcje dnia" data-przyciecie-zamierzone className="-mx-4 -mt-1 flex gap-2 overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,black_82%,transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:[mask-image:none]">
         <Pigulka href="#przed-sesja" glowna>
           Przed sesją
         </Pigulka>
@@ -104,12 +104,11 @@ export default async function DzisPage() {
 
         <Karta
           tytul="Konta prop"
+          className="flex flex-col"
           akcje={
-            d.prop.exposureNq ? (
-              <Chip title="Łączna ekspozycja NQ na kontach (otwarte pozycje i dzisiejsze plany)">
-                ekspozycja <span className="num text-text">{d.prop.exposureNq.total.toLocaleString("pl-PL", { maximumFractionDigits: 1 })} NQ</span>
-              </Chip>
-            ) : null
+            <Link href="/settings/accounts" className="przejscie inline-flex items-center gap-0.5 text-meta text-muted hover:text-text">
+              Wszystkie <ChevronRight size={14} aria-hidden />
+            </Link>
           }
         >
           {kontaProp.length === 0 ? (
@@ -137,36 +136,44 @@ export default async function DzisPage() {
                 const ostrzezenie = s.warnings.reduce<number>((m, w) => Math.max(m, w.level), 0);
                 return (
                   <li key={k.accountId}>
+                    {/* R przed USD (kierunek.md: R zamiast $): bufor w R jako liczba wiersza, dolary drugorzędnie. */}
                     <div className="flex items-baseline justify-between gap-3">
-                      <p className="min-w-0 truncate text-karta text-text">{k.accountName}</p>
+                      <p className="min-w-0 text-karta text-text">
+                        {k.accountName}
+                        {!k.rulesConfirmed && (
+                          <span className="ml-2 text-meta text-muted" title={k.rulesNote ?? undefined}>
+                            reguły niepotwierdzone
+                          </span>
+                        )}
+                      </p>
                       <p className="num shrink-0 text-karta text-text">
-                        {money(s.bufferCents, { currency: k.currency, decimals: 0 })}
-                        {poSl && <span className="ml-1.5 text-meta text-muted">{poSl.bufferInR.toFixed(1)}R</span>}
+                        {poSl ? `${poSl.drawdownBufferInR.toFixed(1)}R` : money(s.bufferCents, { currency: k.currency, decimals: 0 })}
                       </p>
                     </div>
                     <div className="mt-1.5">
                       <PasekZuzycia zuzycie={zuzycie} etykieta={`${k.accountName}: zużycie limitu`} />
                     </div>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-faint">
-                      <span>
-                        bufor do {s.nearestLimit === "dll" ? "limitu dziennego" : "DD"} · zużyte <span className="num">{procent(zuzycie)}</span>
-                      </span>
-                      {poSl && (
-                        <span className={cx(poSl.exceedsLimit && "text-loss")}>
-                          po SL <span className="num">{money(poSl.bufferAfterCents, { currency: k.currency, decimals: 0 })}</span>
-                        </span>
-                      )}
-                      {ostrzezenie >= 50 && <span className={ostrzezenie >= 90 ? "text-loss" : "text-accent-strong"}>próg {ostrzezenie}%</span>}
-                      {!k.rulesConfirmed && (
-                        <Chip className="h-5 border-accent/50 text-accent-strong" title={k.rulesNote ?? undefined}>
-                          reguły niepotwierdzone
-                        </Chip>
-                      )}
-                    </div>
+                    <p className="num mt-1.5 text-meta text-muted">
+                      {money(s.bufferCents, { currency: k.currency, decimals: 0 })} do {s.nearestLimit === "dll" ? "limitu dnia" : "DD"} · zużyte {procent(zuzycie)}
+                      {poSl && <> · po SL {poSl.bufferInR.toFixed(1)}R</>}
+                      {ostrzezenie >= 50 && <> · próg {ostrzezenie}%</>}
+                    </p>
                   </li>
                 );
               })}
             </ul>
+          )}
+          {kontaProp.length > 0 && (
+            <dl className="mt-auto grid grid-cols-2 gap-x-4 border-t border-line pt-4 text-meta">
+              <div className="pt-0">
+                <dt className="text-muted">Ekspozycja NQ</dt>
+                <dd className="num mt-0.5 text-karta text-text">{d.prop.exposureNq.total.toLocaleString("pl-PL", { maximumFractionDigits: 1 })}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Zwrot netto (koszty i wypłaty)</dt>
+                <dd className="num mt-0.5 text-karta text-text">{money(d.ksiega.nettoCents, { sign: true, decimals: 0 })}</dd>
+              </div>
+            </dl>
           )}
         </Karta>
       </div>
@@ -201,6 +208,12 @@ export default async function DzisPage() {
               <p className="mt-1 text-meta text-faint">Nie wpisane.</p>
             )}
           </div>
+          {notatka?.preSession && (
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="text-meta text-muted">Plan na sesję</p>
+              <p className="mt-1 text-meta whitespace-pre-wrap text-text">{notatka.preSession}</p>
+            </div>
+          )}
         </Karta>
 
         <Karta
@@ -242,7 +255,9 @@ export default async function DzisPage() {
       {/* Sekcja „Sesja” w 2 kartach (wzór: Money movement, Money in | Money out). */}
       <div className="space-y-4 pt-5">
         <NaglowekSekcji>Sesja</NaglowekSekcji>
-        <div className="grid gap-6 lg:grid-cols-2">
+        {/* Gdy „Po sesji” jest zablokowane (ślepa ocena), zwija się do paska, a „Przed sesją” bierze całą
+            szerokość w dwóch kolumnach: bez pustej połowy karty (bramka etapu 1, runda 2). */}
+        <div className={cx("grid gap-6", !d.dzien.resultHidden && "lg:grid-cols-2")}>
           <Karta id="przed-sesja" tytul="Przed sesją">
             <FormularzPrzedSesja
               dzien={d.dzis}
@@ -252,18 +267,21 @@ export default async function DzisPage() {
               energy={notatka?.energy ?? null}
               preSession={notatka?.preSession ?? null}
               uniewaznienie={d.uniewaznienie?.text ?? null}
+              szeroki={d.dzien.resultHidden}
             />
           </Karta>
-          <Karta id="po-sesji" tytul="Po sesji">
-            {d.dzien.resultHidden ? (
-              <p className="flex items-start gap-2 text-meta text-muted">
-                <Lock size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden />
-                Notatka po sesji jest ukryta, dopóki trade z werdyktem AI jest otwarty. Wróć po zamknięciu.
+          {d.dzien.resultHidden ? (
+            <section id="po-sesji" aria-label="Po sesji" className="karta flex scroll-mt-20 items-center gap-3 px-5 py-3.5 sm:px-6">
+              <Lock size={15} className="shrink-0 text-accent" aria-hidden />
+              <p className="text-meta text-muted">
+                <span className="text-karta text-text">Po sesji</span> · zablokowane, dopóki trade z werdyktem AI jest otwarty.
               </p>
-            ) : (
+            </section>
+          ) : (
+            <Karta id="po-sesji" tytul="Po sesji">
               <FormularzPoSesji dzien={d.dzis} postSession={notatka?.postSession ?? null} dayRating={notatka?.dayRating ?? null} mood={notatka?.mood ?? null} />
-            )}
-          </Karta>
+            </Karta>
+          )}
         </div>
       </div>
 
@@ -286,12 +304,15 @@ export default async function DzisPage() {
             <table className="w-full text-karta sm:min-w-[560px]">
               <thead>
                 <tr className="border-b border-line text-left text-meta text-muted">
+                  <th scope="col" className="hidden w-[76px] py-2 pr-4 font-normal sm:table-cell">
+                    <span className="sr-only">Zrzut</span>
+                  </th>
                   <th scope="col" className="py-2 pr-4 font-normal">Godzina</th>
                   <th scope="col" className="py-2 pr-4 font-normal">Trade</th>
                   <th scope="col" className="hidden py-2 pr-4 font-normal sm:table-cell">Setup</th>
                   <th scope="col" className="hidden py-2 pr-4 font-normal sm:table-cell">Proces</th>
-                  <th scope="col" className="hidden py-2 pr-4 text-right font-normal sm:table-cell">Wynik</th>
-                  <th scope="col" className="py-2 text-right font-normal">R</th>
+                  <th scope="col" className="py-2 pr-4 text-right font-normal">R</th>
+                  <th scope="col" className="hidden py-2 text-right font-normal sm:table-cell">USD</th>
                 </tr>
               </thead>
               <tbody>
@@ -300,6 +321,21 @@ export default async function DzisPage() {
                   const info = procesy.get(t.id);
                   return (
                     <tr key={t.id} className="przejscie h-[51px] border-b border-line hover:bg-panel">
+                      <td className="hidden py-2 pr-4 sm:table-cell">
+                        {/* Miniatura zrzutu użytkownika (styl obrazu marki). Przy ukrytym wyniku nie pokazujemy: zrzut mógł powstać po wejściu. */}
+                        {t.firstShot && !ukryty ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- plik za sesją, poza next/image
+                          <img
+                            src={`/api/screenshots/${t.firstShot.file}`}
+                            alt={`Zrzut ${t.instrumentSymbol} ${timeOnly(t.entryTime, t.exchangeTimezone)}`}
+                            className="h-9 w-16 rounded-[6px] border border-line object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-9 w-16 items-center justify-center rounded-[6px] border border-dashed border-line text-faint">
+                            {ukryty ? <Lock size={13} aria-label="zrzut ukryty do zamknięcia" /> : <span className="text-grupa">brak</span>}
+                          </span>
+                        )}
+                      </td>
                       <td className="num py-2 pr-4 text-muted">{timeOnly(t.entryTime, t.exchangeTimezone)}</td>
                       <td className="py-2 pr-4">
                         <Link href={`/trades/${t.id}`} className="przejscie text-text hover:text-accent">
@@ -311,12 +347,11 @@ export default async function DzisPage() {
                       <td className="hidden py-2 pr-4 sm:table-cell">
                         <ChipProcesu ocena={info?.proces ?? null} />
                       </td>
-                      <td className={cx("num hidden py-2 pr-4 text-right sm:table-cell", !ukryty && maWynik(t.status) && pnlClass(t.pnl))}>
-                        {ukryty ? <Lock size={14} className="ml-auto text-accent" aria-label="wynik ukryty do zamknięcia" /> : maWynik(t.status) ? money(t.pnl, { currency: waluta, sign: true }) : "otwarty"}
+                      <td className={cx("num py-2 pr-4 text-right", !ukryty && pnlClass(t.rMultiple))}>
+                        {ukryty ? <Lock size={14} className="ml-auto text-accent" aria-label="wynik ukryty do zamknięcia" /> : maWynik(t.status) ? rValue(t.rMultiple) : "otwarty"}
                       </td>
-                      <td className={cx("num py-2 text-right", !ukryty && pnlClass(t.rMultiple))}>
-                        {ukryty ? <Lock size={14} className="ml-auto text-accent sm:hidden" aria-label="wynik ukryty do zamknięcia" /> : null}
-                        <span className={cx(ukryty && "hidden sm:inline")}>{ukryty || !maWynik(t.status) ? "—" : rValue(t.rMultiple)}</span>
+                      <td className="num hidden py-2 text-right text-meta text-muted sm:table-cell">
+                        {ukryty || !maWynik(t.status) ? "—" : money(t.pnl, { currency: waluta, sign: true })}
                       </td>
                     </tr>
                   );

@@ -167,7 +167,7 @@ test.describe("UI v2: szkielet, Dziś, lista i szczegół trade'a", () => {
 
   test("lista: księga z datą w pierwszym wierszu dnia, szuflada podglądu i przełącznik galerii z filtrami", async ({ page }) => {
     await page.goto(`/trades?od=${DZIEN}&do=${DZIEN}&konto=${kontoId}`);
-    const wiersze = page.locator("table tbody tr");
+    const wiersze = page.locator("table tbody tr[data-trade]");
     await expect(wiersze).toHaveCount(2);
     // Ślepa ocena na liście: otwarty trade z werdyktem nie pokazuje 800,00.
     await expect(page.locator("table")).not.toContainText("800,00");

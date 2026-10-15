@@ -164,9 +164,10 @@ export function ChipProcesu({ ocena }: { ocena: "A" | "B" | "C" | null }) {
       title={`Proces ${ocena}`}
       className={cx(
         "num inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-tab)] border text-meta font-medium",
-        ocena === "A" && "border-accent/60 bg-accent-dim text-accent-strong",
-        ocena === "B" && "border-line-strong bg-surface-3 text-text",
-        ocena === "C" && "border-line-strong text-muted",
+        // Neutralnie: akcent jest tylko dla akcji i stanu aktywnego (kierunek.md, Role rules).
+        ocena === "A" && "border-text/50 font-semibold text-text",
+        ocena === "B" && "border-line-strong text-text",
+        ocena === "C" && "border-dashed border-line-strong text-muted",
       )}
     >
       <span className="sr-only">proces </span>

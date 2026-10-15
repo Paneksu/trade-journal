@@ -5,7 +5,7 @@ import { ChevronRight, Lock } from "lucide-react";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { Markdown } from "@/components/trade/markdown";
 import { ProcesWybor } from "@/components/trade/proces-wybor";
-import { DeleteTradeButton } from "@/components/trades/trade-actions";
+import { AkcjeTradu } from "@/components/trades/trade-actions";
 import { OcenaAiPanel, type MetaWerdyktu } from "@/components/trades/ocena-ai-panel";
 import { Badge, DataPoint } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
@@ -148,7 +148,8 @@ export default async function TradePage({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="min-w-0 space-y-6">
           {/* Okruszki jak pasek wzoru (Linear: projekt › REF-5). */}
-          <nav aria-label="Okruszki" className="flex flex-wrap items-center gap-1 text-meta text-muted">
+          {/* Na telefonie okruszki i linia statusu znikają: dolny pasek prowadzi do listy, a status jest we Właściwościach. */}
+          <nav aria-label="Okruszki" className="hidden flex-wrap items-center gap-1 text-meta text-muted sm:flex">
             <Link href="/trades" className="przejscie hover:text-text">
               Trade&apos;y
             </Link>
@@ -171,13 +172,7 @@ export default async function TradePage({
                 <span className="num text-sekcja text-faint">×{num(trade.contracts, 0)}</span>
               </h1>
               <div className="flex items-center gap-2">
-                <Link
-                  href={`/trades/${trade.id}/edit`}
-                  className="przejscie inline-flex h-8 items-center rounded-full bg-surface-3 px-3.5 text-meta text-text hover:bg-line-strong"
-                >
-                  Edytuj
-                </Link>
-                <DeleteTradeButton id={trade.id} />
+                <AkcjeTradu id={trade.id} />
               </div>
             </div>
 
@@ -188,18 +183,29 @@ export default async function TradePage({
                 </p>
               ) : (
                 <>
-                  <p className={cx("num text-liczba font-medium", pokazWynik ? wynikClass(trade.wynik) : czesciowoZamkniete ? pnlClass(trade.pnl) : "text-muted")}>
+                  {/* R przed USD (kierunek.md, „R zamiast $”): R jako liczba bohater, dolary drugorzędnie.
+                      Trade bez stopa nie ma R, wtedy liczbą główną zostaje kwota. */}
+                  {(pokazWynik || czesciowoZamkniete) && trade.rMultiple !== null ? (
+                    <p className={cx("num text-liczba font-medium", pnlClass(trade.rMultiple))}>{rValue(trade.rMultiple)}</p>
+                  ) : null}
+                  <p
+                    className={cx(
+                      "num",
+                      (pokazWynik || czesciowoZamkniete) && trade.rMultiple !== null
+                        ? "text-sekcja text-muted"
+                        : cx("text-liczba font-medium", pokazWynik ? wynikClass(trade.wynik) : czesciowoZamkniete ? pnlClass(trade.pnl) : "text-muted"),
+                    )}
+                  >
                     {pokazWynik || czesciowoZamkniete ? money(trade.pnl, { currency: trade.currency, sign: true }) : TRADE_STATUS_NAMES[trade.status]}
                     {pokazWynik && trade.wynik === "be" && <span className="ml-1 text-meta opacity-70">BE</span>}
                     {trade.status === "missed" && <span className="ml-1.5 text-grupa font-semibold tracking-wide text-accent uppercase">hipot.</span>}
                     {czesciowoZamkniete && <span className="ml-1.5 text-grupa font-semibold tracking-wide text-accent uppercase">częściowo</span>}
                   </p>
-                  <p className={cx("num text-sekcja", pnlClass(trade.rMultiple))}>{rValue(trade.rMultiple)}</p>
                 </>
               )}
             </div>
 
-            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted">
+            <p className="hidden flex-wrap items-center gap-x-2 gap-y-1 text-meta text-muted sm:flex">
               <span>Status: {TRADE_STATUS_NAMES[trade.status]}</span>
               {zrodlo && <Badge title={trade.externalRef ? `Klucz zewnętrzny: ${trade.externalRef}` : undefined}>{zrodlo}</Badge>}
               {trade.kategoria && !trade.backtestSessionId && <Badge title="Kategoria wynika z konta">{KATEGORIA_NAZWY[trade.kategoria]}</Badge>}
@@ -212,7 +218,12 @@ export default async function TradePage({
           </header>
 
           {/* Zakładki pod tytułem (kierunek.md, wzór 3). Linki z parametrem: każdy stan ma własny adres. */}
-          <nav aria-label="Zakładki trade'a" className="-mx-1 overflow-x-auto border-b border-line pb-2">
+          {/* Na telefonie zakładki przewijają się w bok; wygaszona prawa krawędź sygnalizuje, że jest ich więcej. */}
+          <nav
+            aria-label="Zakładki trade'a"
+            data-przyciecie-zamierzone
+            className="-mx-1 overflow-x-auto border-b border-line pb-2 [mask-image:linear-gradient(to_right,black_80%,transparent)] sm:[mask-image:none]"
+          >
             <ul className="flex min-w-max gap-1 px-1">
               {ZAKLADKI.map((z) => {
                 const jest = z.klucz === aktywna;
@@ -287,6 +298,30 @@ export default async function TradePage({
                     </ol>
                   </div>
                 </>
+              )}
+              {/* Zrzut użytkownika przy wejściu (styl obrazu marki): wypełnia pustkę pod osią dopisków
+                  i od razu pokazuje wykres. Te same zrzuty co API, czyli przy ukrytym wyniku tylko sprzed wejścia. */}
+              {shots[0] && (
+                <figure className="m-0">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <figcaption className="text-karta text-text">
+                      Wykres <span className="num text-meta text-muted">{shots[0].interval ?? ""} {shots[0].pochodzenie ? `· ${shots[0].pochodzenie}` : ""}</span>
+                    </figcaption>
+                    <Link href={`/trades/${trade.id}?zakladka=zrzuty`} scroll={false} className="przejscie inline-flex items-center gap-0.5 text-meta text-muted hover:text-text">
+                      Wszystkie zrzuty ({shots.length}) <ChevronRight size={14} aria-hidden />
+                    </Link>
+                  </div>
+                  <Link href={`/trades/${trade.id}?zakladka=zrzuty`} scroll={false} className="block overflow-hidden rounded-[var(--radius-panel)] border border-line">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- plik za sesją, poza next/image */}
+                    <img
+                      src={`/api/screenshots/${shots[0].file}`}
+                      alt={`Zrzut wykresu ${shots[0].interval ?? ""} trade'a #${trade.id}`}
+                      width={shots[0].width ?? undefined}
+                      height={shots[0].height ?? undefined}
+                      className="block aspect-[16/9] w-full object-cover"
+                    />
+                  </Link>
+                </figure>
               )}
             </section>
           )}

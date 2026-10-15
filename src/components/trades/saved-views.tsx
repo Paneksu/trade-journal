@@ -16,8 +16,11 @@ import type { ActionState } from "@/lib/actions/settings";
  */
 export function SavedViews({
   views,
+  kompakt = false,
 }: {
   views: { id: number; name: string; filters: Record<string, string> }[];
+  /** UI v2: w wierszu sterowania, bez etykiety i bez zdania-wyjaśnienia. */
+  kompakt?: boolean;
 }) {
   const pathname = usePathname();
   const params = useSearchParams();
@@ -37,10 +40,10 @@ export function SavedViews({
     new URLSearchParams(filters).toString() === currentQuery;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
-      <span className="etykieta">Widoki</span>
+    <div className={cx("flex flex-wrap items-center gap-2", !kompakt && "border-t border-line px-3 py-2")}>
+      {!kompakt && <span className="etykieta">Widoki</span>}
 
-      {views.length === 0 && (
+      {views.length === 0 && !kompakt && (
         <span className="text-xs text-faint">
           Ustaw filtry i zapisz je jako widok, żeby wracać do nich jednym kliknięciem.
         </span>
@@ -98,7 +101,7 @@ export function SavedViews({
       ) : (
         <Button size="s" variant="quiet" onClick={() => setOpen(true)} disabled={!currentQuery} className="disabled:text-faint disabled:opacity-100">
           <Bookmark size={12} aria-hidden />
-          Zapisz obecny widok
+          {kompakt ? "Zapisz widok" : "Zapisz obecny widok"}
         </Button>
       )}
     </div>

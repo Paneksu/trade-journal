@@ -25,7 +25,9 @@
      dostaja barwy marki 1:1 (kierunek.md: granaty Mercury -> powierzchnie klienta). */
   --color-sidebar: oklch(16.24% 0.0098 255.7); /* #0b0e12 marka, rola: pasek boczny i dolny */
   --color-tresc: oklch(19.88% 0.0136 258.4); /* #12161c marka, rola: tlo obszaru tresci */
-  --color-panel: oklch(23.64% 0.0162 252.5); /* #191f26 marka, rola: karta i panel */
+  /* Karta stopien jasniej niz #191f26 (runda bramki 2, 15.10.2026: kontrastRms 29-33% ponizej wzoru).
+     Mercury: karta 30,30,42 na tle 23,23,33. Nasze: #1c232c na #12161c; tekst faint 4,81:1, muted 6,17:1. */
+  --color-panel: oklch(25.34% 0.0199 254.9); /* #1c232c, rola: karta */
   --color-bg: oklch(16.24% 0.0098 255.7); /* #0b0e12 marka */
   --color-surface: oklch(19.88% 0.0136 258.4); /* #12161c marka, tlo karty */
   --color-surface-2: oklch(23.64% 0.0162 252.5); /* #191f26 marka, hover wiersza */
@@ -203,16 +205,19 @@
   .karta {
     min-width: 0;
     background-color: var(--color-panel);
-    border: 1px solid var(--color-line);
+    /* Wzor: ramka 1 px biel 12% na karcie -> #353d48 na #1c232c. */
+    border: 1px solid oklch(35.71% 0.022 256.4);
     border-radius: var(--radius-panel);
   }
 
   /* Wewnatrz karty kazda powierzchnia idzie stopien wyzej, zeby pola, hover i pigulki nie zlewaly sie
      z tlem karty (karta ma barwe dawnego surface-2). Ten sam mechanizm dla starych paneli. */
   .karta {
-    --color-surface: oklch(23.64% 0.0162 252.5); /* #191f26 = tlo karty */
-    --color-surface-2: oklch(26.53% 0.0181 251.9); /* #1f262e: faint 4,64:1, muted 5,95:1 (zmierzone) */
-    --color-surface-3: oklch(30.54% 0.0197 251.5); /* #283039, tylko pod tekst text/muted (faint < 4,5:1) */
+    --color-surface: oklch(25.34% 0.0199 254.9); /* #1c232c = tlo karty */
+    --color-surface-2: oklch(27.36% 0.0218 254.2); /* #202832: faint 4,52:1, muted 5,80:1 (policzone) */
+    --color-surface-3: oklch(30.99% 0.0212 254.1); /* #29313b, tylko pod tekst text/muted (faint 4,0:1) */
+    --color-line: oklch(32.7% 0.0218 259.4); /* #2e3540: podzialki w karcie */
+    --color-line-strong: oklch(39.08% 0.0236 255.7); /* #3d4652 */
   }
 
   .etykieta {

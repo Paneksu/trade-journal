@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { ChevronRight, Lock, PanelRightOpen, Trash2, X } from "lucide-react";
 
@@ -193,6 +193,11 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
   );
 }
 
+function dataGrupy(dzien: string): string {
+  const d = new Date(`${dzien}T12:00:00Z`);
+  return new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", weekday: "short", day: "numeric", month: "long", year: "numeric" }).format(d);
+}
+
 export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWithCategory[] }) {
   const [zaznaczone, setZaznaczone] = useState<number[]>([]);
   const [podglad, setPodglad] = useState<number | null>(null);
@@ -205,6 +210,13 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
   }
 
   const wszystkie = zaznaczone.length === wiersze.length;
+  // Grupy po dniu w kolejności listy (lista przychodzi posortowana od najnowszego).
+  const dni: [string, WierszKsiegi[]][] = [];
+  for (const w of wiersze) {
+    const ostatni = dni.at(-1);
+    if (ostatni && ostatni[0] === w.dzien) ostatni[1].push(w);
+    else dni.push([w.dzien, [w]]);
+  }
   const przelacz = (id: number) => setZaznaczone((z) => (z.includes(id) ? z.filter((x) => x !== id) : [...z, id]));
 
   return (
@@ -257,7 +269,9 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
         )}
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Dni jako grupy z nagłówkiem-paskiem i sumą R (wzór 2a: grupy Linear). Checkbox pojawia się po
+          najechaniu na wiersz, przy fokusie i gdy coś jest zaznaczone (bramka etapu 1, runda 2). */}
+      <div className="group/tabela overflow-x-auto">
         <table className="w-full text-karta sm:min-w-[720px]">
           <thead>
             <tr className="h-9 border-b border-line text-left text-meta text-muted">
@@ -267,116 +281,134 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
                   aria-label="Zaznacz wszystkie"
                   checked={wszystkie}
                   onChange={() => setZaznaczone(wszystkie ? [] : wiersze.map((w) => w.id))}
-                  className="size-4 cursor-pointer accent-accent"
+                  className={cx(
+                    "size-4 cursor-pointer accent-accent transition-opacity duration-[var(--czas-stan)] focus-visible:opacity-100 group-hover/tabela:opacity-100",
+                    zaznaczone.length > 0 ? "opacity-100" : "opacity-0",
+                  )}
                 />
               </th>
-              <th scope="col" className="w-16 pr-3 font-normal sm:w-[132px] sm:pr-4">Data</th>
               <th scope="col" className="hidden w-16 pr-4 font-normal sm:table-cell">Godz.</th>
               <th scope="col" className="pr-4 font-normal">Trade</th>
               <th scope="col" className="hidden pr-4 font-normal md:table-cell">Setup</th>
               <th scope="col" className="hidden w-16 pr-4 font-normal sm:table-cell">Proces</th>
-              <th scope="col" className="hidden pr-4 text-right font-normal sm:table-cell">Wynik</th>
-              <th scope="col" className="w-20 pr-2 text-right font-normal">R</th>
+              <th scope="col" className="w-20 pr-4 text-right font-normal">R</th>
+              <th scope="col" className="hidden pr-2 text-right font-normal sm:table-cell">USD</th>
               <th scope="col" className="hidden w-10 font-normal sm:table-cell">
                 <span className="sr-only">Podgląd</span>
               </th>
             </tr>
           </thead>
-          <tbody>
-            {wiersze.map((w, i) => {
-              const nowyDzien = i === 0 || wiersze[i - 1].dzien !== w.dzien;
-              const jestWynik = maWynik(w.status) && !w.ukryty;
-              const aktywny = podglad === w.id;
-              return (
-                <Fragment key={w.id}>
-                  <tr
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest("a, button, input, select")) return;
-                      setPodglad(w.id);
-                    }}
-                    className={cx(
-                      "przejscie h-12 cursor-pointer border-b border-line",
-                      nowyDzien && "border-t-line-strong",
-                      aktywny ? "bg-surface-2" : "hover:bg-panel",
-                      zaznaczone.includes(w.id) && "bg-surface-2",
-                    )}
-                  >
-                    <td className="hidden pr-2 align-middle sm:table-cell">
-                      <input
-                        type="checkbox"
-                        aria-label={`Zaznacz trade ${w.id}`}
-                        checked={zaznaczone.includes(w.id)}
-                        onChange={() => przelacz(w.id)}
-                        className="size-4 cursor-pointer accent-accent"
-                      />
-                    </td>
-                    {/* Data tylko w pierwszym wierszu dnia (wzór: księga Mercury). */}
-                    <td className="pr-3 whitespace-nowrap text-text sm:pr-4">
-                      {nowyDzien ? (
-                        <span className="num">
-                          {w.dzien.slice(8, 10)}.{w.dzien.slice(5, 7)}
-                          <span className="hidden sm:inline">.{w.dzien.slice(0, 4)}</span>
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="num hidden pr-4 text-muted sm:table-cell">{timeOnly(w.wejscie, w.strefa)}</td>
-                    <td className="pr-4 whitespace-nowrap">
-                      <Link href={`/trades/${w.id}`} className="przejscie text-text hover:text-accent">
-                        <span className="num">{w.symbol}</span> <span className="text-muted">{w.kierunek}</span>
-                        <span className="num ml-1.5 text-meta text-faint">×{w.kontrakty}</span>
-                      </Link>
-                      <span className="num block text-meta text-muted sm:hidden">
-                        {timeOnly(w.wejscie, w.strefa)}
-                        {w.proces && <> · proces {w.proces}</>}
+          {dni.map(([dzien, lista]) => {
+            const policzalne = lista.filter((w) => maWynik(w.status) && !w.ukryty && w.status !== "missed" && w.r !== null);
+            const sumaR = policzalne.reduce((s, w) => s + (w.r ?? 0), 0);
+            return (
+              <tbody key={dzien}>
+                <tr className="h-9 bg-panel">
+                  <th scope="rowgroup" colSpan={8} className="px-0 text-left font-normal">
+                    <div className="flex items-center justify-between gap-3 border-y border-line px-2 py-1.5 text-meta sm:px-3">
+                      <span className="text-text">
+                        {dataGrupy(dzien)} <span className="num text-muted">· {lista.length}</span>
                       </span>
-                    </td>
-                    <td className="hidden pr-4 md:table-cell">
-                      {w.setup ? (
-                        <span className="inline-flex h-6 items-center rounded-full border border-line-strong px-2 text-meta whitespace-nowrap text-muted">
-                          {w.setup}
-                        </span>
-                      ) : (
-                        <span className="text-meta text-faint">—</span>
+                      <span className={cx("num", policzalne.length > 0 ? pnlClass(sumaR) : "text-muted")}>
+                        {policzalne.length > 0 ? rValue(sumaR) : "—"}
+                      </span>
+                    </div>
+                  </th>
+                </tr>
+                {lista.map((w) => {
+                  const jestWynik = maWynik(w.status) && !w.ukryty;
+                  const aktywny = podglad === w.id;
+                  const zaznaczony = zaznaczone.includes(w.id);
+                  return (
+                    <tr
+                      key={w.id}
+                      data-trade={w.id}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("a, button, input, select")) return;
+                        setPodglad(w.id);
+                      }}
+                      className={cx(
+                        "group przejscie h-12 cursor-pointer border-b border-line",
+                        aktywny || zaznaczony ? "bg-surface-2" : "hover:bg-panel",
                       )}
-                    </td>
-                    <td className="hidden pr-4 sm:table-cell">
-                      <ChipProcesu ocena={w.proces} />
-                    </td>
-                    <td className={cx("num hidden pr-4 text-right whitespace-nowrap sm:table-cell", jestWynik && pnlClass(w.pnl))}>
-                      {w.ukryty ? (
-                        <span className="inline-flex items-center gap-1 text-meta text-muted">
-                          <Lock size={13} className="text-accent" aria-hidden /> ukryty
+                    >
+                      <td className="hidden pr-2 pl-0.5 align-middle sm:table-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`Zaznacz trade ${w.id}`}
+                          checked={zaznaczony}
+                          onChange={() => przelacz(w.id)}
+                          className={cx(
+                            "size-4 cursor-pointer accent-accent transition-opacity duration-[var(--czas-stan)] group-hover:opacity-100 focus-visible:opacity-100",
+                            zaznaczone.length > 0 ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      </td>
+                      <td className="num hidden pr-4 text-muted sm:table-cell">{timeOnly(w.wejscie, w.strefa)}</td>
+                      <td className="py-1.5 pr-4 whitespace-nowrap">
+                        <Link href={`/trades/${w.id}`} className="przejscie text-text hover:text-accent">
+                          <span className="num">{w.symbol}</span> <span className="text-muted">{w.kierunek}</span>
+                          <span className="num ml-1.5 text-meta text-faint">×{w.kontrakty}</span>
+                        </Link>
+                        <span className="num block text-meta text-muted sm:hidden">
+                          {timeOnly(w.wejscie, w.strefa)}
+                          {w.proces && <> · proces {w.proces}</>}
                         </span>
-                      ) : maWynik(w.status) ? (
-                        <>
-                          {w.status === "missed" && "~"}
-                          {money(w.pnl, { currency: w.waluta, sign: true })}
-                          {w.wynik === "be" && <span className="ml-1 text-meta">BE</span>}
-                        </>
-                      ) : (
-                        <span className="text-meta text-faint">{TRADE_STATUS_NAMES[w.status]}</span>
-                      )}
-                    </td>
-                    <td className={cx("num pr-2 text-right", jestWynik && pnlClass(w.r))}>
-                      {w.ukryty ? <Lock size={13} className="ml-auto text-accent sm:hidden" aria-label="wynik ukryty" /> : null}
-                      <span className={cx(w.ukryty && "hidden sm:inline")}>{jestWynik ? rValue(w.r) : "—"}</span>
-                    </td>
-                    <td className="hidden text-right sm:table-cell">
-                      <button
-                        type="button"
-                        onClick={() => setPodglad(w.id)}
-                        aria-label={`Podgląd trade'a #${w.id}`}
-                        aria-expanded={aktywny}
-                        className="przejscie inline-flex h-8 w-8 items-center justify-center rounded-full text-faint hover:bg-surface-3 hover:text-text"
-                      >
-                        <PanelRightOpen size={15} aria-hidden />
-                      </button>
-                    </td>
-                  </tr>
-                </Fragment>
-              );
-            })}
-          </tbody>
+                      </td>
+                      <td className="hidden pr-4 md:table-cell">
+                        {w.setup ? (
+                          <span className="inline-flex h-6 items-center rounded-full border border-line-strong px-2 text-meta whitespace-nowrap text-muted">
+                            {w.setup}
+                          </span>
+                        ) : (
+                          <span className="text-meta text-faint">—</span>
+                        )}
+                      </td>
+                      <td className="hidden pr-4 sm:table-cell">
+                        <ChipProcesu ocena={w.proces} />
+                      </td>
+                      {/* R przed USD (kierunek.md: R zamiast $). */}
+                      <td className={cx("num pr-4 text-right whitespace-nowrap", jestWynik && pnlClass(w.r))}>
+                        {w.ukryty ? (
+                          <span className="inline-flex items-center gap-1 text-meta text-muted">
+                            <Lock size={13} className="text-accent" aria-hidden /> ukryty
+                          </span>
+                        ) : maWynik(w.status) ? (
+                          <>
+                            {w.status === "missed" && "~"}
+                            {rValue(w.r)}
+                          </>
+                        ) : (
+                          <span className="text-meta text-faint">{TRADE_STATUS_NAMES[w.status]}</span>
+                        )}
+                      </td>
+                      <td className="num hidden pr-2 text-right text-meta whitespace-nowrap text-muted sm:table-cell">
+                        {jestWynik ? (
+                          <>
+                            {money(w.pnl, { currency: w.waluta, sign: true })}
+                            {w.wynik === "be" && <span className="ml-1">BE</span>}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="hidden text-right sm:table-cell">
+                        <button
+                          type="button"
+                          onClick={() => setPodglad(w.id)}
+                          aria-label={`Podgląd trade'a #${w.id}`}
+                          aria-expanded={aktywny}
+                          className="przejscie inline-flex h-8 w-8 items-center justify-center rounded-full text-faint hover:bg-surface-3 hover:text-text"
+                        >
+                          <PanelRightOpen size={15} aria-hidden />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            );
+          })}
         </table>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Filter, X } from "lucide-react";
 
@@ -27,6 +27,8 @@ export function FilterBar({
   activeCount,
   embedded = false,
   domyslnieOtwarty = true,
+  dodatek,
+  pasek = false,
 }: {
   accounts: Account[];
   instruments: Instrument[];
@@ -42,6 +44,10 @@ export function FilterBar({
    *  wejsciu (recenzja 2026-08-30, znalezisko 2). `/trades` i `/stats` nie
    *  przekazuja tego propa i zachowuja stare zachowanie. */
   domyslnieOtwarty?: boolean;
+  /** UI v2: dodatkowe kontrolki w tym samym wierszu co „Filtry” (widok, źródło, zapis widoku). */
+  dodatek?: ReactNode;
+  /** UI v2: jeden wiersz sterowania bez pudła; rozwinięty formularz jako osobny panel pod spodem. */
+  pasek?: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -74,13 +80,27 @@ export function FilterBar({
   }
 
   return (
-    <div className={embedded ? "" : "panel"}>
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+    <div className={embedded || pasek ? "" : "panel"}>
+      <div
+        data-przyciecie-zamierzone={pasek ? "" : undefined}
+        className={cx(
+          "flex items-center justify-between gap-2",
+          pasek
+            ? "-mx-4 flex-nowrap overflow-x-auto px-4 pb-1 [mask-image:linear-gradient(to_right,black_85%,transparent)] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:[mask-image:none]"
+            : "flex-wrap px-3 py-2",
+        )}
+      >
+        <div className={cx("flex shrink-0 items-center gap-2", pasek ? "flex-nowrap sm:flex-wrap" : "flex-wrap")}>
         <button
           type="button"
           onClick={() => setOpen((w) => !w)}
           aria-expanded={open}
-          className="inline-flex items-center gap-2 text-sm text-muted transition-colors duration-150 hover:text-text"
+          className={cx(
+            "inline-flex items-center gap-2 text-sm transition-colors duration-150",
+            pasek
+              ? "h-9 rounded-[var(--radius-tab)] border border-line bg-panel px-3 text-text hover:border-line-strong"
+              : "text-muted hover:text-text",
+          )}
         >
           <Filter size={14} aria-hidden />
           Filtry
@@ -90,6 +110,8 @@ export function FilterBar({
             </span>
           )}
         </button>
+        {dodatek}
+        </div>
 
         {activeCount > 0 && (
           <button
@@ -108,7 +130,7 @@ export function FilterBar({
           e.preventDefault();
           submit(e.currentTarget);
         }}
-        className={cx("border-t border-line", open ? "block" : "hidden")}
+        className={cx(pasek ? "panel mt-3" : "border-t border-line", open ? "block" : "hidden")}
       >
         <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">

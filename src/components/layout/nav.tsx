@@ -48,7 +48,7 @@ function Pozycja({
       <Icon size={16} aria-hidden className="shrink-0" />
       <span className="truncate">{p.label}</span>
       {p.licznik && liczba > 0 && (
-        <span className="num ml-auto rounded-[5px] bg-accent-dim px-1.5 text-grupa text-accent-strong">
+        <span className="num ml-auto rounded-[5px] bg-surface-3 px-1.5 text-grupa text-text">
           <span className="sr-only">oczekuje: </span>
           {liczba}
         </span>
@@ -232,7 +232,7 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
           <span className="relative">
             <Inbox size={20} aria-hidden />
             {liczba > 0 && (
-              <span className="num absolute -top-1.5 -right-2.5 rounded-full bg-accent px-1 text-[10px] leading-4 text-bg">
+              <span className="num absolute -top-1.5 -right-2.5 rounded-full bg-text px-1 text-[10px] leading-4 text-bg">
                 <span className="sr-only">oczekuje: </span>
                 {liczba}
               </span>
