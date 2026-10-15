@@ -86,6 +86,35 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
       expect(await sugestieSetupu(id)).toHaveLength(0);
     });
 
+    it("«Plan z moich slow»: wersja setupu trade'a to wersja z chwili WEJSCIA (ta sama funkcja co kolejka), nie wersja biezaca w chwili planu", async () => {
+      const { przyjmijWersjeSetupu } = await import("@/lib/decyzje/wersje");
+      const { zapisJakoUi } = await import("./zapis");
+      const { sql: dsql } = await import("drizzle-orm");
+      const nowy = await wywolaj(import("@/app/api/v2/setups/route"), "POST", "/setups", {
+        token: rw.token,
+        cialo: { name: unikat("Setup plan-wersja"), bodyMd: "x", origin: "ai", counterargument: "Szum.", evidence: { n: 12 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S1" },
+      });
+      expect(nowy.status, JSON.stringify(nowy.json)).toBe(201);
+      const slugN = nowy.json.slug as string;
+      const [{ id: sId }] = await sql`select id from setups where slug = ${slugN}`;
+      const [{ id: v1 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v1)).ok).toBe(true);
+      const prop = await wywolaj(import("@/app/api/v2/setups/[slug]/versions/route"), "POST", `/setups/${slugN}/versions`, { token: rw.token, cialo: { origin: "ai", counterargument: "Szum.", evidence: { n: 20 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S2" } }, PARAMS({ slug: slugN }));
+      expect(prop.status, JSON.stringify(prop.json)).toBe(201);
+      const [{ id: v2 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v2)).ok).toBe(true);
+      // v2 zatwierdzona dopiero PO wejsciu trade'a (2099-01-05 14:35): w chwili wejscia obowiazywala v1, a w chwili planu (status) v2
+      await zapisJakoUi(async (tx) => {
+        await tx.execute(dsql`update setup_versions set decided_at = '2099-01-05T16:00:00Z'::timestamptz where id = ${v2}`);
+        await tx.execute(dsql`update setup_versions set superseded_at = '2099-01-05T16:00:00Z'::timestamptz where id = ${v1}`);
+      });
+      const id = await trade(PRZYSZLOSC);
+      const teza = await zapiszSlowa(rw.token, `Teza do wersji ${unikat("w")}`, { day: PRZYSZLOSC, role: "plan.thesis" });
+      const p = await utworzPlan(plan(PRZYSZLOSC, { thesisWordsId: teza.id, tradeId: id, setupSlug: slugN }));
+      expect(p.status, JSON.stringify(p.json)).toBe(201);
+      expect(await setupTradu(id)).toEqual({ setup_id: sId, setup_version_id: v1 });
+    });
+
     it("plan BEZ tezy ze slow uzytkownika: trade nie dostaje setupu, powstaje sugestia trade_setup; statystyki setupu go nie licza", async () => {
       const id = await trade(PRZYSZLOSC);
       const p = await utworzPlan(plan(PRZYSZLOSC, { tradeId: id }));
@@ -246,6 +275,43 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
       const [stara] = await sql`insert into ai_suggestions (kind, target, payload, claim, evidence, evidence_level, status) values ('trade_setup', ${sql.json({ type: "trade", id: id2 })}, ${sql.json({ setupSlug: slugN, setupId: sId })}, 'stara', ${sql.json([{ type: "trade", ref: id2, note: "x" }])}, 'inferred', 'pending') returning id`;
       expect((await zatwierdzSugestie(stara.id)).ok).toBe(true);
       expect((await setupTradu(id2)).setup_version_id).toBe(v1);
+    });
+  });
+
+  describe("trigger trades_guard: aktor API nie ustawia setupu ani oceny procesu wprost (migracja 0028, review 15.10.2026)", () => {
+    it("api:* i ingest dostaja TJ403 na setup_id i process_grade; sciezka planu odblokowuje tylko setup; ui i brak aktora przechodza", async () => {
+      const { zapisZAktorem, zapisJakoUi, wSciezcePlanu } = await import("./zapis");
+      const { sql: dsql } = await import("drizzle-orm");
+      const id = await trade(PRZYSZLOSC);
+      const kod = async (f: () => Promise<unknown>) => {
+        try {
+          await f();
+          return null;
+        } catch (e) {
+          return (e as { cause?: { code?: string }; code?: string }).cause?.code ?? (e as { code?: string }).code ?? null;
+        }
+      };
+      const aktor = `api:${rw.id}`;
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => tx.execute(dsql`update trades set process_grade = 'A', process_graded_at = now() where id = ${id}`)))).toBe("TJ403");
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => tx.execute(dsql`update trades set setup_id = ${setupId} where id = ${id}`)))).toBe("TJ403");
+      expect(await kod(() => zapisZAktorem("ingest", (tx) => tx.execute(dsql`update trades set setup_version_id = ${wersjaId} where id = ${id}`)))).toBe("TJ403");
+      // wstawienie od razu z setupem tez
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => tx.execute(dsql`insert into trades (account_id, instrument_id, direction, status, entry_time, entry_price, contracts, setup_id)
+        select account_id, instrument_id, direction, status, entry_time, entry_price, contracts, ${setupId} from trades where id = ${id}`)))).toBe("TJ403");
+      expect((await sql`select setup_id, process_grade from trades where id = ${id}`)[0]).toEqual({ setup_id: null, process_grade: null });
+
+      // sciezka planu: setup tak, ocena procesu nie
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => wSciezcePlanu(tx, () => tx.execute(dsql`update trades set setup_id = ${setupId}, setup_version_id = ${wersjaId} where id = ${id}`))))).toBeNull();
+      expect((await sql`select setup_id from trades where id = ${id}`)[0].setup_id).toBe(setupId);
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => wSciezcePlanu(tx, () => tx.execute(dsql`update trades set process_grade = 'B' where id = ${id}`))))).toBe("TJ403");
+      // znacznik sciezki jest zdejmowany po wykonaniu: kolejny zapis tego samego aktora znowu jest blokowany
+      expect(await kod(() => zapisZAktorem(aktor, (tx) => tx.execute(dsql`update trades set setup_id = null where id = ${id}`)))).toBe("TJ403");
+
+      // ui i zapis bez aktora (formularze aplikacji) przechodza
+      await zapisJakoUi((tx) => tx.execute(dsql`update trades set process_grade = 'C', process_graded_at = now() where id = ${id}`));
+      expect((await sql`select process_grade from trades where id = ${id}`)[0].process_grade).toBe("C");
+      await sql`update trades set setup_id = null where id = ${id}`;
+      expect((await sql`select setup_id from trades where id = ${id}`)[0].setup_id).toBeNull();
     });
   });
 

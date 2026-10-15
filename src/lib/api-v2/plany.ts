@@ -19,6 +19,7 @@ import { mapujSymbol } from "@/lib/domain/tradingview";
 import { instrumentSpec } from "@/lib/queries/dictionaries";
 
 import { czyWynikUkryty, ukryteSlowa, wejscieTradu } from "./ukrycie-wyniku";
+import { wSciezcePlanu } from "./zapis";
 import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { PlanDopisekSchema, PlanUtworzSchema, PlanyListaQuery } from "./contract/funkcje";
 import { numerZestawu } from "./reguly";
@@ -261,6 +262,7 @@ async function tezaToSlowaUzytkownika(tx: Transakcja, plan: Plan): Promise<boole
  */
 async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
   if (plan.tradeId === null) return;
+  const tradeIdPlanu = plan.tradeId;
   const [tr] = await tx.select({ entryTime: trades.entryTime, setupId: trades.setupId }).from(trades).where(eq(trades.id, plan.tradeId)).limit(1);
   if (!tr) return;
   // Porownujemy z czasem wejscia zapamietanym przy PRZYPIECIU (pierwszy zapis), nie z biezacym entry_time:
@@ -269,18 +271,21 @@ async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
   const przedWejsciem = plan.frozenAt.getTime() <= wejscie.getTime();
   const zSlowUzytkownika = przedWejsciem && (await tezaToSlowaUzytkownika(tx, plan));
 
-  await tx
+  // Wersja setupu trade'a = wersja obowiazujaca w chwili WEJSCIA, ta sama funkcja co w kolejce `trade_setup` (review 15.10.2026, pkt 9):
+  // wersja zamrozona w planie to wersja z chwili planu, a nowsza, przyjeta miedzy planem a wejsciem, nie moze przejac trade'a.
+  const wersjaWejscia = zSlowUzytkownika && plan.setupId !== null ? await wersjaSetupuNaChwile(tx, plan.setupId, wejscie) : null;
+  await wSciezcePlanu(tx, () => tx
     .update(trades)
     .set({
       ...(zSlowUzytkownika
         ? {
             setupId: sql`coalesce(${trades.setupId}, ${plan.setupId})`,
-            setupVersionId: sql`coalesce(${trades.setupVersionId}, ${plan.setupVersionId})`,
+            setupVersionId: sql`coalesce(${trades.setupVersionId}, ${wersjaWejscia})`,
           }
         : {}),
       rulesetVersion: sql`coalesce(${trades.rulesetVersion}, ${plan.rulesetVersion})`,
     })
-    .where(eq(trades.id, plan.tradeId));
+    .where(eq(trades.id, tradeIdPlanu)));
 
   if (!zSlowUzytkownika && plan.setupId !== null && tr.setupId === null) {
     const [setup] = await tx.select({ slug: setups.slug }).from(setups).where(eq(setups.id, plan.setupId)).limit(1);

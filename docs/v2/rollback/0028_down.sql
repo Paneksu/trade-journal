@@ -1,6 +1,9 @@
 -- Cofniecie migracji 0028_poprawki_po_przegladzie.sql. Uruchamiac w JEDNEJ transakcji (psql -1 -f).
 --
 -- Kolumna entry_time_at_attach znika razem z nowym strazem planu (wraca poprzednie cialo tj_plan_guard).
+DROP TRIGGER "trades_guard_insert" ON "trades";
+DROP TRIGGER "trades_guard_update" ON "trades";
+DROP FUNCTION public.tj_trade_guard();
 ALTER TABLE "trade_plans" DROP COLUMN "entry_time_at_attach";
 CREATE OR REPLACE FUNCTION public.tj_plan_guard() RETURNS trigger
   LANGUAGE plpgsql

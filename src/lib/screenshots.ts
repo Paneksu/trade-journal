@@ -61,7 +61,7 @@ export async function bladZawartosci(upload: File): Promise<string | null> {
     return null;
   }
   try {
-    const meta = await sharp(bajty, { limitInputPixels: 40_000_000 }).metadata();
+    const meta = await sharp(bajty, { limitInputPixels: LIMIT_PIKSELI_HEIC }).metadata();
     if (!meta.width || !meta.height) throw new Error("brak wymiarów");
     return null;
   } catch (e) {
@@ -97,7 +97,7 @@ export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<Sa
       throw e;
     }
   } else {
-    zrodlo = sharp(buffer, { limitInputPixels: 40_000_000 });
+    zrodlo = sharp(buffer, { limitInputPixels: LIMIT_PIKSELI_HEIC });
   }
   const image = zrodlo.rotate();
   const meta = await image.metadata();

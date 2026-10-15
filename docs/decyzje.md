@@ -1553,6 +1553,20 @@ w `links` trade'a, w `backlinks` ani w rozwiązanych `links` innych notatek, a `
 Jedna definicja wejścia dla całej ślepej oceny (notatki, dopiski notatek, dopiski planu, słowa, zrzuty): NAJWCZEŚNIEJSZE
 znane wejście, `least(entry_time_at_attach, entry_time)` (decyzja sesji głównej 15.10.2026; ukrywa więcej, więc bezpieczniejsze).
 
+**Decyzje użytkownika 15.10.2026 (końcowe review fazy 2b).**
+- **Tagi z API** (Słowa użytkownika: «Tagi z API przez kolejkę»): `POST /api/v2/trades` i ingest v1 nie zapisują tagów do `trade_tags`;
+  trafiają do `ai_suggestions` (rodzaj `tag`) i liczą się po zatwierdzeniu w UI (`origin = ai`). Synchronizacja niczego nie kasuje
+  (ani tagów zatwierdzonych, ani użytkownika), nie dubluje oczekujących sugestii i pomija tagi już przypisane. Formularz UI zapisuje
+  z `origin = user`. Kod: `persistTrade` z opcją `tagiPrzezKolejke`.
+- **Notatki dnia** (Słowa użytkownika: «Ukryj też notatki dnia po wejściu»): przy otwartym trade'cie z werdyktem ukryte są notatki z kotwicą
+  `day` tego dnia, utworzone albo zmienione po najwcześniejszym wejściu, w `/notes`, `/days/:date` i `/search`; w `/days/:date` także
+  `dayRating`, `mood` i `postSession`.
+- **Werdykty** (Słowa użytkownika: «Niezmienny zawsze»): każdy werdykt, także bez `evidence`, jest niezmienny (as_of + skrót pustego
+  manifestu); ta sama treść 200, inna 409, poprawka tylko jako `user_override`. Stare werdykty bez `as_of` zostają czytelne. Skutek:
+  klient, który dotąd podmieniał ocenę ponownym wysłaniem (np. mózg), dostanie 409 przy zmienionej treści.
+- **Zrzuty i geometria rysunków po wejściu** nie wychodzą z API wcale (na wykresie widać wynik), zgodnie z obietnicą ADR.
+- **Wspólna definicja wejścia:** `least(entry_time_at_attach, entry_time)` dla notatek, dopisków, słów, rysunków, zrzutów i kontroli look-ahead.
+
 **Decyzja użytkownika 15.10.2026 (Słowa użytkownika: «Zawsze bezpieczniej dla mnie»).** Przy niepotwierdzonych
 regułach prop „cel osiągnięty” i `brakCents` liczą się od WIĘKSZEGO z dwóch celów (potwierdzonego i nowego), limit
 consistency od MNIEJSZEGO; ogólnie przy każdym polu wybieramy wartość bezpieczniejszą dla tradera.
@@ -1727,3 +1741,9 @@ Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `doc
     - Teza planu liczy się jako „moje słowa” tylko przy roli `plan.thesis`, trade'u pustym albo równym, dniu planu, `captured_at <= now()` i słowach niewykorzystanych w innym planie; plan zapamiętuje czas wejścia z chwili przypięcia (`trade_plans.entry_time_at_attach`).
     - Zrzut bez znacznika czasu zrobienia (`captured_at` null) nie jest dowodem w werdykcie `chart`: 422 `look_ahead` (decyzja gustu wykonawcy, 15.10.2026; bezpieczniej, bo bez czasu nie da się wykazać, że powstał przed wejściem; zrzuty z API zawsze dostają czas, więc dotyczy tylko danych starszych).
     - Slepa ocena działa we wszystkich odczytach (`/trades/:id`, `/user-words`, `/days/:date`, `/chart-annotations`, `/search`): słowa, adnotacje i zrzuty powstałe po wejściu trade'a z ukrytym wynikiem nie wychodzą z API.
+  - **Końcowe review 2b (15.10.2026), decyzje wykonawcy (smak):**
+    - Trigger `trades_guard_*` (migracja 0028): aktor API (`api:*`, `ingest`) dostaje TJ403 na `trades.setup_id`, `setup_version_id`, `process_grade`, `process_graded_at`; setup może ustawić tylko ścieżka planu (`wSciezcePlanu` w `zapis.ts`), oceny procesu zatwierdza tylko UI. Wersja setupu z planu liczy się z chwili wejścia, tą samą funkcją co kolejka.
+    - `ostrzejszeZasady`: para (próg consistency + jego podstawa w `extra`) pochodzi z jednej reguły, tej z mniejszym progiem. Przy samych niepotwierdzonych regułach liczy się najostrzejsza ze wszystkich obowiązujących do dnia statusu.
+    - Wypłaty w statusie konta prop liczą się tylko do dnia statusu (`occurredOn <= day`).
+    - Mechanizm ukrycia jest jeden (`lib/api-v2/ukrycie-wyniku.ts`): `sqlWynikUkryty`, `sqlWejscieTradu`, `sqlPoWejsciu`, `sqlSlowaUkryte`, `sqlNotatkaUkryta` i odpowiedniki w aplikacji. Sugestie AI (`/ai-suggestions`) i brzmienie pytań luk nie są ukrywane: pisze je sama AI, nie użytkownik, a nie zawierają wyniku, którego AI nie zna.
+    - Brakujące ekrany UI (zatwierdzanie przeglądu tygodnia, odpowiedzi na luki, ocena zgodności cytatu mentora `review_ok`) to faza 5.

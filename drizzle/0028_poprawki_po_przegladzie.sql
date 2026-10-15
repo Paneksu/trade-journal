@@ -77,3 +77,42 @@ $$;--> statement-breakpoint
 ALTER TABLE "trade_plans" DISABLE TRIGGER "trade_plans_guard";--> statement-breakpoint
 UPDATE "trade_plans" p SET "entry_time_at_attach" = t."entry_time" FROM "trades" t WHERE t."id" = p."trade_id";--> statement-breakpoint
 ALTER TABLE "trade_plans" ENABLE TRIGGER "trade_plans_guard";
+--> statement-breakpoint
+
+-- 6) trades.setup_id, setup_version_id, process_grade, process_graded_at: aktor API (api:<token>, ingest) NIE zmienia ich
+-- wprost (TJ403). Setup trade'a wchodzi albo przez sciezke planu zamrozonego przed wejsciem (funkcja przepiszNaTrade ustawia
+-- tj.sciezka = plan), albo przez zatwierdzenie sugestii w UI; ocene procesu zatwierdza tylko UI. Aktor ui i zapisy bez
+-- aktora (formularze aplikacji) przechodza bez zmian.
+CREATE FUNCTION public.tj_trade_guard() RETURNS trigger
+  LANGUAGE plpgsql
+  AS $$
+DECLARE
+  v_actor text := nullif(current_setting('tj.actor', true), '');
+  v_plan boolean := coalesce(current_setting('tj.sciezka', true), '') = 'plan';
+  v_col text;
+  v_old text;
+  v_new text;
+BEGIN
+  IF v_actor IS NULL OR v_actor = 'ui' THEN
+    RETURN NEW;
+  END IF;
+  FOREACH v_col IN ARRAY ARRAY['setup_id', 'setup_version_id', 'process_grade', 'process_graded_at'] LOOP
+    v_new := to_jsonb(NEW) ->> v_col;
+    v_old := CASE WHEN TG_OP = 'UPDATE' THEN to_jsonb(OLD) ->> v_col ELSE NULL END;
+    IF v_old IS NOT DISTINCT FROM v_new THEN
+      CONTINUE;
+    END IF;
+    IF v_plan AND v_col IN ('setup_id', 'setup_version_id') THEN
+      CONTINUE;
+    END IF;
+    RAISE EXCEPTION 'Pole % trade''a #% zmienia sie z (%) na (%), a zapis przyszedl od aktora %. Powod: setup i ocena procesu licza sie w statystykach dopiero po decyzji uzytkownika. Naprawa: wyslij sugestie (POST /api/v2/ai-suggestions) albo plan zamrozony przed wejsciem (POST /api/v2/trade-plans).', v_col, NEW.id, coalesce(v_old, 'brak'), coalesce(v_new, 'brak'), v_actor
+      USING ERRCODE = 'TJ403', TABLE = TG_TABLE_NAME, COLUMN = v_col;
+  END LOOP;
+  RETURN NEW;
+END
+$$;--> statement-breakpoint
+CREATE TRIGGER "trades_guard_update" BEFORE UPDATE OF "setup_id", "setup_version_id", "process_grade", "process_graded_at" ON "trades"
+  FOR EACH ROW EXECUTE FUNCTION public.tj_trade_guard();--> statement-breakpoint
+CREATE TRIGGER "trades_guard_insert" BEFORE INSERT ON "trades"
+  FOR EACH ROW WHEN (NEW."setup_id" IS NOT NULL OR NEW."setup_version_id" IS NOT NULL OR NEW."process_grade" IS NOT NULL OR NEW."process_graded_at" IS NOT NULL)
+  EXECUTE FUNCTION public.tj_trade_guard();

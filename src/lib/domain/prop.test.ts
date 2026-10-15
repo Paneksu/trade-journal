@@ -480,6 +480,19 @@ describe("niepotwierdzone reguly konta: liczymy na ostrzejszej z dwoch, pole po 
     expect(ostrzejszeZasady(a, a).zasady).toEqual(a);
   });
 
+  it("para (prog consistency + jego podstawa w extra) pochodzi z JEDNEJ reguly: tej z mniejszym progiem; reszta extra idzie z typem DD", () => {
+    const a = zasady({ ddType: "eod", consistencyPct: 50, extra: { trail_basis: "eod", consistency_basis: "A: zysk laczny", consistency_effect: "fail" } });
+    const b = zasady({ ddType: "static", consistencyPct: 40, extra: { consistency_basis: "B: cel zysku", consistency_effect: "block_payout" } });
+    const w = ostrzejszeZasady(a, b).zasady;
+    expect(w.consistencyPct).toBe(40);
+    expect(w.extra).toEqual({ trail_basis: "eod", consistency_basis: "B: cel zysku", consistency_effect: "block_payout" });
+    const w2 = ostrzejszeZasady(b, a).zasady; // kolejnosc argumentow nie zmienia wyniku
+    expect(w2.consistencyPct).toBe(40);
+    expect(w2.extra).toEqual(w.extra);
+    const c = zasady({ consistencyPct: 30, extra: { consistency_basis: "C" } });
+    expect(ostrzejszeZasady(c, b).zasady).toMatchObject({ consistencyPct: 30, extra: { consistency_basis: "C" } });
+  });
+
   it("skutek na buforze: ostrzejsze zasady daja mniejszy bufor niz nowa luzniejsza regula", () => {
     const potw = zasady({ maxDdCents: 200_000 });
     const nowe = zasady({ maxDdCents: 400_000 });

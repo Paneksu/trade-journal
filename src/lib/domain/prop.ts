@@ -600,6 +600,16 @@ const maxNonNull = (a: number | null, b: number | null): number | null => (a ===
 export function ostrzejszeZasady(potwierdzone: ZasadyKonta, nowe: ZasadyKonta): ZasadyOstrzejsze {
   const typZNowych = SILA_TYPU_DD[nowe.ddType] > SILA_TYPU_DD[potwierdzone.ddType];
   const baza = typZNowych ? nowe : potwierdzone;
+  // Para (prog consistency, jego podstawa i skutek w `extra`) pochodzi z JEDNEJ reguly: tej z mniejszym progiem. Sklejanie progu z jednej
+  // reguly i podstawy z drugiej dawaloby liczbe o innym znaczeniu (np. 40% z »najlepszego dnia/zysku« z podstawa »celu zysku« z drugiej).
+  const reguly = [potwierdzone, nowe];
+  const zProgiem = reguly.filter((r) => r.consistencyPct !== null);
+  const regulaConsistency = zProgiem.length === 0 ? baza : zProgiem.reduce((a, b) => ((b.consistencyPct as number) < (a.consistencyPct as number) ? b : a));
+  const czyConsistency = (k: string) => k.startsWith("consistency_");
+  const extra: Record<string, unknown> = {
+    ...Object.fromEntries(Object.entries(baza.extra).filter(([k]) => !czyConsistency(k))),
+    ...Object.fromEntries(Object.entries(regulaConsistency.extra).filter(([k]) => czyConsistency(k))),
+  };
   return {
     zrodloTypuDd: typZNowych ? "nowe" : "potwierdzone",
     zasady: {
@@ -610,11 +620,11 @@ export function ostrzejszeZasady(potwierdzone: ZasadyKonta, nowe: ZasadyKonta): 
       // «Zawsze bezpieczniej dla mnie» (Slowa uzytkownika 15.10.2026): cel do osiagniecia liczy sie od WIEKSZEGO z dwoch
       // (trader nie uzna celu za zdobyty za wczesnie, a brakCents nie jest zanizony); limit consistency od MNIEJSZEGO.
       profitTargetCents: maxNonNull(potwierdzone.profitTargetCents, nowe.profitTargetCents),
-      consistencyPct: minNonNull(potwierdzone.consistencyPct, nowe.consistencyPct),
+      consistencyPct: regulaConsistency.consistencyPct,
       minDays: maxNonNull(potwierdzone.minDays, nowe.minDays),
       maxContractsMini: minNonNull(potwierdzone.maxContractsMini, nowe.maxContractsMini),
       maxContractsMicro: minNonNull(potwierdzone.maxContractsMicro, nowe.maxContractsMicro),
-      extra: baza.extra,
+      extra,
     },
   };
 }

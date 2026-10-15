@@ -273,7 +273,7 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
   const od = odPotwierdzonych !== null && odPotwierdzonych < obowiazujace.regula.validFrom ? odPotwierdzonych : obowiazujace.regula.validFrom;
   // Stan na dzien `dzien`: pozniejsze trade'y nie moga wplywac na status "z przeszlosci" (review P3).
   const transakcje = await transakcjeKonta(tx, accountId, od, dzien);
-  const [wyplata] = await tx.select({ d: max(propLedger.occurredOn) }).from(propLedger).where(and(eq(propLedger.accountId, accountId), eq(propLedger.kind, "payout")));
+  const [wyplata] = await tx.select({ d: max(propLedger.occurredOn) }).from(propLedger).where(and(eq(propLedger.accountId, accountId), eq(propLedger.kind, "payout"), lte(propLedger.occurredOn, dzien))); // wyplata PO dniu statusu nie moze wplywac na status z przeszlosci
 
   let ryzyko: number | null = null;
   let zrodloRyzyka: StatusKontaWynik["riskSource"] = null;
@@ -316,7 +316,17 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
       notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, więc bufory liczę na ostrzejszej z dwóch: ostatniej potwierdzonej (od ${potw.validFrom}, #${potw.id}) i nowej. Potwierdź je w »Do decyzji«, gdy sprawdzisz regulamin.`;
     } else {
       zrodloZasad = "unconfirmed_only";
-      notatkaZasad = `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, a wcześniejszych potwierdzonych brak, więc liczę na nich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`;
+      // Same niepotwierdzone reguly: bierzemy NAJOSTRZEJSZA ze wszystkich obowiazujacych do dnia statusu («Zawsze bezpieczniej dla mnie»,
+      // Slowa uzytkownika 15.10.2026), nie tylko najnowsza.
+      const inne = await tx
+        .select()
+        .from(propRules)
+        .where(and(eq(propRules.accountId, accountId), lte(propRules.validFrom, dzien), isNull(propRules.confirmedAt), ne(propRules.id, obowiazujace.regula.id)))
+        .orderBy(asc(propRules.validFrom));
+      for (const r of inne) zasady = ostrzejszeZasady(naZasady(r), zasady).zasady;
+      notatkaZasad = inne.length > 0
+        ? `Reguły konta nie są potwierdzone w aplikacji (obowiązujące od ${obowiazujace.regula.validFrom}, #${obowiazujace.regula.id}, oraz wcześniejsze: ${inne.map((r) => `#${r.id}`).join(", ")}), a potwierdzonych brak, więc liczę na najostrzejszej ze wszystkich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`
+        : `Reguły od ${obowiazujace.regula.validFrom} (#${obowiazujace.regula.id}) nie są potwierdzone w aplikacji, a wcześniejszych potwierdzonych brak, więc liczę na nich. Sprawdź regulamin i potwierdź je w »Do decyzji«.`;
     }
   }
 

@@ -331,6 +331,134 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     });
   }
 
+  it("B1/B2: PATCH ukrytej notatki i PUT interpretacji ukrytych slow to 404 przed jakimkolwiek odczytem (takze przed 409 z trescia)", async () => {
+    const { id } = await przygotuj();
+    const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: `Do edycji ${unikat("e")} ${TOKEN}`, bodyMd: `Sekret ${TOKEN}`, tradeId: id } });
+    expect(nota.status, JSON.stringify(nota.json)).toBe(201);
+    const notaId = nota.json.id as number;
+    await sql`update notes set created_at = ${`${DZIEN}T15:00:00Z`}::timestamptz, updated_at = ${`${DZIEN}T15:00:00Z`}::timestamptz where id = ${notaId}`;
+    // zla rewizja: dla widocznej notatki to 409 z `current` (trescia); dla ukrytej ma byc 404 bez tresci
+    const patch = await wywolaj(import("@/app/api/v2/notes/[id]/route"), "PATCH", `/notes/${notaId}`, { token: rw.token, cialo: { title: `Nowy ${unikat("n")}` }, naglowki: { "if-match": "999" } }, PARAMS({ id: String(notaId) }));
+    expect(patch.status, JSON.stringify(patch.json)).toBe(404);
+    expect(JSON.stringify(patch.json)).not.toContain("Sekret");
+
+    const slowa = await zapiszSlowa(rw.token, `Slowa po wejsciu ${unikat("s")} ${TOKEN}`, { tradeId: id, capturedAt: `${DZIEN}T15:30:00Z` });
+    const put = await wywolaj(import("@/app/api/v2/user-words/[id]/interpretation/route"), "PUT", `/user-words/${slowa.id}/interpretation`, { token: rw.token, cialo: { text: "Interpretacja", model: "claude-opus-5-5" } }, PARAMS({ id: String(slowa.id) }));
+    expect(put.status, JSON.stringify(put.json)).toBe(404);
+    expect((await sql`select ai_interpretation from user_words where id = ${slowa.id}`)[0].ai_interpretation).toBeNull();
+    // po zamknieciu trade'a to znowu zwykla sciezka
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+    const po = await wywolaj(import("@/app/api/v2/user-words/[id]/interpretation/route"), "PUT", `/user-words/${slowa.id}/interpretation`, { token: rw.token, cialo: { text: "Interpretacja", model: "claude-opus-5-5" } }, PARAMS({ id: String(slowa.id) }));
+    expect(po.status, JSON.stringify(po.json)).toBeLessThan(300);
+  });
+
+  it("B4: look-ahead liczy od NAJWCZESNIEJSZEGO wejscia: pozniejsza edycja entry_time nie poluzowuje kontroli swiec", async () => {
+    const id = await wstawTrade(sql, { kontoId, instrumentId, dzien: DZIEN, status: "open", wejscie: 20000, sl: 19990 });
+    await sql`update trades set entry_time = ${`${DZIEN}T14:35:00Z`}::timestamptz where id = ${id}`;
+    const plan = await wywolaj(import("@/app/api/v2/trade-plans/route"), "POST", "/trade-plans", {
+      token: rw.token,
+      cialo: { accountId: kontoId, symbol: "NQ1!", day: DZIEN, direction: "long", entryPrice: 20000, stopLoss: 19990, contracts: 1, tradeId: id },
+    });
+    expect(plan.status, JSON.stringify(plan.json)).toBe(201);
+    await sql`update trades set entry_time = ${`${DZIEN}T18:00:00Z`}::timestamptz where id = ${id}`; // wejscie przesuniete PO swiecach
+    const swiecePo = [
+      { t: `${DZIEN}T14:45:00Z`, o: 20000, h: 20010, l: 19995, c: 20005 },
+      { t: `${DZIEN}T14:55:00Z`, o: 20005, h: 20015, l: 20000, c: 20012 },
+    ]; // ostatnia konczy sie 15:00 > 14:35 (najwczesniejsze wejscie), a < 18:00
+    const r = await wywolaj(import("@/app/api/v2/trades/[id]/reviews/route"), "POST", `/trades/${id}/reviews`, { token: rw.token, cialo: { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiecePo } } }, PARAMS({ id: String(id) }));
+    expect(r.status, JSON.stringify(r.json)).toBe(422);
+    expect(r.json.code).toBe("look_ahead");
+    expect(r.json.error).toContain("14:35");
+  });
+
+  it("ta sama klasa odczytow: dzien (notatki dnia, mood, dayRating), slowa przypiete do ukrytej notatki, profil, luki, teza planu", async () => {
+    const { id, po, dnia } = await przygotuj();
+    // inne otwarte trade'y z werdyktem z tego samego dnia (z poprzednich testow) tez ukrywaja notatki dnia: zamykamy je dla izolacji
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where account_id = ${kontoId} and trading_day = ${DZIEN} and id <> ${id}`;
+    const sprzatanie: (() => Promise<unknown>)[] = [];
+    try {
+      // --- notatki z kotwica day ---
+      const mkNote = async (tytul: string, kotwica: Record<string, unknown>, stamp: string) => {
+        const r = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: tytul, bodyMd: `Tresc ${TOKEN}`, ...kotwica } });
+        expect(r.status, JSON.stringify(r.json)).toBe(201);
+        await sql`update notes set created_at = ${stamp}::timestamptz, updated_at = ${stamp}::timestamptz where id = ${r.json.id}`;
+        return r.json.id as number;
+      };
+      const dzienPo = await mkNote(`DzienowaPo${TOKEN}`, { day: DZIEN }, `${DZIEN}T15:00:00Z`);
+      const dzienPrzed = await mkNote(`DzienowaPrzed${TOKEN}`, { day: DZIEN }, `${DZIEN}T12:00:00Z`);
+      expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${dzienPo}`, PARAMS({ id: String(dzienPo) }))).status).toBe(404);
+      expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${dzienPrzed}`, PARAMS({ id: String(dzienPrzed) }))).status).toBe(200);
+      const dzien = await get(import("@/app/api/v2/days/[date]/route"), `/days/${DZIEN}?accountId=${kontoId}`, PARAMS({ date: DZIEN }));
+      const idyDnia = dzien.json.notes.map((n: { id: number }) => n.id);
+      expect(idyDnia).toContain(dzienPrzed);
+      expect(idyDnia).not.toContain(dzienPo);
+      const szukaj = (await get(import("@/app/api/v2/search/route"), `/search?q=${TOKEN}&types=notes`)).json.results.map((r: { id: number }) => r.id);
+      expect(szukaj).toContain(dzienPrzed);
+      expect(szukaj).not.toContain(dzienPo);
+      const lista = (await get(import("@/app/api/v2/notes/route"), `/notes?day=${DZIEN}`)).json.notes.map((n: { id: number }) => n.id);
+      expect(lista).not.toContain(dzienPo);
+
+      // --- mood i dayRating dnia ---
+      const zapis = await wywolaj(import("@/app/api/v2/days/[date]/route"), "PUT", `/days/${DZIEN}`, { token: rw.token, cialo: { accountId: kontoId, mood: 4, dayRating: 5 } }, PARAMS({ date: DZIEN }));
+      expect(zapis.status, JSON.stringify(zapis.json)).toBeLessThan(300);
+      const dzien2 = await get(import("@/app/api/v2/days/[date]/route"), `/days/${DZIEN}?accountId=${kontoId}`, PARAMS({ date: DZIEN }));
+      expect(dzien2.json.dayNote).toMatchObject({ mood: null, dayRating: null, postSession: null });
+
+      // --- slowa przypiete do ukrytej notatki (bez trade'a i dnia) ---
+      const slowaNotatki = await zapiszSlowa(rw.token, `Slowa przy ukrytej notatce ${unikat("sn")} ${TOKEN}`, { noteId: dzienPo, capturedAt: `${DZIEN}T11:00:00Z` });
+      const wNotatce = (await get(import("@/app/api/v2/user-words/route"), `/user-words?noteId=${dzienPo}`)).json.words.map((w: { id: number }) => w.id);
+      expect(wNotatce).not.toContain(slowaNotatki.id);
+      const szukajSlow = (await get(import("@/app/api/v2/search/route"), `/search?q=Slowa+przy+ukrytej+notatce&types=words`)).json.results.map((r: { id: number }) => r.id);
+      expect(szukajSlow).not.toContain(slowaNotatki.id);
+
+      // --- profil: zrodla hasel i korekty interpretacji ---
+      const [haslo] = await sql`insert into profile_terms (term, meaning, status, origin) values (${`Haslo ${znacznik} ${TOKEN}`}, 'znaczenie', 'proposed', 'user') returning id`;
+      sprzatanie.push(() => sql`delete from profile_terms where id = ${haslo.id}`);
+      await sql`insert into profile_term_sources (term_id, words_id) values (${haslo.id}, ${po.id})`;
+      sprzatanie.unshift(() => sql`delete from profile_term_sources where term_id = ${haslo.id}`);
+      const [kor] = await sql`insert into interpretation_corrections (words_id, before_interpretation, correction_words_id, after_interpretation) values (${po.id}, 'PRZED-INTERPRETACJA', ${dnia.id}, 'PO-INTERPRETACJI') returning id`;
+      sprzatanie.unshift(() => sql`delete from interpretation_corrections where id = ${kor.id}`);
+      const profil = await get(import("@/app/api/v2/profile/route"), "/profile");
+      expect(profil.status).toBe(200);
+      const tekstProfilu = JSON.stringify(profil.json);
+      expect(tekstProfilu).not.toContain("Po fakcie wygralem dwa R");
+      expect(tekstProfilu).not.toContain("PRZED-INTERPRETACJA");
+      expect(profil.json.terms.find((t: { id: number }) => t.id === haslo.id).sources).toEqual([]);
+
+      // --- luki: odpowiedz ---
+      const luka = await wywolaj(import("@/app/api/v2/strategy-gaps/route"), "POST", "/strategy-gaps", { token: rw.token, cialo: { kind: "gap", question: `Pytanie ${unikat("g")} ${TOKEN}`, tradeId: id } });
+      expect(luka.status, JSON.stringify(luka.json)).toBeLessThan(300);
+      const lukaId = luka.json.id as number;
+      sprzatanie.unshift(() => sql`delete from strategy_gaps where id = ${lukaId}`);
+      const { zapisJakoUi } = await import("./zapis");
+      const { sql: dsql } = await import("drizzle-orm");
+      await zapisJakoUi((tx) => tx.execute(dsql`update strategy_gaps set status = 'answered', answered_at = now(), answer_words_id = ${po.id} where id = ${lukaId}`));
+      const luki = await get(import("@/app/api/v2/strategy-gaps/route"), "/strategy-gaps?status=answered");
+      expect(luki.json.gaps.find((g: { id: number }) => g.id === lukaId).answer).toBeNull();
+
+      // --- teza planu ze slow po wejsciu ---
+      const teza = await zapiszSlowa(rw.token, `Teza napisana po wejsciu ${unikat("t")} ${TOKEN}`, { day: DZIEN, role: "plan.thesis", capturedAt: `${DZIEN}T15:20:00Z` });
+      const plan = await wywolaj(import("@/app/api/v2/trade-plans/route"), "POST", "/trade-plans", { token: rw.token, cialo: { accountId: kontoId, symbol: "NQ1!", day: DZIEN, direction: "long", entryPrice: 20000, stopLoss: 19990, contracts: 1, tradeId: id, thesisWordsId: teza.id } });
+      expect(plan.status, JSON.stringify(plan.json)).toBe(201);
+      const planId = plan.json.plan.id as number;
+      const p = await get(import("@/app/api/v2/trade-plans/[id]/route"), `/trade-plans/${planId}`, PARAMS({ id: String(planId) }));
+      expect(p.json.thesis).toBeNull();
+      const t = await get(import("@/app/api/v2/trades/[id]/route"), `/trades/${id}`, PARAMS({ id: String(id) }));
+      expect(JSON.stringify(t.json.plan)).not.toContain("Teza napisana po wejsciu");
+
+      // --- po zamknieciu trade'a wszystko wraca ---
+      await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+      expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${dzienPo}`, PARAMS({ id: String(dzienPo) }))).status).toBe(200);
+      const dzienPoZamknieciu = await get(import("@/app/api/v2/days/[date]/route"), `/days/${DZIEN}?accountId=${kontoId}`, PARAMS({ date: DZIEN }));
+      expect(dzienPoZamknieciu.json.dayNote).toMatchObject({ mood: 4, dayRating: 5 });
+      expect(JSON.stringify((await get(import("@/app/api/v2/profile/route"), "/profile")).json)).toContain("PRZED-INTERPRETACJA");
+      expect((await get(import("@/app/api/v2/strategy-gaps/route"), "/strategy-gaps?status=answered")).json.gaps.find((g: { id: number }) => g.id === lukaId).answer).not.toBeNull();
+      expect((await get(import("@/app/api/v2/trade-plans/[id]/route"), `/trade-plans/${planId}`, PARAMS({ id: String(planId) }))).json.thesis).not.toBeNull();
+    } finally {
+      for (const f of sprzatanie) await f().catch(() => {});
+    }
+  });
+
   it("GET /trades/:id: zrzuty zrobione po wejsciu traca podpis, czas i stan wykresu; tresc korekty uzytkownika (summaryMd) jest ukryta", async () => {
     const { id } = await przygotuj();
     const [{ id: ocenaId }] = await sql`select id from trade_reviews where trade_id = ${id} and kind = 'ai'`;

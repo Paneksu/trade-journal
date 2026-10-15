@@ -45,3 +45,16 @@ export function zapisJakoUi<T>(fn: (tx: Transakcja) => Promise<T>): Promise<T> {
 export const AKTOR_INGEST = "ingest";
 
 export const zapisIngest: Zapis = (fn) => zapisZAktorem(AKTOR_INGEST, fn);
+
+/**
+ * Wykonuje `fn` na sciezce planu zamrozonego przed wejsciem (`tj.sciezka = plan`, lokalnie dla transakcji): tylko wtedy aktor
+ * API moze ustawic `trades.setup_id` i `setup_version_id` (trigger `trades_guard_*`, migracja 0028; Slowa uzytkownika 15.10.2026:
+ * «Plan z moich slow = zatwierdzenie»). Znacznik jest zdejmowany zaraz po `fn`. Oceny procesu ta sciezka nie odblokowuje.
+ */
+export async function wSciezcePlanu<T>(tx: Transakcja, fn: () => Promise<T>): Promise<T> {
+  await tx.execute(sql`select set_config('tj.sciezka', 'plan', true)`);
+  // Bez `finally`: po bledzie transakcja jest przerwana (zapytania daja 25P02 i maskuja prawdziwy blad), a znacznik jest lokalny dla transakcji i ginie z jej wycofaniem.
+  const wynik = await fn();
+  await tx.execute(sql`select set_config('tj.sciezka', '', true)`);
+  return wynik;
+}

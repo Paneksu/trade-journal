@@ -228,6 +228,8 @@ describe.skipIf(!MOZNA_NA_BAZIE)("moduł prop: presety, reguly konta, bufory i k
     expect(ksiega.json.entries).toHaveLength(3);
     expect(ksiega.json.summary).toMatchObject({ costsCents: -26_400, inflowsCents: 120_000, netCents: 93_600 });
     expect(ksiega.json.summary.byKind).toEqual({ eval_fee: -16_500, reset_fee: -9_900, payout: 120_000 });
+    // wyplata z PRZYSZLOSCI wzgledem dnia statusu nie moze przesunac poczatku cyklu (review 15.10.2026, pkt 8)
+    expect((await wpisz({ kind: "payout", amountCents: 50_000, occurredOn: "2026-12-31" })).status).toBe(201);
     // data wyplaty wyznacza poczatek cyklu consistency (nie liczymy dni sprzed wyplaty)
     await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 800_000, consistencyPct: 40, extra: { consistency_basis: "największy dzień/zysk w cyklu wypłaty", consistency_effect: "block_payout" } });
     await wstawTrade(sql, { kontoId: id, instrumentId, dzien: "2026-09-10", status: "closed", r: 10 });
@@ -285,7 +287,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("moduł prop: presety, reguly konta, bufory i k
     zgodneZKontraktem("get", "/prop/accounts/{id}/status", bez.json);
     expect(bez.json.rulesConfirmed).toBe(false);
     expect(bez.json.rulesUsed.source).toBe("unconfirmed_only");
-    expect(bez.json.state.drawdownBufferCents).toBe(350_000);
+    // same niepotwierdzone: NAJOSTRZEJSZA ze wszystkich (stara 200 000 < nowa 400 000), nie tylko najnowsza («Zawsze bezpieczniej dla mnie»)
+    expect(bez.json.rulesUsed.maxDdCents).toBe(200_000);
+    expect(bez.json.rulesNote).toContain("najostrzejszej");
+    expect(bez.json.state.drawdownBufferCents).toBe(150_000);
 
     expect((await potwierdzReguleKonta(stara.json.id)).ok).toBe(true);
     const ostrzejsza = await status(id, "?day=2026-07-01");
