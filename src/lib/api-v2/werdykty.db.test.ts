@@ -271,6 +271,12 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(zly.status, JSON.stringify(zly.json)).toBe(422);
     expect(zly.json.code).toBe("look_ahead");
     expect(zly.json.error).toContain(poWejsciu.sha256);
+    // zrzut bez znacznika czasu zrobienia tez nie jest dowodem »sprzed wejscia« (decyzja klasy gustu, 15.10.2026: bezpieczniej)
+    const bezCzasu = await wgrajZrzut(id, "manual");
+    await sql`update screenshots set captured_at = null where id = ${bezCzasu.id}`;
+    const nieznany = await ocena(id, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: bezCzasu.sha256 }] } });
+    expect(nieznany.status, JSON.stringify(nieznany.json)).toBe(422);
+    expect(nieznany.json.error).toContain("bez znacznika czasu");
     const dobry = await ocena(id, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: przedWejsciem.sha256 }] } });
     expect(dobry.status, JSON.stringify(dobry.json)).toBe(201);
     const historia = await ocena(id, { basis: "history", summaryMd: "Po fakcie.", evidence: { intervalMinutes: 5, candles: swiece("14:40"), screenshots: [{ sha256: poWejsciu.sha256 }] } });

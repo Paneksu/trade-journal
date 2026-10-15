@@ -142,6 +142,48 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     expect(znalezionePo).toEqual(expect.arrayContaining([`user_words:${po.id}`, `user_words:${dnia.id}`, `trade:${id}`]));
   });
 
+  it("dopiski planu (po zamrozeniu) i notatki przypiete do trade'a nie wychodza z /trade-plans/:id, /trades/:id, /notes i /search, dopoki wynik jest ukryty", async () => {
+    const { id } = await przygotuj();
+    const plan = await wywolaj(import("@/app/api/v2/trade-plans/route"), "POST", "/trade-plans", {
+      token: rw.token,
+      cialo: { accountId: kontoId, symbol: "NQ1!", day: DZIEN, direction: "long", entryPrice: 20000, stopLoss: 19990, contracts: 1, tradeId: id },
+    });
+    expect(plan.status, JSON.stringify(plan.json)).toBe(201);
+    const planId = plan.json.plan.id as number;
+    // dopisek PO wejsciu (przez API: created_at = teraz) i dopisek sprzed wejscia (wstawiony SQL-em z czasem sprzed wejscia)
+    const slowaPo = await zapiszSlowa(rw.token, `SL na BE po +1R ${TOKEN}`, { tradeId: id, capturedAt: `${DZIEN}T15:00:00Z` });
+    const slowaPrzed = await zapiszSlowa(rw.token, `Korekta planu przed wejsciem ${TOKEN}`, { tradeId: id, capturedAt: `${DZIEN}T14:10:00Z` });
+    const po = await wywolaj(import("@/app/api/v2/trade-plans/[id]/addenda/route"), "POST", `/trade-plans/${planId}/addenda`, { token: rw.token, cialo: { field: "stop_loss", newValue: 20000, wordsId: slowaPo.id } }, PARAMS({ id: String(planId) }));
+    expect(po.status, JSON.stringify(po.json)).toBe(201);
+    await sql`insert into trade_plan_addenda (plan_id, field, new_value, words_id, created_at) values (${planId}, 'take_profit', ${sql.json(20050)}, ${slowaPrzed.id}, ${`${DZIEN}T14:11:00Z`})`;
+    const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: `Pojecie ${TOKEN}`, bodyMd: `Trade wygral dwa R ${TOKEN}`, tradeId: id } });
+    expect(nota.status, JSON.stringify(nota.json)).toBe(201);
+    const notaId = nota.json.id as number;
+
+    const plan1 = await get(import("@/app/api/v2/trade-plans/[id]/route"), `/trade-plans/${planId}`, PARAMS({ id: String(planId) }));
+    expect(plan1.status).toBe(200);
+    zgodneZKontraktem("get", "/trade-plans/{id}", plan1.json);
+    expect(plan1.json.addenda.map((a: { wordsId: number }) => a.wordsId)).toEqual([slowaPrzed.id]);
+    expect(JSON.stringify(plan1.json)).not.toContain("SL na BE po +1R");
+    const t = await get(import("@/app/api/v2/trades/[id]/route"), `/trades/${id}`, PARAMS({ id: String(id) }));
+    expect(JSON.stringify(t.json.plan)).not.toContain("SL na BE po +1R");
+
+    expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${notaId}`, PARAMS({ id: String(notaId) }))).status).toBe(404);
+    const lista = await get(import("@/app/api/v2/notes/route"), `/notes?tradeId=${id}`);
+    expect(lista.json.notes.map((n: { id: number }) => n.id)).not.toContain(notaId);
+    const szukaj = await get(import("@/app/api/v2/search/route"), `/search?q=${TOKEN}&types=notes`);
+    expect(szukaj.json.results.map((r: { id: number }) => r.id)).not.toContain(notaId);
+
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+    const planPo = await get(import("@/app/api/v2/trade-plans/[id]/route"), `/trade-plans/${planId}`, PARAMS({ id: String(planId) }));
+    expect(planPo.json.addenda).toHaveLength(2);
+    expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${notaId}`, PARAMS({ id: String(notaId) }))).status).toBe(200);
+    const listaPo = await get(import("@/app/api/v2/notes/route"), `/notes?tradeId=${id}`);
+    expect(listaPo.json.notes.map((n: { id: number }) => n.id)).toContain(notaId);
+    const szukajPo = await get(import("@/app/api/v2/search/route"), `/search?q=${TOKEN}&types=notes`);
+    expect(szukajPo.json.results.map((r: { id: number }) => r.id)).toContain(notaId);
+  });
+
   it("GET /trades/:id: zrzuty zrobione po wejsciu traca podpis, czas i stan wykresu; tresc korekty uzytkownika (summaryMd) jest ukryta", async () => {
     const { id } = await przygotuj();
     const [{ id: ocenaId }] = await sql`select id from trade_reviews where trade_id = ${id} and kind = 'ai'`;

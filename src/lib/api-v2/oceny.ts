@@ -256,13 +256,13 @@ async function zapiszWerdyktNiezmienny(
       .from(screenshots)
       .where(and(eq(screenshots.tradeId, trade.id), inArray(screenshots.sha256, sha)));
     // Ocena »chart« nie moze opierac sie na zrzucie zrobionym PO wejsciu (audyt N3, 15.10.2026): pokazuje przyszlosc.
-    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt !== null && z.capturedAt.getTime() > trade.entryTime.getTime()) : [];
+    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt === null || z.capturedAt.getTime() > trade.entryTime.getTime()) : [];
     if (poWejsciu.length > 0) {
       return {
         ok: false,
         status: 422,
         kod: "look_ahead",
-        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (zrobiony ${z.capturedAt!.toISOString()})`).join(", ")} powstał po wejściu (${trade.entryTime.toISOString()}). Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
+        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (${z.capturedAt === null ? "bez znacznika czasu zrobienia" : `zrobiony ${z.capturedAt.toISOString()}`})`).join(", ")} nie ma dowodu, że powstał przed wejściem (${trade.entryTime.toISOString()}): jest zrobiony po wejściu albo bez znacznika czasu. Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
         dodatkowe: { afterEntry: poWejsciu.map((z) => z.sha256) },
       };
     }

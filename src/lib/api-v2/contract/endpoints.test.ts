@@ -35,6 +35,22 @@ describe("kontrakt OpenAPI: docs/openapi-v2.json jest aktualny", () => {
   });
 });
 
+describe("kontrakt: odpowiedzi 2xx maja schemat sukcesu, nie bledu", () => {
+  it("zadna odpowiedz 2xx nie wymaga pol error i code (schemat BladOdpowiedz), chyba ze to endpoint, ktory z definicji zwraca blad", () => {
+    const doc = zbudujOpenApi() as { paths: Record<string, Record<string, { responses: Record<string, { content?: { "application/json": { schema: { required?: string[] } } } }> }>> };
+    const zle: string[] = [];
+    for (const [sciezka, metody] of Object.entries(doc.paths)) {
+      for (const [metoda, op] of Object.entries(metody)) {
+        for (const [kod, odp] of Object.entries(op.responses)) {
+          const wymagane = odp.content?.["application/json"]?.schema?.required ?? [];
+          if (Number(kod) < 300 && wymagane.includes("error") && wymagane.includes("code")) zle.push(`${metoda.toUpperCase()} ${sciezka} ${kod}`);
+        }
+      }
+    }
+    expect(zle).toEqual([]);
+  });
+});
+
 describe("kontrakt a kody statusu 2xx wpisane w pliki tras", () => {
   it("kazdy kod 2xx, ktory trasa zwraca literalem, jest opisany w kontrakcie (status glowny albo bledy) przynajmniej jednej metody tej trasy", () => {
     // Plik trasy moze obslugiwac kilka metod, a kod w pliku nie mowi, ktorej dotyczy; sprawdzamy sume metod pliku.

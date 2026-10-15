@@ -2671,19 +2671,116 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
                     },
-                    "code": {
-                      "type": "string"
+                    "reviewId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
-                    "requestId": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "ruleChecks": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "userVerdictsKept": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "immutable": {
+                      "type": "boolean"
+                    },
+                    "asOf": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "evidenceHash": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "evidenceCutoff": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "rulesetVersion": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "unknownRules": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "lookAhead": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "moglZnacDzien": {
+                              "type": "boolean"
+                            },
+                            "powod": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "moglZnacDzien",
+                            "powod"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "ok",
+                    "reviewId",
+                    "created",
+                    "ruleChecks",
+                    "userVerdictsKept",
+                    "immutable",
+                    "asOf",
+                    "evidenceHash",
+                    "evidenceCutoff",
+                    "rulesetVersion",
+                    "unknownRules",
+                    "lookAhead"
                   ],
                   "additionalProperties": false
                 }
@@ -3206,19 +3303,46 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "ok": {
+                      "type": "boolean",
+                      "const": true
+                    },
+                    "reviewId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "overridesReviewId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "asOf": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "evidenceHash": {
                       "type": "string"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "ruleChecks": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "ok",
+                    "reviewId",
+                    "overridesReviewId",
+                    "asOf",
+                    "evidenceHash",
+                    "ruleChecks"
                   ],
                   "additionalProperties": false
                 }
@@ -3799,19 +3923,48 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "backtest",
+                        "forward"
+                      ]
+                    },
+                    "externalRef": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "name": {
                       "type": "string"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "id",
+                    "created",
+                    "kind",
+                    "externalRef",
+                    "name",
+                    "warnings"
                   ],
                   "additionalProperties": false
                 }
@@ -4591,19 +4744,22 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "date": {
                       "type": "string"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "id",
+                    "date",
+                    "created"
                   ],
                   "additionalProperties": false
                 }
@@ -6747,19 +6903,103 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "noteId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "bodyMd": {
                       "type": "string"
                     },
-                    "code": {
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "ai",
+                        "mentor"
+                      ]
+                    },
+                    "signature": {
                       "type": "string"
                     },
-                    "requestId": {
+                    "quoteWordsId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "mentorClaimId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "suggestionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
                       "type": "string"
+                    },
+                    "revertedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "id",
+                    "noteId",
+                    "bodyMd",
+                    "origin",
+                    "signature",
+                    "quoteWordsId",
+                    "tradeId",
+                    "mentorClaimId",
+                    "suggestionId",
+                    "createdAt",
+                    "revertedAt"
                   ],
                   "additionalProperties": false
                 }
@@ -7578,19 +7818,59 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "rule": {
                       "type": "string"
                     },
-                    "code": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "proposed",
+                        "approved",
+                        "rejected",
+                        "superseded"
+                      ]
+                    },
+                    "noteId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "created": {
+                      "type": "boolean"
+                    },
+                    "n": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "signature": {
                       "type": "string"
                     },
-                    "requestId": {
+                    "note": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "rule",
+                    "version",
+                    "status",
+                    "noteId",
+                    "created",
+                    "n",
+                    "signature",
+                    "note"
                   ],
                   "additionalProperties": false
                 }
@@ -8328,19 +8608,142 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
+                    "variant": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "hypothesisId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "params": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        "paramsHash": {
+                          "type": "string"
+                        },
+                        "nTested": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "result": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "origin": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "ai"
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "hypothesisId",
+                        "label",
+                        "params",
+                        "paramsHash",
+                        "nTested",
+                        "result",
+                        "origin",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
                     },
-                    "requestId": {
-                      "type": "string"
+                    "count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "warning": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "n": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "inflated": {
+                              "type": "boolean"
+                            },
+                            "inflationSigma": {
+                              "type": "number"
+                            },
+                            "text": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "count",
+                            "n",
+                            "inflated",
+                            "inflationSigma",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "variant",
+                    "count",
+                    "warning"
                   ],
                   "additionalProperties": false
                 }
@@ -8871,19 +9274,136 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "text": {
                       "type": "string"
                     },
-                    "code": {
+                    "sha256": {
                       "type": "string"
                     },
-                    "requestId": {
+                    "byteLen": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "noteId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "backtestSessionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "day": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "capturedAt": {
+                      "type": "string"
+                    },
+                    "aiInterpretation": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "interpretationModel": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "supersedesId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "createdAt": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "id",
+                    "text",
+                    "sha256",
+                    "byteLen",
+                    "source",
+                    "role",
+                    "tradeId",
+                    "noteId",
+                    "backtestSessionId",
+                    "day",
+                    "capturedAt",
+                    "aiInterpretation",
+                    "interpretationModel",
+                    "supersedesId",
+                    "createdAt"
                   ],
                   "additionalProperties": false
                 }
@@ -9491,19 +10011,381 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
+                    "warnings": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
                     },
-                    "requestId": {
-                      "type": "string"
+                    "plan": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "tradeId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "accountId": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "instrumentId": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "sessionId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "day": {
+                          "type": "string"
+                        },
+                        "setupId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "setupVersionId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "rulesetVersion": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "long",
+                            "short"
+                          ]
+                        },
+                        "bias": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "long",
+                                "short",
+                                "neutral"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "entryPrice": {
+                          "type": "number"
+                        },
+                        "stopLoss": {
+                          "type": "number"
+                        },
+                        "takeProfit": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "contracts": {
+                          "type": "number"
+                        },
+                        "riskCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "thesisWordsId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "invalidationWordsId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "origin": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "ai"
+                          ]
+                        },
+                        "frozenAt": {
+                          "type": "string"
+                        },
+                        "setup": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "slug": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer",
+                                      "minimum": -9007199254740991,
+                                      "maximum": 9007199254740991
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "slug",
+                                "name",
+                                "version"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "thesis": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "text",
+                                "sha256"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "invalidation": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "text",
+                                "sha256"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "addenda": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "planId": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "field": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "stop_loss",
+                                      "take_profit",
+                                      "contracts",
+                                      "bias",
+                                      "invalidation",
+                                      "other"
+                                    ]
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "newValue": {},
+                              "wordsId": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "words": {
+                                "anyOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      "text": {
+                                        "type": "string"
+                                      },
+                                      "sha256": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "text",
+                                      "sha256"
+                                    ],
+                                    "additionalProperties": false
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "planId",
+                              "field",
+                              "newValue",
+                              "wordsId",
+                              "createdAt",
+                              "words"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tradeId",
+                        "accountId",
+                        "instrumentId",
+                        "sessionId",
+                        "day",
+                        "setupId",
+                        "setupVersionId",
+                        "rulesetVersion",
+                        "direction",
+                        "bias",
+                        "entryPrice",
+                        "stopLoss",
+                        "takeProfit",
+                        "contracts",
+                        "riskCents",
+                        "thesisWordsId",
+                        "invalidationWordsId",
+                        "origin",
+                        "frozenAt",
+                        "setup",
+                        "thesis",
+                        "invalidation",
+                        "addenda"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "warnings",
+                    "plan"
                   ],
                   "additionalProperties": false
                 }
@@ -10921,19 +11803,51 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
-                    "code": {
-                      "type": "string"
+                    "planId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
-                    "requestId": {
+                    "field": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "stop_loss",
+                            "take_profit",
+                            "contracts",
+                            "bias",
+                            "invalidation",
+                            "other"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "newValue": {},
+                    "wordsId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "createdAt": {
                       "type": "string"
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "id",
+                    "planId",
+                    "field",
+                    "newValue",
+                    "wordsId",
+                    "createdAt"
                   ],
                   "additionalProperties": false
                 }
@@ -14595,19 +15509,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
+                    "slug": {
                       "type": "string"
                     },
-                    "code": {
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "proposed",
+                        "approved",
+                        "rejected",
+                        "superseded"
+                      ]
+                    },
+                    "signature": {
                       "type": "string"
                     },
-                    "requestId": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "slug",
+                    "version",
+                    "status",
+                    "signature",
+                    "created"
                   ],
                   "additionalProperties": false
                 }
@@ -18177,19 +19108,62 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "accountId": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "amountCents": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "occurredOn": {
+                          "type": "string"
+                        },
+                        "note": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "accountId",
+                        "kind",
+                        "amountCents",
+                        "occurredOn",
+                        "note",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "entry"
                   ],
                   "additionalProperties": false
                 }
@@ -19996,19 +20970,217 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "review": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "weekStart": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "draft",
+                            "approved"
+                          ]
+                        },
+                        "draftMd": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "draftSignature": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "statsSnapshot": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "asOf": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "conclusions": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "text",
+                                "sha256"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "commitment": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "text",
+                                "sha256"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prevReviewId": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prevCommitmentResult": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "kept",
+                                "partial",
+                                "broken"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "prevResult": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "text": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "text",
+                                "sha256"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "approvedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "weekStart",
+                        "status",
+                        "draftMd",
+                        "draftSignature",
+                        "statsSnapshot",
+                        "asOf",
+                        "conclusions",
+                        "commitment",
+                        "prevReviewId",
+                        "prevCommitmentResult",
+                        "prevResult",
+                        "approvedAt"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "review"
                   ],
                   "additionalProperties": false
                 }
@@ -20408,19 +21580,147 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
+                    "suggestion": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "tag",
+                            "trade_link",
+                            "setup_example",
+                            "process_grade",
+                            "profile_term",
+                            "day_conclusion",
+                            "weekly_conclusion",
+                            "strategy_detail",
+                            "trade_setup"
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "accepted",
+                            "rejected",
+                            "applied",
+                            "reverted"
+                          ]
+                        },
+                        "target": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        "payload": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        "claim": {
+                          "type": "string"
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {}
+                        },
+                        "evidenceLevel": {
+                          "type": "string",
+                          "enum": [
+                            "tested",
+                            "partial",
+                            "inferred"
+                          ]
+                        },
+                        "n": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "appliedRef": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "additionalProperties": {}
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "decidedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "signature": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "kind",
+                        "status",
+                        "target",
+                        "payload",
+                        "claim",
+                        "evidence",
+                        "evidenceLevel",
+                        "n",
+                        "appliedRef",
+                        "createdAt",
+                        "decidedAt",
+                        "signature"
+                      ],
+                      "additionalProperties": false
                     },
-                    "requestId": {
-                      "type": "string"
+                    "noteAdditionId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "suggestion",
+                    "noteAdditionId"
                   ],
                   "additionalProperties": false
                 }
@@ -22172,19 +23472,103 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "externalId": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "unchanged",
+                              "updated",
+                              "text_changed",
+                              "refused"
+                            ]
+                          },
+                          "annotationId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wordsId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "externalId",
+                          "status",
+                          "annotationId",
+                          "wordsId"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "updated": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "text_changed": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "refused": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "created",
+                        "unchanged",
+                        "updated",
+                        "text_changed",
+                        "refused"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "results",
+                    "summary"
                   ],
                   "additionalProperties": false
                 }
@@ -23409,19 +24793,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
-                    "requestId": {
-                      "type": "string"
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "gap",
+                        "mentor_conflict"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "asked",
+                        "answered",
+                        "dismissed"
+                      ]
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "id",
+                    "kind",
+                    "status"
                   ],
                   "additionalProperties": false
                 }
@@ -23983,19 +25384,150 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "created": {
+                      "type": "boolean"
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "platform": {
+                          "type": "string",
+                          "const": "youtube"
+                        },
+                        "videoId": {
+                          "type": "string"
+                        },
+                        "playlistId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "position": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "publishedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "durationS": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "processed",
+                            "no_captions",
+                            "error"
+                          ]
+                        },
+                        "transcriptSource": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "enum": [
+                                "captions",
+                                "whisper"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "transcriptPath": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "error": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "processedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "platform",
+                        "videoId",
+                        "playlistId",
+                        "position",
+                        "title",
+                        "url",
+                        "publishedAt",
+                        "durationS",
+                        "status",
+                        "transcriptSource",
+                        "transcriptPath",
+                        "error",
+                        "processedAt"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "created",
+                    "source"
                   ],
                   "additionalProperties": false
                 }
@@ -24799,19 +26331,78 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "string"
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "index": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "unchanged",
+                              "refused"
+                            ]
+                          },
+                          "claimId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "index",
+                          "status",
+                          "claimId"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
-                    "code": {
-                      "type": "string"
-                    },
-                    "requestId": {
-                      "type": "string"
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "refused": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "created",
+                        "unchanged",
+                        "refused"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
-                    "error",
-                    "code"
+                    "results",
+                    "summary"
                   ],
                   "additionalProperties": false
                 }

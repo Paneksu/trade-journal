@@ -23,6 +23,7 @@ import { zrodloDanych } from "@/lib/domain/zrodla";
 
 import { planTradu } from "./plany";
 import { zSlow } from "./slowa";
+import { czyWynikUkryty } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -79,7 +80,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
   const idsOcen = oceny.map((o) => o.id);
   const sprawdzenia = idsOcen.length ? await tx.select().from(tradeRuleChecks).where(inArray(tradeRuleChecks.reviewId, idsOcen)).orderBy(asc(tradeRuleChecks.ruleId)) : [];
 
-  const ukryj = tr.status !== "closed" && oceny.length > 0;
+  const ukryj = await czyWynikUkryty(tx, id);
   // Razem z wynikiem chowamy wszystko, co moze go zdradzic (review): oceny po fakcie (basis = history) i korekty do nich,
   // wnioski (lesson) oraz notatki trade'a, ktore uzytkownik mogl dopisac juz po wyniku. Slepa ocena ma byc slepa.
   const historyIds = new Set(oceny.filter((o) => o.basis === "history").map((o) => o.id));

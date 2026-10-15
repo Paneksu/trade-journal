@@ -75,6 +75,7 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
              jsonb_build_object('kind', n.kind, 'slug', n.slug, 'rev', n.rev, 'archived', n.archived_at is not null) as meta
         from notes n
        where n.archived_at is null
+         and not ${sqlWynikUkryty(sql`n.trade_id`)}
          and (n.search @@ ${zapytanie}
               or lower(public.f_unaccent(n.title)) % ${qn}
               or lower(public.f_unaccent(n.title)) like ${wzorzecN} escape '\\'

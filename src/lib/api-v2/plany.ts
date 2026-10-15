@@ -18,6 +18,7 @@ import { computeTrade } from "@/lib/domain/calc";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 import { instrumentSpec } from "@/lib/queries/dictionaries";
 
+import { czyWynikUkryty, wejscieTradu } from "./ukrycie-wyniku";
 import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { PlanDopisekSchema, PlanUtworzSchema, PlanyListaQuery } from "./contract/funkcje";
 import { numerZestawu } from "./reguly";
@@ -363,7 +364,14 @@ export function zDopiska(a: typeof tradePlanAddenda.$inferSelect) {
 export async function szczegolyPlanu(tx: Db, planId: number) {
   const [p] = await tx.select().from(tradePlans).where(eq(tradePlans.id, planId)).limit(1);
   if (!p) return null;
-  const dopiski = await tx.select().from(tradePlanAddenda).where(eq(tradePlanAddenda.planId, planId)).orderBy(asc(tradePlanAddenda.id));
+  const wszystkieDopiski = await tx.select().from(tradePlanAddenda).where(eq(tradePlanAddenda.planId, planId)).orderBy(asc(tradePlanAddenda.id));
+  // Slepa ocena: dopiski powstaja po zamrozeniu planu, czesto w trakcie trade'a (»SL na BE po +1R«). Gdy wynik trade'a jest
+  // ukryty, wychodza tylko dopiski sprzed wejscia (review 15.10.2026).
+  let dopiski = wszystkieDopiski;
+  if (p.tradeId !== null && (await czyWynikUkryty(tx, p.tradeId))) {
+    const wejscie = await wejscieTradu(tx, p.tradeId);
+    dopiski = wejscie === null ? [] : wszystkieDopiski.filter((a) => a.createdAt.getTime() <= wejscie.getTime());
+  }
   const idsSlow = [p.thesisWordsId, p.invalidationWordsId, ...dopiski.map((a) => a.wordsId)].filter((x): x is number => x !== null);
   const slowa = idsSlow.length
     ? await tx

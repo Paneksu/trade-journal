@@ -331,7 +331,12 @@ export function zbudujOpenApi(): Record<string, unknown> {
           content: e.odpowiedz ? { "application/json": { schema: jsonSchema(e.odpowiedz, "output") } } : undefined,
         },
         ...Object.fromEntries(
-          Object.entries(e.bledy ?? {}).map(([kod, opis]) => [kod, { description: opis, content: { "application/json": { schema: jsonSchema(BladOdpowiedz, "output") } } }]),
+          Object.entries(e.bledy ?? {}).map(([kod, opis]) => {
+            // Kody 2xx w `bledy` (np. 200 przy powtorce, 201 przy utworzeniu) to SUKCES: ten sam schemat co odpowiedz glowna, nie schemat bledu.
+            const sukces = Number(kod) < 300;
+            const schemat = sukces ? (e.odpowiedz ? jsonSchema(e.odpowiedz, "output") : undefined) : jsonSchema(BladOdpowiedz, "output");
+            return [kod, { description: opis, content: schemat ? { "application/json": { schema: schemat } } : undefined }];
+          }),
         ),
         ...(e.zakresy === null ? {} : { "401": { description: "Brak, nieznany, uniewazniony albo wygasly token." }, "403": { description: "Token nie ma wymaganego zakresu." }, "429": { description: "Limit zapytan albo blokada." } }),
       },
