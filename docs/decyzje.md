@@ -1514,6 +1514,9 @@ publiczne repo (dane i ścieżki z komputera użytkownika w historii; decyzja u�
 
 ---
 
+
+**Uzupełnienie 15.10.2026: broker w TradingView Desktop (Słowa użytkownika: «Tak, mam podłączonego brokera»).** Skoro w TradingView Desktop jest podłączony broker, a omijalnie warstw kodu przez powłokę (`node -e` z połączeniem do CDP) nie da się zamknąć samym kodem, **twardą granicą jest brak brokera w profilu sterowanym**: AI steruje (klawisze, rysowanie, `tf`, `goto`, `replay`, `indicator`, zrzuty) wyłącznie w osobnym profilu TradingView Desktop bez brokera (`tj browser start tradingview`, własny `--user-data-dir`). W profilu użytkownika z brokerem AI ma tylko odczyt (`state`, świece, `drawings`); zrzutów tam nie ma, bo nie da się zagwarantować, że nie obejmą salda i P&L. `tj doctor` i sterownik wykrywają brokera w DOM i odmawiają każdej akcji sterującej; brak pewności = jak broker (fail-closed). FX Replay jest symulacją, więc tam sterowanie zostaje. Brak brokera potwierdza się pozytywnie: proces na porcie CDP musi być aplikacją uruchomioną przez tj z naszym `--user-data-dir` (dowód z systemu), a DOM (także iframe i shadow DOM, po załadowaniu wykresu) bez sygnałów brokera; pusta lista sygnałów sama nie wystarcza. Hook pluginu (`Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit`, fail-closed przez `|| exit 2`) chroni ścieżki kodu strażnika, hooka, pluginu i konfiguracji tj oraz blokuje polecenia z CDP/DevTools/Playwrightem; filtry treści łapią odruch, a nie zdeterminowane obejście, więc twardą granicą są ochrona ścieżek i brak brokera w profilu sterowanym. Hook działa tylko w sesjach z włączonym pluginem; rozwój łącznika robi się w sesji bez pluginu. Szczegóły: `tj-connector/docs/sterowanie-wykresem.md`.
+
 ## ADR-033 — model funkcji z researchu (2026-10-14)
 
 **Kontekst.** Dwa raporty `market-researcher` z 14.10.2026. Wniosek: rynek importuje trade'y
