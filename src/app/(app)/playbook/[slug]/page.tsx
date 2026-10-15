@@ -10,7 +10,7 @@ import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { dateTime, percent, pnlClass, rValue, shortDate } from "@/lib/format";
 import { tytulyNotatek } from "@/lib/queries/mozg";
-import { kartaSetupu } from "@/lib/queries/playbook";
+import { kartaSetupu, type KartaSetupu } from "@/lib/queries/playbook";
 
 export const metadata = { title: "Setup — Playbook" };
 
@@ -39,28 +39,8 @@ function czasZnacznika(s: number): string {
   return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-export default async function KartaSetupuPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ slug: string }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  await requireSession();
-  const { slug } = await params;
-  const sp = await searchParams;
-  const [k, tytuly] = await Promise.all([kartaSetupu(slug), tytulyNotatek()]);
-  if (!k) notFound();
-  const zakladka = ZAKLADKI.some(([z]) => z === sp.zakladka) ? (sp.zakladka as (typeof ZAKLADKI)[number][0]) : "warunki";
-  const w = k.current;
-  const glowna = k.stats.bySource.live ?? Object.values(k.stats.bySource).find((x) => x !== null) ?? null;
-  const aPlus = k.przyklady.filter((p) => p.kind === "a_plus");
-  const anty = k.przyklady.filter((p) => p.kind === "anti");
-  const wPrzykladach = new Set(k.przyklady.map((p) => p.tradeId));
-  const pozostale = k.tradey.filter((t) => !wPrzykladach.has(t.id));
-  const tradePoId = new Map(k.tradey.map((t) => [t.id, t]));
-
-  const Przyklady = ({ lista, tytul }: { lista: typeof k.przyklady; tytul: string }) => (
+function Przyklady({ lista, tytul, tradePoId }: { lista: KartaSetupu["przyklady"]; tytul: string; tradePoId: Map<number, KartaSetupu["tradey"][number]> }) {
+  return (
     <section aria-label={tytul}>
       <h2 className="flex h-9 items-center gap-2 border-y border-line bg-panel px-3 text-meta text-text">
         {tytul} <span className="num text-muted">{lista.length}</span>
@@ -91,6 +71,28 @@ export default async function KartaSetupuPage({
       )}
     </section>
   );
+}
+
+export default async function KartaSetupuPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  await requireSession();
+  const { slug } = await params;
+  const sp = await searchParams;
+  const [k, tytuly] = await Promise.all([kartaSetupu(slug), tytulyNotatek()]);
+  if (!k) notFound();
+  const zakladka = ZAKLADKI.some(([z]) => z === sp.zakladka) ? (sp.zakladka as (typeof ZAKLADKI)[number][0]) : "warunki";
+  const w = k.current;
+  const glowna = k.stats.bySource.live ?? Object.values(k.stats.bySource).find((x) => x !== null) ?? null;
+  const aPlus = k.przyklady.filter((p) => p.kind === "a_plus");
+  const anty = k.przyklady.filter((p) => p.kind === "anti");
+  const wPrzykladach = new Set(k.przyklady.map((p) => p.tradeId));
+  const pozostale = k.tradey.filter((t) => !wPrzykladach.has(t.id));
+  const tradePoId = new Map(k.tradey.map((t) => [t.id, t]));
 
   return (
     <div className="mx-auto w-full max-w-[1240px]">
@@ -104,8 +106,8 @@ export default async function KartaSetupuPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="order-2 min-w-0 space-y-6 lg:order-1">
-          <Przyklady lista={aPlus} tytul="Przykłady A+" />
-          <Przyklady lista={anty} tytul="Anty-przykłady" />
+          <Przyklady lista={aPlus} tytul="Przykłady A+" tradePoId={tradePoId} />
+          <Przyklady lista={anty} tytul="Anty-przykłady" tradePoId={tradePoId} />
           <section aria-label="Pozostałe trade'y">
             <h2 className="flex h-9 items-center gap-2 border-y border-line bg-panel px-3 text-meta text-text">
               Pozostałe trade&apos;y <span className="num text-muted">{pozostale.length}</span>
