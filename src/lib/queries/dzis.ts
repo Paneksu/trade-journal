@@ -26,7 +26,7 @@ function dniWstecz(dzien: string, ile: number): string {
 }
 
 /** Skumulowane R dzień po dniu (tylko zamknięte trade'y dziennika, bez backtestu). */
-function krzywaR(trades: TradeRecord[]): DzienWykresu[] {
+export function krzywaR(trades: TradeRecord[]): DzienWykresu[] {
   const poDniu = new Map<string, number>();
   for (const t of closedOnly(trades)) {
     if (t.rMultiple === null || !t.tradingDay) continue;

@@ -158,7 +158,13 @@ export function Chip({ children, className, title }: { children: ReactNode; clas
 
 /** Ocena procesu A/B/C (MUST 3): osobno od wyniku, bez zieleni i czerwieni (te są dla wyniku). */
 export function ChipProcesu({ ocena }: { ocena: "A" | "B" | "C" | null }) {
-  if (!ocena) return <span className="text-meta text-faint">—</span>;
+  if (!ocena)
+    return (
+      <span title="Bez oceny procesu" className="inline-flex h-6 w-6 items-center justify-center rounded-[var(--radius-tab)] border border-dashed border-line text-meta text-faint">
+        <span className="sr-only">proces bez oceny</span>
+        <span aria-hidden>–</span>
+      </span>
+    );
   return (
     <span
       title={`Proces ${ocena}`}

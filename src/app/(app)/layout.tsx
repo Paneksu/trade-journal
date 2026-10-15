@@ -24,9 +24,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <TopBar />
         {/* Wzor: tresc 968 px wysrodkowana obok paska bocznego (pomiar.json, kontener). Margines 16 przy 375.
             Dol 96 px na telefonie: dolny pasek 64 px + oddech. */}
-        <main className="min-w-0 flex-1 px-4 pt-6 pb-24 sm:px-6 lg:px-8 lg:pt-8 lg:pb-12">{children}</main>
+        {/* Dolny pasek telefonu jest przyklejony (sticky) na końcu kolumny, a nie fixed: treść kończy się przed nim,
+            więc nigdy nie zasłania ostatniego elementu (bramka etapu 1, runda 3). */}
+        <main className="min-w-0 flex-1 px-4 pt-6 pb-10 sm:px-6 lg:px-8 lg:pt-8 lg:pb-12">{children}</main>
+        <MobileBar signOutAction={signOut} liczniki={liczniki} />
       </div>
-      <MobileBar signOutAction={signOut} liczniki={liczniki} />
       <Paleta />
     </div>
   );

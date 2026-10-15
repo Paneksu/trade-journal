@@ -6,6 +6,7 @@ import { cx } from "@/lib/classes";
 import { czyPominiety } from "@/lib/domain/status";
 import type { TradeRecord } from "@/lib/queries/trades";
 import { longDate, rValue, wynikClass, WYNIK_SKROT } from "@/lib/format";
+import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
 /** Kolor i etykieta wyniku na kaflu - "nie wziety" dostaje `accent`, bo zielen
  * i czerwien sa zajete przez zysk/strate (globals.css:25-34). */
@@ -78,10 +79,8 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex aspect-video items-center justify-center bg-surface-2">
                   {t.firstShot ? (
-                    /* eslint-disable-next-line @next/next/no-img-element --
-                       `next/image` nie ma jak tego obsluzyc: pliki leza poza
-                       `public/`, a trasa /api/screenshots wymaga sesji. */
-                    <img
+                     
+                    <ObrazZrzutu
                       src={`/api/screenshots/${t.firstShot.file}`}
                       alt={`Zrzut trade'a ${t.instrumentSymbol} z ${t.tradingDay}`}
                       width={t.firstShot.width ?? undefined}

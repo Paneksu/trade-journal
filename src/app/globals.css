@@ -124,6 +124,15 @@
 
   html {
     color-scheme: dark;
+    /* Telefon: przewijanie do elementu (kotwice, fokus z klawiatury) zostawia miejsce na dolny pasek 64 px,
+       zeby cel nie lądował pod nim (bramka etapu 1, runda 3). */
+    scroll-padding-bottom: 80px;
+  }
+
+  @media (min-width: 64rem) {
+    html {
+      scroll-padding-bottom: 0;
+    }
   }
 
   body {

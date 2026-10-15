@@ -211,7 +211,7 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
     <>
       <nav
         aria-label="Dolna"
-        className="fixed inset-x-0 bottom-0 z-[var(--z-przyklejone)] flex h-16 items-stretch border-t border-line bg-sidebar/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="sticky bottom-0 z-[var(--z-przyklejone)] flex h-16 items-stretch border-t border-line bg-sidebar/95 px-1 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         {pozycje.map((p) => {
           const jest = czyAktywna(pathname, p.href) || (p.href === "/trades" && pathname.startsWith("/galeria"));

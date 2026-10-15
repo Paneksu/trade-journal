@@ -14,6 +14,7 @@ import { TRADE_STATUS_NAMES } from "@/lib/domain/types";
 import type { StatusTrade } from "@/lib/domain/status";
 import { longDate, money, pnlClass, price, rValue, timeOnly } from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
+import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
 /**
  * Lista trade'ów jako księga (wzór 2a: lista Linear + księga Mercury z demo.mercury.com/accounts/credit):
@@ -123,8 +124,8 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
                 <div className="grid grid-cols-2 gap-2">
                   {dane.zrzuty.map((z) => (
                     <figure key={z.id} className="m-0">
-                      {/* eslint-disable-next-line @next/next/no-img-element -- plik za sesją, poza next/image */}
-                      <img
+                      { }
+                      <ObrazZrzutu
                         src={`/api/screenshots/${z.thumbnail ?? z.file}`}
                         alt={`Zrzut ${z.interval ?? ""} trade'a #${dane.id}`}
                         className="aspect-video w-full rounded-[var(--radius-tab)] border border-line object-cover"
@@ -198,7 +199,7 @@ function dataGrupy(dzien: string): string {
   return new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", weekday: "short", day: "numeric", month: "long", year: "numeric" }).format(d);
 }
 
-export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWithCategory[] }) {
+export function Ksiega({ wiersze, tags, lacznie }: { wiersze: WierszKsiegi[]; tags: TagWithCategory[]; lacznie?: number }) {
   const [zaznaczone, setZaznaczone] = useState<number[]>([]);
   const [podglad, setPodglad] = useState<number | null>(null);
   const [trwa, startTransition] = useTransition();
@@ -264,7 +265,7 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
           </>
         ) : (
           <span className="text-faint">
-            {wiersze.length} {wiersze.length === 1 ? "trade" : "trade'ów"} w widoku
+            {lacznie ?? wiersze.length} {(lacznie ?? wiersze.length) === 1 ? "trade" : "trade'ów"} w widoku
           </span>
         )}
       </div>
@@ -288,11 +289,11 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
                 />
               </th>
               <th scope="col" className="hidden w-16 pr-4 font-normal sm:table-cell">Godz.</th>
-              <th scope="col" className="pr-4 font-normal">Trade</th>
-              <th scope="col" className="hidden pr-4 font-normal md:table-cell">Setup</th>
+              <th scope="col" className="w-full pr-4 font-normal">Trade</th>
+              <th scope="col" className="hidden w-44 pr-4 font-normal md:table-cell">Setup</th>
               <th scope="col" className="hidden w-16 pr-4 font-normal sm:table-cell">Proces</th>
               <th scope="col" className="w-20 pr-4 text-right font-normal">R</th>
-              <th scope="col" className="hidden pr-2 text-right font-normal sm:table-cell">USD</th>
+              <th scope="col" className="hidden w-32 pr-2 text-right font-normal sm:table-cell">USD</th>
               <th scope="col" className="hidden w-10 font-normal sm:table-cell">
                 <span className="sr-only">Podgląd</span>
               </th>
@@ -346,14 +347,19 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
                       </td>
                       <td className="num hidden pr-4 text-muted sm:table-cell">{timeOnly(w.wejscie, w.strefa)}</td>
                       <td className="py-1.5 pr-4 whitespace-nowrap">
-                        <Link href={`/trades/${w.id}`} className="przejscie text-text hover:text-accent">
-                          <span className="num">{w.symbol}</span> <span className="text-muted">{w.kierunek}</span>
-                          <span className="num ml-1.5 text-meta text-faint">×{w.kontrakty}</span>
-                        </Link>
-                        <span className="num block text-meta text-muted sm:hidden">
-                          {timeOnly(w.wejscie, w.strefa)}
-                          {w.proces && <> · proces {w.proces}</>}
-                        </span>
+                        {/* Na telefonie wiersz z kotwicą na początku (wzór Dime): chip procesu, potem trade i godzina. */}
+                        <div className="flex items-center gap-3">
+                          <span className="sm:hidden">
+                            <ChipProcesu ocena={w.proces} />
+                          </span>
+                          <div className="min-w-0">
+                            <Link href={`/trades/${w.id}`} className="przejscie text-text hover:text-accent">
+                              <span className="num">{w.symbol}</span> <span className="text-muted">{w.kierunek}</span>
+                              <span className="num ml-1.5 text-meta text-faint">×{w.kontrakty}</span>
+                            </Link>
+                            <span className="num block text-meta text-muted sm:hidden">{timeOnly(w.wejscie, w.strefa)}</span>
+                          </div>
+                        </div>
                       </td>
                       <td className="hidden pr-4 md:table-cell">
                         {w.setup ? (
@@ -375,7 +381,7 @@ export function Ksiega({ wiersze, tags }: { wiersze: WierszKsiegi[]; tags: TagWi
                           </span>
                         ) : maWynik(w.status) ? (
                           <>
-                            {w.status === "missed" && "~"}
+                            {w.status === "missed" && w.r !== null && "~"}
                             {rValue(w.r)}
                           </>
                         ) : (

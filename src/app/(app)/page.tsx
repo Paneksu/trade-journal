@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock, Plus } from "lucide-react";
 
 import { KrzywaR } from "@/components/dzis/krzywa-r";
-import { ChecklistaRegul, FormularzPoSesji, FormularzPrzedSesja } from "@/components/dzis/formularze";
+import { ChecklistaRegul, FormularzPoSesji, FormularzPrzedSesja, Rozwijane } from "@/components/dzis/formularze";
 import { ChipProcesu, Karta, LiczbaBohater, NaglowekSekcji, NaglowekStrony, PasekZuzycia, Pigulka, Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
@@ -10,6 +10,7 @@ import { maWynik } from "@/lib/domain/status";
 import { money, pnlClass, rValue, timeOnly } from "@/lib/format";
 import { daneDzis } from "@/lib/queries/dzis";
 import { procesISetupy } from "@/lib/queries/ui-v2";
+import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
 export const metadata = { title: "Dziś — Dziennik tradingowy" };
 
@@ -30,6 +31,38 @@ function dataDlugaZDniem(dzien: string): string {
 
 function procent(x: number | null | undefined): string {
   return x === null || x === undefined ? "—" : `${Math.round(x * 100)}%`;
+}
+
+function KartaPomocnicza({
+  tytul,
+  liczby,
+  link,
+  children,
+}: {
+  tytul: string;
+  liczby: [string, string][];
+  link: { href: string; tekst: string };
+  children: React.ReactNode;
+}) {
+  return (
+    <section aria-label={tytul} className="karta flex flex-col p-5 sm:p-6">
+      <p className="text-karta text-text">{tytul}</p>
+      <dl className="mt-3 grid grid-cols-3 gap-3">
+        {liczby.map(([etykieta, wartosc]) => (
+          <div key={etykieta} className="min-w-0">
+            <dt className="text-meta text-muted">{etykieta}</dt>
+            <dd className="num mt-0.5 text-karta text-text">{wartosc}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-4 border-t border-line pt-4">{children}</div>
+      <div className="mt-auto flex justify-end pt-4">
+        <Link href={link.href} className="przejscie inline-flex items-center gap-0.5 text-karta text-muted hover:text-text">
+          {link.tekst} <ChevronRight size={15} aria-hidden />
+        </Link>
+      </div>
+    </section>
+  );
 }
 
 export default async function DzisPage() {
@@ -153,9 +186,12 @@ export default async function DzisPage() {
                     <div className="mt-1.5">
                       <PasekZuzycia zuzycie={zuzycie} etykieta={`${k.accountName}: zużycie limitu`} />
                     </div>
-                    <p className="num mt-1.5 text-meta text-muted">
+                    {/* Dwa stałe wiersze (bez łamania w środku przy 375 px). */}
+                    <p className="num mt-1.5 text-meta whitespace-nowrap text-muted">
                       {money(s.bufferCents, { currency: k.currency, decimals: 0 })} do {s.nearestLimit === "dll" ? "limitu dnia" : "DD"} · zużyte {procent(zuzycie)}
-                      {poSl && <> · po SL {poSl.bufferInR.toFixed(1)}R</>}
+                    </p>
+                    <p className="num text-meta whitespace-nowrap text-muted">
+                      {poSl ? <>po SL {poSl.bufferInR.toFixed(1)}R</> : "bez ryzyka domyślnego"}
                       {ostrzezenie >= 50 && <> · próg {ostrzezenie}%</>}
                     </p>
                   </li>
@@ -178,64 +214,57 @@ export default async function DzisPage() {
         </Karta>
       </div>
 
-      {/* Rząd 2: 3 karty pomocnicze (wzór: 307 + 24 + 307 + 24 + 307). */}
+      {/* Rząd 2: 3 karty pomocnicze z jedną strukturą (wzór: Credit Card / Bill Pay / Invoicing Mercury):
+          nagłówek, para liczb, linia, treść, link na dole. Link przy dolnej krawędzi, więc karty równej
+          wysokości nie mają pustej połowy (bramka etapu 1, runda 3). */}
       <div className="grid gap-6 md:grid-cols-3">
-        <Karta tytul="Plan dnia">
-          <dl className="grid grid-cols-3 gap-3 text-meta">
-            <div>
-              <dt className="text-muted">Bias</dt>
-              <dd className="num mt-0.5 text-karta text-text">{notatka?.bias ? BIAS[notatka.bias] : "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-muted">Trade&apos;y</dt>
-              <dd className={cx("num mt-0.5 text-karta", limitTradow !== null && wzietych > limitTradow ? "text-accent-strong" : "text-text")}>
-                {wzietych}
-                <span className="text-muted"> / {limitTradow ?? "—"}</span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted">Sen · energia</dt>
-              <dd className="num mt-0.5 text-karta text-text">
-                {notatka?.sleep ?? "—"} · {notatka?.energy ?? "—"}
-              </dd>
-            </div>
-          </dl>
-          <div className="mt-4 border-t border-line pt-4">
-            <p className="text-meta text-muted">Unieważnienie</p>
-            {d.uniewaznienie ? (
-              <blockquote className="mt-1 border-l-2 border-accent pl-3 text-meta whitespace-pre-wrap text-text">{d.uniewaznienie.text}</blockquote>
-            ) : (
-              <p className="mt-1 text-meta text-faint">Nie wpisane.</p>
-            )}
-          </div>
-          {notatka?.preSession && (
-            <div className="mt-4 border-t border-line pt-4">
-              <p className="text-meta text-muted">Plan na sesję</p>
-              <p className="mt-1 text-meta whitespace-pre-wrap text-text">{notatka.preSession}</p>
-            </div>
+        <KartaPomocnicza
+          tytul="Plan dnia"
+          liczby={[
+            ["Bias", notatka?.bias ? BIAS[notatka.bias] : "—"],
+            ["Trade'y", `${wzietych} / ${limitTradow ?? "—"}`],
+            ["Sen · energia", `${notatka?.sleep ?? "—"} · ${notatka?.energy ?? "—"}`],
+          ]}
+          link={{ href: "#przed-sesja", tekst: "Rytuał" }}
+        >
+          <p className="text-meta text-muted">Unieważnienie</p>
+          {d.uniewaznienie ? (
+            <blockquote className="mt-1 border-l-2 border-accent pl-3 text-meta whitespace-pre-wrap text-text">{d.uniewaznienie.text}</blockquote>
+          ) : (
+            <p className="mt-1 text-meta text-faint">Nie wpisane.</p>
           )}
-        </Karta>
+        </KartaPomocnicza>
 
-        <Karta
+        <KartaPomocnicza
           tytul="Reguły"
-          akcje={<span className="num text-meta text-faint">wersja {d.rulesVersion}</span>}
+          liczby={[
+            ["Aktywne", String(d.reguly.length)],
+            ["Twarde", String(d.reguly.filter((r) => r.hard).length)],
+            ["Wersja", String(d.rulesVersion)],
+          ]}
+          link={{ href: "/decyzje", tekst: "Propozycje" }}
         >
           {d.reguly.length === 0 ? (
-            <p className="text-meta text-faint">Nie masz jeszcze zatwierdzonych reguł. Propozycje czekają w „Do decyzji”.</p>
+            <p className="text-meta text-faint">Nie masz jeszcze zatwierdzonych reguł.</p>
           ) : (
             <ChecklistaRegul dzien={d.dzis} reguly={d.reguly.map((r) => ({ code: r.code, title: r.title, hard: r.hard }))} />
           )}
-        </Karta>
+        </KartaPomocnicza>
 
-        <Karta tytul="Do decyzji">
-          <p className="num text-liczba font-medium text-text">{lacznieDecyzji}</p>
-          <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-meta">
+        <KartaPomocnicza
+          tytul="Do decyzji"
+          liczby={[
+            ["Oczekuje", String(lacznieDecyzji)],
+            ["Sugestie AI", String(d.doDecyzji.sugestie)],
+            ["Konta prop", String(d.doDecyzji.prop)],
+          ]}
+          link={{ href: "/decyzje", tekst: "Otwórz" }}
+        >
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-meta">
             {(
               [
                 ["Reguły", d.doDecyzji.reguly],
                 ["Setupy", d.doDecyzji.setupy],
-                ["Sugestie AI", d.doDecyzji.sugestie],
-                ["Konta prop", d.doDecyzji.prop],
               ] as const
             ).map(([nazwa, ile]) => (
               <div key={nazwa} className="flex justify-between gap-2">
@@ -244,12 +273,7 @@ export default async function DzisPage() {
               </div>
             ))}
           </dl>
-          <div className="mt-4 flex justify-end border-t border-line pt-3">
-            <Link href="/decyzje" className="przejscie inline-flex items-center gap-0.5 text-karta text-accent hover:text-accent-strong">
-              Otwórz <ChevronRight size={15} aria-hidden />
-            </Link>
-          </div>
-        </Karta>
+        </KartaPomocnicza>
       </div>
 
       {/* Sekcja „Sesja” w 2 kartach (wzór: Money movement, Money in | Money out). */}
@@ -259,6 +283,7 @@ export default async function DzisPage() {
             szerokość w dwóch kolumnach: bez pustej połowy karty (bramka etapu 1, runda 2). */}
         <div className={cx("grid gap-6", !d.dzien.resultHidden && "lg:grid-cols-2")}>
           <Karta id="przed-sesja" tytul="Przed sesją">
+            <Rozwijane etykieta="Uzupełnij rytuał">
             <FormularzPrzedSesja
               dzien={d.dzis}
               bias={notatka?.bias ?? null}
@@ -269,6 +294,7 @@ export default async function DzisPage() {
               uniewaznienie={d.uniewaznienie?.text ?? null}
               szeroki={d.dzien.resultHidden}
             />
+            </Rozwijane>
           </Karta>
           {d.dzien.resultHidden ? (
             <section id="po-sesji" aria-label="Po sesji" className="karta flex scroll-mt-20 items-center gap-3 px-5 py-3.5 sm:px-6">
@@ -290,7 +316,7 @@ export default async function DzisPage() {
         <NaglowekSekcji
           id="tradey-dnia"
           akcje={
-            <Link href={`/trades?od=${d.dzis}&do=${d.dzis}`} className="przejscie inline-flex items-center gap-0.5 text-karta text-accent hover:text-accent-strong">
+            <Link href={`/trades?od=${d.dzis}&do=${d.dzis}`} className="przejscie inline-flex items-center gap-0.5 text-karta text-muted hover:text-text">
               Wszystkie <ChevronRight size={15} aria-hidden />
             </Link>
           }
@@ -324,8 +350,8 @@ export default async function DzisPage() {
                       <td className="hidden py-2 pr-4 sm:table-cell">
                         {/* Miniatura zrzutu użytkownika (styl obrazu marki). Przy ukrytym wyniku nie pokazujemy: zrzut mógł powstać po wejściu. */}
                         {t.firstShot && !ukryty ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- plik za sesją, poza next/image
-                          <img
+                           
+                          <ObrazZrzutu
                             src={`/api/screenshots/${t.firstShot.file}`}
                             alt={`Zrzut ${t.instrumentSymbol} ${timeOnly(t.entryTime, t.exchangeTimezone)}`}
                             className="h-9 w-16 rounded-[6px] border border-line object-cover"

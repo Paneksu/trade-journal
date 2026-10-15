@@ -12,6 +12,7 @@ import {
 import { INTERWALY } from "@/lib/domain/interwaly";
 import { Lightbox } from "./lightbox";
 import type { Shot } from "./typy";
+import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
 /**
  * Galeria zrzutow - jedna dla karty trade'a, panelu dnia i sesji backtestu.
@@ -80,8 +81,8 @@ export function ScreenshotGrid({
                 aria-label={`Powiększ zrzut ${i + 1} z ${shots.length}${s.interval ? ` — interwał ${s.interval}` : ""}`}
                 className="block h-full w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border border-line transition-colors duration-150 hover:border-faint focus-visible:border-accent"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                { }
+                <ObrazZrzutu
                   src={`/api/screenshots/${s.thumbnail ?? s.file}`}
                   alt={`Zrzut ${i + 1} z ${shots.length} — ${opis}`}
                   width={s.width ?? undefined}

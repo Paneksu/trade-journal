@@ -1,4 +1,6 @@
 import { Ksiega, type WierszKsiegi } from "@/components/trades/ksiega";
+import Link from "next/link";
+
 import { NaglowekListy } from "@/components/trades/naglowek-listy";
 import { LiczbaBohater, Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
@@ -11,8 +13,12 @@ import { activeFilterCount, parseFilters } from "@/lib/queries/filters";
 import { getRegulyOcen } from "@/lib/queries/oceny";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { procesISetupy } from "@/lib/queries/ui-v2";
+import { krzywaR } from "@/lib/queries/dzis";
+import { KrzywaR } from "@/components/dzis/krzywa-r";
 
 export const metadata = { title: "Trade'y — Dziennik tradingowy" };
+
+const LIMIT_WIERSZY = 100;
 
 /*
  * Lista trade'ów (UI v2, wzór 2a/2b: lista Linear + księga i szuflada Mercury transactions).
@@ -45,8 +51,10 @@ export default async function TradesPage({
   const zamkniete = closedOnly(trades).filter((t) => !info.get(t.id)?.ukryty);
   const stats = computeStats(zamkniete, progi);
   const w = wilson(stats.wins, stats.count);
+  const krzywa = krzywaR(zamkniete);
   const currency = accounts[0]?.currency ?? settings.baseCurrency;
 
+  const wszystkie = params.wszystkie === "1";
   const wiersze: WierszKsiegi[] = trades.map((t) => {
     const i = info.get(t.id);
     return {
@@ -90,6 +98,8 @@ export default async function TradesPage({
           Pominięte trade&apos;y nie mają wyniku, więc nie wchodzą do podsumowania: filtr pokazuje tylko listę poniżej.
         </p>
       ) : (
+        /* Nagłówek księgi jak karta limitu we wzorze Mercury: liczba z paskiem po lewej, krzywa po prawej. */
+        <div className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <section aria-labelledby="suma-r" className="max-w-[460px] space-y-2.5">
           <p id="suma-r" className="text-karta text-text">
             Suma R <span className="text-meta text-muted">· n = {stats.count}</span>
@@ -114,9 +124,29 @@ export default async function TradesPage({
             </span>
           </p>
         </section>
+        {krzywa.length >= 2 && (
+          <div className="hidden overflow-hidden rounded-[var(--radius-panel)] border border-line lg:block">
+            <KrzywaR punkty={krzywa} />
+          </div>
+        )}
+        </div>
       )}
 
-      <Ksiega wiersze={wiersze} tags={tags} />
+      {/* Księga pokazuje najpierw 100 wierszy (jak strona księgi we wzorze); suma i krzywa liczą się z całości. */}
+      <Ksiega wiersze={wszystkie ? wiersze : wiersze.slice(0, LIMIT_WIERSZY)} lacznie={wiersze.length} tags={tags} />
+      {!wszystkie && wiersze.length > LIMIT_WIERSZY && (
+        <p className="flex flex-wrap items-center justify-between gap-3 text-meta text-muted">
+          <span className="num">
+            Pokazano {LIMIT_WIERSZY} z {wiersze.length}
+          </span>
+          <Link
+            href={`/trades?${new URLSearchParams({ ...Object.fromEntries(Object.entries(params).filter((e): e is [string, string] => typeof e[1] === "string")), wszystkie: "1" }).toString()}`}
+            className="przejscie inline-flex h-8 items-center rounded-full bg-surface-3 px-3.5 text-meta text-text hover:bg-line-strong"
+          >
+            Pokaż wszystkie
+          </Link>
+        </p>
+      )}
     </Strona>
   );
 }

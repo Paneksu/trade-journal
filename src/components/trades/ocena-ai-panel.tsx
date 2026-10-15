@@ -212,26 +212,23 @@ function OcenaTresc({ trade, ocena, meta }: { trade: DaneTradu; ocena: OcenaZReg
         {ocena.reguly.length === 0 ? (
           <p className="text-meta text-faint">Ocena nie sprawdzała żadnych reguł.</p>
         ) : (
-          <ol className="flex flex-col gap-4">
+          <ol className="border-t border-line">
             {ocena.reguly.map((r, i) => (
-              <li key={r.id} className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-2">
-                <span className="num pt-0.5 text-meta text-faint">[{i + 1}]</span>
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="num text-meta text-muted">{r.ruleId}</span>
+              <li key={r.id} className="border-b border-line py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="num flex items-center gap-2 text-meta text-muted">
+                    <span className="text-faint">[{i + 1}]</span>
+                    <span>{r.ruleId}</span>
                     <span className="sr-only">Werdykt: </span>
-                    <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border px-2 text-grupa whitespace-nowrap", WERDYKT_KLASY[r.verdict])}>
+                    <span className={cx("inline-flex h-5 items-center gap-1 rounded-full border px-2 font-sans text-grupa whitespace-nowrap", WERDYKT_KLASY[r.verdict])}>
                       <span aria-hidden>{WERDYKT_ZNAK[r.verdict]}</span>
                       {WERDYKT_REGULY_NAZWY[r.verdict]}
                     </span>
-                  </div>
-                  <p className="text-karta whitespace-pre-wrap text-text">{r.ruleText}</p>
-                  <p className="text-meta whitespace-pre-wrap text-muted">
-                    <span className="mr-1.5 text-faint">Dowód</span>
-                    {r.evidence ?? "—"}
                   </p>
                   <ZdanieORegule tradeId={trade.id} checkId={r.id} ruleId={r.ruleId} poczatkowe={r.userVerdict} />
                 </div>
+                <p className="mt-1.5 text-karta whitespace-pre-wrap text-text">{r.ruleText}</p>
+                <p className="mt-1 text-meta whitespace-pre-wrap text-muted">{r.evidence ?? "—"}</p>
               </li>
             ))}
           </ol>

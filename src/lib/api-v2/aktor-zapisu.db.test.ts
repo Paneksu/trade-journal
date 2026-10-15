@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import path from "node:path";
 import sharp from "sharp";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -42,6 +43,9 @@ describe.skipIf(!MOZNA_NA_BAZIE)("kazdy zapis v2 niesie tj.actor (baza lokalna)"
   afterAll(async () => {
     for (const t of TABELE) await sql.unsafe(`drop trigger if exists tj_test_aktor on ${t}`);
     await sql.unsafe("drop function if exists tj_test_wymagaj_aktora()");
+    // Tylko katalogi zrzutow WLASNYCH trade'ow testu. Wczesniej test kasowal caly UPLOADS_DIR, a z nim zrzuty
+    // innych danych na tej samej bazie lokalnej (dane demo UI v2 dawaly potem 404; bramka designu 15.10.2026).
+    const wlasne = await sql<{ id: number }[]>`select id from trades where account_id = ${kontoId}`;
     await sql`delete from trades where account_id = ${kontoId}`;
     await sql`delete from day_notes where day = ${DZIEN}`;
     await sql`delete from ingest_skips where external_ref like ${`%aktor-${znacznik}%`}`;
@@ -49,7 +53,9 @@ describe.skipIf(!MOZNA_NA_BAZIE)("kazdy zapis v2 niesie tj.actor (baza lokalna)"
     await sql`delete from accounts where id = ${kontoId}`;
     await sprzatnijPoTokenach(sql, [rw.id]);
     await sql.end();
-    await rm(`${process.env.UPLOADS_DIR ?? "./.dane/zrzuty"}`, { recursive: true, force: true }).catch(() => {});
+    for (const { id } of wlasne) {
+      await rm(path.join(process.env.UPLOADS_DIR ?? "./.dane/zrzuty", String(id)), { recursive: true, force: true }).catch(() => {});
+    }
   });
   beforeEach(() => {
     wyczyscLimiter();

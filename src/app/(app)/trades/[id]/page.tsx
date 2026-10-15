@@ -23,6 +23,7 @@ import { getFields } from "@/lib/queries/dictionaries";
 import { getOceny } from "@/lib/queries/oceny";
 import { getScreenshots, getTrade } from "@/lib/queries/trades";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
+import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
 export const metadata = { title: "Trade — Dziennik tradingowy" };
 
@@ -250,6 +251,33 @@ export default async function TradePage({
 
           {aktywna === "plan" && (
             <section aria-label="Plan" className="space-y-6">
+              {plan && (
+                <div className="lg:hidden">
+                  <div className="flex items-center justify-between gap-3 pb-1">
+                    <h2 className="text-sekcja text-text">Plan</h2>
+                    <span className="inline-flex items-center gap-1 text-meta text-accent-strong">
+                      <Lock size={13} aria-hidden /> zamrożony <span className="num">{timeOnly(plan.frozenAt, trade.exchangeTimezone)}</span>
+                    </span>
+                  </div>
+                  <dl>
+                    {(
+                      [
+                        ["Setup", plan.setup ? `${plan.setup.name}${plan.setup.version !== null ? ` v${plan.setup.version}` : ""}` : "—", false],
+                        ["Bias", plan.bias ?? "—", false],
+                        ["Wejście", price(plan.entryPrice, trade.tickSize), true],
+                        ["SL", price(plan.stopLoss, trade.tickSize), true],
+                        ["TP", price(plan.takeProfit, trade.tickSize), true],
+                        ["Ryzyko", money(plan.riskCents, { currency: trade.currency }), true],
+                      ] as const
+                    ).map(([etykieta, wartosc, liczba]) => (
+                      <div key={etykieta} className="flex h-[52px] items-center justify-between gap-3 border-b border-line">
+                        <dt className="text-karta text-muted">{etykieta}</dt>
+                        <dd className={cx("text-karta font-medium text-text", liczba && "num")}>{wartosc}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              )}
               {!plan ? (
                 <div className="karta p-6">
                   <p className="text-karta text-text">Ten trade nie ma zamrożonego planu.</p>
@@ -304,16 +332,19 @@ export default async function TradePage({
               {shots[0] && (
                 <figure className="m-0">
                   <div className="mb-2 flex items-center justify-between gap-3">
-                    <figcaption className="text-karta text-text">
-                      Wykres <span className="num text-meta text-muted">{shots[0].interval ?? ""} {shots[0].pochodzenie ? `· ${shots[0].pochodzenie}` : ""}</span>
+                    <figcaption className="text-karta whitespace-nowrap text-text">
+                      Wykres{" "}
+                      <span className="num text-meta text-muted">
+                        {[shots[0].interval, zrzutyMeta.get(shots[0].id)?.capturedAt ? timeOnly(zrzutyMeta.get(shots[0].id)!.capturedAt!, trade.exchangeTimezone) : null].filter(Boolean).join(" · ")}
+                      </span>
                     </figcaption>
                     <Link href={`/trades/${trade.id}?zakladka=zrzuty`} scroll={false} className="przejscie inline-flex items-center gap-0.5 text-meta text-muted hover:text-text">
-                      Wszystkie zrzuty ({shots.length}) <ChevronRight size={14} aria-hidden />
+                      Zrzuty ({shots.length}) <ChevronRight size={14} aria-hidden />
                     </Link>
                   </div>
                   <Link href={`/trades/${trade.id}?zakladka=zrzuty`} scroll={false} className="block overflow-hidden rounded-[var(--radius-panel)] border border-line">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- plik za sesją, poza next/image */}
-                    <img
+                    { }
+                    <ObrazZrzutu
                       src={`/api/screenshots/${shots[0].file}`}
                       alt={`Zrzut wykresu ${shots[0].interval ?? ""} trade'a #${trade.id}`}
                       width={shots[0].width ?? undefined}
@@ -496,7 +527,7 @@ export default async function TradePage({
 
         {/* Prawy panel „Właściwości” (wzór 3: Linear Properties ok. 280 px) = zamrożony plan. */}
         <aside aria-label="Właściwości" className="karta h-fit space-y-5 p-5 lg:sticky lg:top-20">
-          <div>
+          <div className={cx(plan && "hidden lg:block")}>
             <div className="mb-2 flex items-center justify-between gap-2">
               <h2 className="text-meta text-muted">Plan</h2>
               {plan ? (
@@ -528,7 +559,7 @@ export default async function TradePage({
             </dl>
           </div>
 
-          <div className="border-t border-line pt-4">
+          <div className={cx("border-t border-line pt-4", plan && "max-lg:border-t-0 max-lg:pt-0")}>
             <h2 className="mb-2 text-meta text-muted">Trade</h2>
             <dl className="divide-y divide-line">
               <Wlasciwosc etykieta="Konto">{trade.accountName}</Wlasciwosc>

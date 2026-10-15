@@ -261,3 +261,21 @@ export function ChecklistaRegul({
     </ul>
   );
 }
+
+/**
+ * Na telefonie formularz rytuału jest zwinięty do pigułki i rozwija się po dotknięciu (bramka etapu 1,
+ * runda 3); od `sm` zawsze rozwinięty.
+ */
+export function Rozwijane({ etykieta, children }: { etykieta: string; children: React.ReactNode }) {
+  const [otwarte, setOtwarte] = useState(false);
+  return (
+    <>
+      {!otwarte && (
+        <button type="button" onClick={() => setOtwarte(true)} aria-expanded={false} className={cx(klasaPigulki(true), "sm:hidden")}>
+          {etykieta}
+        </button>
+      )}
+      <div className={cx(otwarte ? "block" : "hidden", "sm:block")}>{children}</div>
+    </>
+  );
+}

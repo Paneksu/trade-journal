@@ -24,7 +24,7 @@ export function NaglowekListy({
   reguly,
   aktywneFiltry,
   widoki,
-  domyslnieOtwarty = true,
+  domyslnieOtwarty = false,
   podpis,
 }: {
   widok: "lista" | "galeria";
@@ -37,6 +37,7 @@ export function NaglowekListy({
   aktywneFiltry: number;
   /** Zapisane widoki; `null` = bez zapisu widoku (galeria). */
   widoki: { id: number; name: string; filters: Record<string, string> }[] | null;
+  /** Domyślnie zwinięte (wzór: „Filters (1)” z licznikiem); aktywne filtry widać po liczniku przy przycisku. */
   domyslnieOtwarty?: boolean;
   podpis?: React.ReactNode;
 }) {
