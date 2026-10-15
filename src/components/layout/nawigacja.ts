@@ -45,7 +45,7 @@ export const NAWIGACJA: GrupaNawigacji[] = [
     tytul: "Analiza",
     pozycje: [
       { label: "Playbook", href: "/playbook", icon: BookOpen },
-      { label: "Przegląd", href: null, icon: ClipboardCheck },
+      { label: "Przegląd", href: "/przeglad", icon: ClipboardCheck },
       { label: "Statystyki", href: "/stats", icon: BarChart3 },
       { label: "Kalendarz", href: "/calendar", icon: CalendarDays },
       { label: "Backtest", href: "/backtest", icon: FlaskConical },
@@ -54,7 +54,7 @@ export const NAWIGACJA: GrupaNawigacji[] = [
   {
     tytul: "Konta i wiedza",
     pozycje: [
-      { label: "Prop", href: null, icon: Wallet },
+      { label: "Prop", href: "/prop", icon: Wallet },
       { label: "Mózg", href: "/mozg", icon: Brain },
     ],
   },

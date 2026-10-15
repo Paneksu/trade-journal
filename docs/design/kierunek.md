@@ -94,6 +94,8 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 14 | Etap 1 UI v2 (tokeny, szkielet, Dziś, Trade'y, szczegół trade'a) przyjęty, dalej kolejne ekrany | Słowa użytkownika: «Akceptuję, dalej kolejne ekrany» | Bramka designu po rundzie r5 | 2026-10-15 |
 | 15 | Grosze i ułamki R pomniejszone w liczbach bohaterach zostają | Słowa użytkownika: «Zostaw pomniejszone» | Forma ze wzoru (pomiar Mercury), sędzia ślepy to kwestionował | 2026-10-15 |
 | 16 | Księga trade'ów pokazuje najpierw 100 wierszy („Pokaż wszystkie”), filtry na liście domyślnie zwinięte z licznikiem | Słowa użytkownika: «OK, zostaw» | Długość strony i cel dotyku przy 375 | 2026-10-15 |
+| 17 | Etap 2 UI v2 (Mózg: kolejka Do decyzji, listy, notatki z edytorem, profil; Playbook) przyjęty, dalej etap 3 | Słowa użytkownika: «Akceptuję, dalej etap 3» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-15 |
+| 18 | Ekran /strategies zostaje poza nawigacją (strategie sesji backtestu), link z Playbooka | Słowa użytkownika: «OK, zostaw» | Strategie opisują sesje backtestu, karty setupów je zastępują w nawigacji | 2026-10-15 |
 
 ## Znak
 Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.

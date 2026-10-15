@@ -20,7 +20,8 @@ export function GroupTable({
   }
 
   return (
-    <div className="overflow-x-auto">
+    // Przewijana tabela musi być osiągalna klawiaturą (axe scrollable-region-focusable przy 375 px, etap 3).
+    <div className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2" tabIndex={0} role="region" aria-label="Tabela rozbicia (przewijana w bok)">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-line">

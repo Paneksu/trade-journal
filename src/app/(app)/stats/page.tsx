@@ -10,6 +10,9 @@ import { KpiRow } from "@/components/stats/kpi-row";
 import { SampleBar } from "@/components/stats/kpi";
 import { PominietePanel } from "@/components/stats/pominiete-panel";
 import { FilterBar } from "@/components/trades/filter-bar";
+import { KafleStatystyk, SekcjaStatystykV2 } from "@/components/etap3/statystyki-v2";
+import { NaglowekStrony, Strona } from "@/components/ui/v2";
+import { kafleZTradow, statystykiV2 } from "@/lib/queries/statystyki-v2";
 import { DataPoint, EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
@@ -68,7 +71,7 @@ export default async function StatsPage({
       getRegulyOcen(),
     ]);
 
-  const progi = await getProgi();
+  const [progi, v2] = await Promise.all([getProgi(), statystykiV2()]);
   const closed = closedOnly(trades);
   const stats = computeStats(closed, progi);
   const pominiete = trades.filter((t) => czyPominiety(t.status));
@@ -107,20 +110,28 @@ export default async function StatsPage({
   });
   const discipline = scoreDiscipline(closed);
 
+  const zR = closed.filter((t) => t.rMultiple !== null);
+  const krzywaR: number[] = [];
+  for (const t of zR) krzywaR.push((krzywaR.at(-1) ?? 0) + (t.rMultiple as number));
+  const suma = krzywaR.at(-1) ?? 0;
+  const kafle = zR.length > 0 ? kafleZTradow(zR.map((t) => ({ r: t.rMultiple as number, wynik: t.wynik }))) : null;
+
+  /*
+   * UI v2 (etap 3, wzór 10 Missive): kafle z n i przedziałem, krzywa R obok dyscypliny, rozkłady źródeł, setupów
+   * i hipotez na górze; dotychczasowe wykresy niżej w stylu kart (.styl-v2 .panel), selektory e2e bez zmian.
+   */
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="etykieta">Analiza</p>
-          <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Statystyki</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <SourceSwitch
-            active={zrodloPrzelacznika(filters.source)}
-          />
-          <UnitSwitch active={unit} />
-        </div>
-      </header>
+    <Strona className="styl-v2 space-y-4">
+      <NaglowekStrony
+        tytul="Statystyki"
+        podtytul="Każda liczba z liczbą trade'ów i przedziałem 95%. Mało danych = orientacyjnie."
+        akcje={
+          <>
+            <SourceSwitch active={zrodloPrzelacznika(filters.source)} />
+            <UnitSwitch active={unit} />
+          </>
+        }
+      />
 
       <FilterBar
         accounts={accounts}
@@ -130,6 +141,9 @@ export default async function StatsPage({
         reguly={reguly}
         activeCount={activeFilterCount(filters)}
       />
+
+      {kafle && <KafleStatystyk s={kafle} />}
+      <SekcjaStatystykV2 v2={v2} krzywaR={krzywaR} sumaR={suma} />
 
       {closed.length === 0 ? (
         <>
@@ -298,6 +312,6 @@ export default async function StatsPage({
           </Panel>
         </>
       )}
-    </div>
+    </Strona>
   );
 }

@@ -77,6 +77,8 @@ export async function potwierdzReguly(_p: DecyzjaState, d: FormData): Promise<De
   if (id === null) return BRAK_ID;
   const wynik = await potwierdzReguleKonta(id);
   revalidatePath("/decyzje");
+  // Ten sam formularz stoi na ekranie konta prop (etap 3): znacznik „reguły niepotwierdzone” znika też tam.
+  revalidatePath("/prop", "layout");
   return stan(wynik);
 }
 

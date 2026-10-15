@@ -229,6 +229,18 @@
     --color-line-strong: oklch(39.08% 0.0236 255.7); /* #3d4652 */
   }
 
+  /* Stare panele na ekranie przebudowanym w UI v2 (Statystyki, etap 3): ta sama glebia i ramka co .karta,
+     bez zmiany selektorow, na ktorych stoja testy e2e. */
+  .styl-v2 .panel {
+    background-color: var(--color-panel);
+    border-color: oklch(35.71% 0.022 256.4);
+    --color-surface: oklch(25.34% 0.0199 254.9);
+    --color-surface-2: oklch(27.36% 0.0218 254.2);
+    --color-surface-3: oklch(30.99% 0.0212 254.1);
+    --color-line: oklch(32.7% 0.0218 259.4);
+    --color-line-strong: oklch(39.08% 0.0236 255.7);
+  }
+
   .etykieta {
     font-size: 11px;
     line-height: 1.2;
