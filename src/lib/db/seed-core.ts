@@ -94,12 +94,15 @@ export async function seed(db: Db, log: SeedLog = () => {}): Promise<void> {
   }
 
   // --- pola wlasne ---
-  const addedFields = await db
-    .insert(schema.customFields)
-    .values(CUSTOM_FIELDS)
-    .onConflictDoNothing({ target: schema.customFields.key })
-    .returning({ key: schema.customFields.key });
-  log(`Pola własne: dodano ${addedFields.length}`);
+  // Lista pol wlasnych bywa pusta (pola usuniete decyzja uzytkownika); INSERT bez wartosci to blad SQL.
+  if (CUSTOM_FIELDS.length > 0) {
+    const addedFields = await db
+      .insert(schema.customFields)
+      .values(CUSTOM_FIELDS)
+      .onConflictDoNothing({ target: schema.customFields.key })
+      .returning({ key: schema.customFields.key });
+    log(`Pola własne: dodano ${addedFields.length}`);
+  }
 }
 
 /**

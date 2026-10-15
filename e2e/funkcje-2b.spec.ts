@@ -32,6 +32,7 @@ test.describe("funkcje MUST: plan, werdykt, sugestie, prop, adnotacje, zalacznik
   let propId = 0;
   let tagId = 0;
   let tagUtworzony = false;
+  const kontaDoSprzatania: number[] = [];
   let instrumentId = 0;
   const trady: number[] = [];
 
@@ -93,7 +94,8 @@ test.describe("funkcje MUST: plan, werdykt, sugestie, prop, adnotacje, zalacznik
     await sql`delete from screenshots where trade_id = any(${trady})`;
     await sql`delete from trade_tags where trade_id = any(${trady})`;
     await sql`delete from trades where account_id = any(${[kontoId, propId]})`;
-    await sql`delete from accounts where id = any(${[kontoId, propId]})`;
+    await sql`delete from prop_rules where account_id = any(${[propId, ...kontaDoSprzatania]})`;
+    await sql`delete from accounts where id = any(${[kontoId, propId, ...kontaDoSprzatania]})`;
     if (tagUtworzony) await sql`delete from tags where id = ${tagId}`;
     await sql`delete from api_tokens where id = ${tokenId}`;
     await sql.end();
@@ -205,6 +207,33 @@ test.describe("funkcje MUST: plan, werdykt, sugestie, prop, adnotacje, zalacznik
     expect(o.level).toBe(75);
     expect(o.text).toContain("75%");
     expect(po.state.dailyLossBufferCents).toBe(50_000);
+  });
+
+  test("niepotwierdzona regula konta: status liczy na ostrzejszej i mowi o tym; potwierdzenie klikane w interfejsie zmienia rulesConfirmed", async ({ browser }) => {
+    const [k] = await sql`insert into accounts (name, type, prop_phase, starting_balance) values (${`E2E 2b prop2 ${RUN}`}, 'prop', 'eval', 5000000) returning id`;
+    const konto = k.id as number;
+    kontaDoSprzatania.push(konto);
+    const r = await api.post(`/api/v2/prop/accounts/${konto}/rules`, { data: { validFrom: "2026-01-01", ddType: "static", maxDdCents: 300_000 } });
+    const tekstR = await r.text();
+    expect(r.status(), tekstR).toBe(201);
+    const regulaId = JSON.parse(tekstR).id as number;
+    const przed = await (await api.get(`/api/v2/prop/accounts/${konto}/status?day=2026-10-09`)).json();
+    expect(przed.rulesConfirmed).toBe(false);
+    expect(przed.rulesNote).toContain("nie są potwierdzone");
+
+    const ctx = await browser.newContext({ storageState: "e2e/.sesja.json", baseURL: BASE, locale: "pl-PL" });
+    const page = await ctx.newPage();
+    await page.goto("/decyzje");
+    const karta = page.locator("li").filter({ hasText: `E2E 2b prop2 ${RUN}` });
+    await expect(karta).toBeVisible();
+    await expect(karta.getByText("niepotwierdzone")).toBeVisible();
+    const wyniki = await new AxeBuilder({ page }).withTags(AXE_TAGI).analyze();
+    expect(wyniki.violations.map((v) => `${v.id}: ${v.nodes.length}`)).toEqual([]);
+    await karta.getByRole("button", { name: "Potwierdzam zgodność z regulaminem" }).click();
+    await expect.poll(async () => (await sql`select confirmed_at is not null as c from prop_rules where id = ${regulaId}`)[0].c).toBe(true);
+    const po = await (await api.get(`/api/v2/prop/accounts/${konto}/status?day=2026-10-09`)).json();
+    expect(po.rulesConfirmed).toBe(true);
+    await ctx.close();
   });
 
   test("adnotacja z wykresu: tekst bajt w bajt (sha256 z klienta), rozne bajty = odmowa", async () => {
