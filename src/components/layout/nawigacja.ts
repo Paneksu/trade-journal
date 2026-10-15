@@ -44,7 +44,7 @@ export const NAWIGACJA: GrupaNawigacji[] = [
   {
     tytul: "Analiza",
     pozycje: [
-      { label: "Playbook", href: "/strategies", icon: BookOpen },
+      { label: "Playbook", href: "/playbook", icon: BookOpen },
       { label: "Przegląd", href: null, icon: ClipboardCheck },
       { label: "Statystyki", href: "/stats", icon: BarChart3 },
       { label: "Kalendarz", href: "/calendar", icon: CalendarDays },
@@ -55,7 +55,7 @@ export const NAWIGACJA: GrupaNawigacji[] = [
     tytul: "Konta i wiedza",
     pozycje: [
       { label: "Prop", href: null, icon: Wallet },
-      { label: "Mózg", href: null, icon: Brain },
+      { label: "Mózg", href: "/mozg", icon: Brain },
     ],
   },
 ];

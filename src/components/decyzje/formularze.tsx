@@ -3,18 +3,21 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 
-import { Button, ErrorMessage, Input, Label, SuccessMessage, Textarea } from "@/components/ui/base";
+import { ErrorMessage, Input, Label, SuccessMessage, Textarea } from "@/components/ui/base";
+import { klasaPigulki } from "@/components/ui/v2";
+import { cx } from "@/lib/classes";
 import { decydujOSetupie, decydujOSprzecznosci, decydujOSugestii, decydujORegule, potwierdzReguly, type DecyzjaState } from "@/lib/actions/decyzje";
 import { ROZSTRZYGNIECIE_OPISY, ROZSTRZYGNIECIA } from "@/lib/decyzje/rozstrzygniecia-opisy";
 
-/* Minimalne formularze decyzji (faza 2b); wyglad przebuduje faza 5. Walidacja jest po stronie serwera. */
+/* Formularze decyzji. UI v2 (etap 2): pigułki ze wzoru (akcent tylko na „Przyjmij/Zatwierdź”, odrzucenie neutralne,
+   bo zieleń i czerwień nie trafiają na przyciski). Walidacja jest po stronie serwera. */
 
 function Przycisk({ decyzja, etykieta, wariant = "secondary" }: { decyzja: string; etykieta: string; wariant?: "primary" | "danger" | "secondary" }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" name="decyzja" value={decyzja} variant={wariant} size="m" disabled={pending}>
+    <button type="submit" name="decyzja" value={decyzja} disabled={pending} className={cx(klasaPigulki(wariant === "primary"), "disabled:opacity-60")}>
       {pending ? "Chwila…" : etykieta}
-    </Button>
+    </button>
   );
 }
 
@@ -30,7 +33,7 @@ function Wynik({ stan }: { stan: DecyzjaState }) {
 export function DecyzjaReguly({ versionId, tekst }: { versionId: number; tekst: string }) {
   const [stan, akcja] = useActionState<DecyzjaState, FormData>(decydujORegule, {});
   return (
-    <form action={akcja} className="space-y-4 p-4">
+    <form action={akcja} className="space-y-4">
       <input type="hidden" name="id" value={versionId} />
       <div className="flex flex-wrap items-center gap-2">
         <Przycisk decyzja="przyjmij" etykieta="Przyjmij" wariant="primary" />
@@ -65,7 +68,7 @@ const POLA_SETUPU: { pole: "stopRule" | "targetRule" | "beRule" | "invalidation"
 export function DecyzjaSetupu({ versionId, wersja }: { versionId: number; wersja: Record<"stopRule" | "targetRule" | "beRule" | "invalidation" | "avoid", string | null> }) {
   const [stan, akcja] = useActionState<DecyzjaState, FormData>(decydujOSetupie, {});
   return (
-    <form action={akcja} className="space-y-4 p-4">
+    <form action={akcja} className="space-y-4">
       <input type="hidden" name="id" value={versionId} />
       <Przycisk decyzja="przyjmij" etykieta="Przyjmij wersję setupu" wariant="primary" />
       <details className="space-y-2">
@@ -123,16 +126,16 @@ export function DecyzjaSugestii({ id, zatwierdzona }: { id: number; zatwierdzona
 function Wyslij({ etykieta }: { etykieta: string }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" variant="primary" size="m" disabled={pending}>
+    <button type="submit" disabled={pending} className={cx(klasaPigulki(true), "disabled:opacity-60")}>
       {pending ? "Chwila…" : etykieta}
-    </Button>
+    </button>
   );
 }
 
 export function DecyzjaSprzecznosci({ id }: { id: number }) {
   const [stan, akcja] = useActionState<DecyzjaState, FormData>(decydujOSprzecznosci, {});
   return (
-    <form action={akcja} className="space-y-4 p-4">
+    <form action={akcja} className="space-y-4">
       <input type="hidden" name="id" value={id} />
       <fieldset className="space-y-2">
         <legend className="text-sm font-semibold text-text">Twoja decyzja</legend>

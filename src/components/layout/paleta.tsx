@@ -104,7 +104,7 @@ export function Paleta() {
             klucz: `${w.typ}:${w.id}`,
             grupa: GRUPY[w.typ],
             tytul: w.tytul,
-            sciezka: w.href ? w.sciezka : `${w.sciezka} · ekran Mózgu w kolejnym etapie`,
+            sciezka: w.sciezka,
             href: w.href,
             ikona: IKONY[w.typ],
           }));

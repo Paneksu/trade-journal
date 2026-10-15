@@ -161,7 +161,7 @@ async function main() {
     const [notaSetupu] = await tx<{ id: number }[]>`insert into notes (kind, slug, title, body_md) values ('setup', 'fvg-po-sweepie', 'FVG po sweepie', 'Karta setupu.') returning id`;
     const [setup] = await tx<{ id: number }[]>`insert into setups (slug, name, note_id) values ('fvg-po-sweepie', 'FVG po sweepie', ${notaSetupu.id}) returning id`;
     const [wersja] = await tx<{ id: number }[]>`insert into setup_versions (setup_id, version, status, preconditions, entry_checklist, stop_rule, thresholds, origin, decided_at)
-      values (${setup.id}, 2, 'approved', '["sweep PDL albo PDH"]', '["FVG na 5m po sweepie", "świeca zamknięta"]', 'za knotem sweepu', '{}', 'user', now()) returning id`;
+      values (${setup.id}, 2, 'approved', '[{"id":"p1","text":"sweep PDL albo PDH"}]', '[{"id":"c1","text":"FVG na 5m po sweepie"},{"id":"c2","text":"świeca zamknięta"}]', 'za knotem sweepu', '{}', 'user', now()) returning id`;
     const [notaSetupu2] = await tx<{ id: number }[]>`insert into notes (kind, slug, title, body_md) values ('setup', 'ifvg-otwarcie', 'iFVG na otwarciu', 'Karta setupu.') returning id`;
     const [setup2] = await tx<{ id: number }[]>`insert into setups (slug, name, note_id) values ('ifvg-otwarcie', 'iFVG na otwarciu', ${notaSetupu2.id}) returning id`;
 

@@ -91,6 +91,9 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 11 | Logo: prosty znak, robi `brand-designer`; także favicon i ikona PWA | Słowa użytkownika: «Tak, prosty znak» | Marka bez znaku; PWA potrzebuje ikony | 2026-10-14 |
 | 12 | Wzory ekranów 1–14 bez zmian | Słowa użytkownika: «Bez zmian» | Akceptacja listy wzorów | 2026-10-14 |
 | 13 | Znak: FVG, wariant V1 „Bycza luka z CE” (zestaw `docs/design/znak/runda-4-fvg/v1-bycza-ce/`); zmienia „prosty znak” z decyzji 11 na znak z detalem | Słowa użytkownika: «V1: Bycza luka z CE» (wcześniej «2. FVG» i «Cos bardziej w stylu tradingu może być bardziej detalowe») | Rundy 1–3 odrzucone; użytkownik chce znaku tradingowego z detalem | 2026-10-14 |
+| 14 | Etap 1 UI v2 (tokeny, szkielet, Dziś, Trade'y, szczegół trade'a) przyjęty, dalej kolejne ekrany | Słowa użytkownika: «Akceptuję, dalej kolejne ekrany» | Bramka designu po rundzie r5 | 2026-10-15 |
+| 15 | Grosze i ułamki R pomniejszone w liczbach bohaterach zostają | Słowa użytkownika: «Zostaw pomniejszone» | Forma ze wzoru (pomiar Mercury), sędzia ślepy to kwestionował | 2026-10-15 |
+| 16 | Księga trade'ów pokazuje najpierw 100 wierszy („Pokaż wszystkie”), filtry na liście domyślnie zwinięte z licznikiem | Słowa użytkownika: «OK, zostaw» | Długość strony i cel dotyku przy 375 | 2026-10-15 |
 
 ## Znak
 Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.

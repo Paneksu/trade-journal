@@ -14,7 +14,7 @@ export type WynikPalety = {
   id: number;
   tytul: string;
   sciezka: string;
-  /** Dokad prowadzi wynik; `null`, gdy ekran docelowy jeszcze nie istnieje (notatki: Mozg, etap 2 fazy 5). */
+  /** Dokad prowadzi wynik; `null`, gdy nie ma ekranu docelowego. */
   href: string | null;
 };
 
@@ -45,7 +45,7 @@ export async function szukajWPalecie(q: string): Promise<WynikPalety[]> {
         id: w.id,
         tytul: w.title,
         sciezka: napis(w.meta.kind) ?? "notatka",
-        href: null,
+        href: `/mozg/notatki/${w.id}`,
       };
     }
     const tradeId = typeof w.meta.tradeId === "number" ? w.meta.tradeId : null;
