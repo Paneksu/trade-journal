@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import {
   accounts,
@@ -23,7 +23,7 @@ import { zrodloDanych } from "@/lib/domain/zrodla";
 
 import { planTradu } from "./plany";
 import { zSlow } from "./slowa";
-import { czyWynikUkryty } from "./ukrycie-wyniku";
+import { czyWynikUkryty, sqlNotatkaPoWejsciuUkrytego, wejscieTradu } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -73,7 +73,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
       .select({ id: tradeNoteLinks.id, noteId: tradeNoteLinks.noteId, role: tradeNoteLinks.role, origin: tradeNoteLinks.origin, title: notes.title, kind: notes.kind, slug: notes.slug })
       .from(tradeNoteLinks)
       .innerJoin(notes, eq(tradeNoteLinks.noteId, notes.id))
-      .where(eq(tradeNoteLinks.tradeId, id))
+      .where(and(eq(tradeNoteLinks.tradeId, id), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
       .orderBy(asc(tradeNoteLinks.id)),
   ]);
 
@@ -89,7 +89,8 @@ export async function szczegolyTradu(tx: Db, id: number) {
   const dzienOceny = tr.tradingDay ?? tr.entryTime.toISOString().slice(0, 10);
 
   // Co powstalo PO wejsciu, moze zdradzic wynik: przy ukryciu wychodzi tylko to, co z chwili przed wejsciem.
-  const poWejsciu = (t: Date | null) => t === null || t.getTime() > tr.entryTime.getTime();
+  const wejscie = (await wejscieTradu(tx, id)) ?? tr.entryTime;
+  const poWejsciu = (t: Date | null) => t === null || t.getTime() > wejscie.getTime();
   const wyjscia = ukryj ? [] : await tx.select().from(tradeExits).where(eq(tradeExits.tradeId, id)).orderBy(asc(tradeExits.sortOrder), asc(tradeExits.id));
   const plan = await planTradu(tx, id);
 
@@ -136,7 +137,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
     },
     resultHidden: ukryj,
     resultHiddenReason: ukryj ? "Trade nie jest zamknięty, a ma werdykt AI wydany przed wynikiem. Wynik pokaże się po zamknięciu." : null,
-    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations.words(po wejsciu)", "screenshots.caption/capturedAt/chartState(po wejsciu)"] : [],
+    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations.words(po wejsciu)", "screenshots.caption/capturedAt/chartState(po wejsciu)", "links(notatki po wejsciu)"] : [],
     hiddenReviews: ukryteOceny,
     result: ukryj
       ? null

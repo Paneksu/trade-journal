@@ -323,13 +323,13 @@ export async function szczegolyNotatki(tx: Transakcja | typeof import("@/lib/db"
     .orderBy(asc(noteLinks.id));
   const celeIds = wychodzace.map((l) => l.toNoteId).filter((x): x is number => x !== null);
   const cele = celeIds.length
-    ? await tx.select({ id: notes.id, slug: notes.slug, title: notes.title }).from(notes).where(inArray(notes.id, celeIds))
+    ? await tx.select({ id: notes.id, slug: notes.slug, title: notes.title }).from(notes).where(and(inArray(notes.id, celeIds), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
     : [];
   const przychodzace = await tx
     .select({ id: notes.id, slug: notes.slug, title: notes.title, target: noteLinks.target })
     .from(noteLinks)
     .innerJoin(notes, eq(noteLinks.fromNoteId, notes.id))
-    .where(eq(noteLinks.toNoteId, id))
+    .where(and(eq(noteLinks.toNoteId, id), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
     .orderBy(asc(notes.id));
   return {
     ...zNotatki(n),

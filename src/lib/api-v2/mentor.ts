@@ -305,7 +305,7 @@ export function zDopiska(d: typeof noteAdditions.$inferSelect) {
 export async function listaDopiskow(tx: Db, noteId: number) {
   // Slepa ocena: dopiski dodane po wejsciu trade'a z ukrytym wynikiem (trade notatki albo trade dopisku) nie wychodza;
   // notatka ukryta w calosci nie ma widocznych dopiskow.
-  if (await czyNotatkaUkryta(tx, noteId)) return { additions: [] };
+  if (await czyNotatkaUkryta(tx, noteId)) return null;
   const wiersze = await tx
     .select({ d: noteAdditions })
     .from(noteAdditions)

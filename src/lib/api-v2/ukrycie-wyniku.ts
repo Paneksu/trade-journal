@@ -30,19 +30,24 @@ export function sqlWynikUkryty(tradeId: SQL): SQL {
 export function sqlSlowaPoWejsciuUkrytego(tradeId: SQL, day: SQL, capturedAt: SQL): SQL {
   return sql`exists (select 1 from trades uw_h
       where ${sqlWynikUkryty(sql`uw_h.id`)}
-        and ${capturedAt} > uw_h.entry_time
+        and ${capturedAt} > ${sqlWejscieTradu(sql`uw_h.id`)}
         and (${tradeId} = uw_h.id or (${tradeId} is null and ${day} is not null and ${day} = uw_h.trading_day)))`;
 }
 
-/** Wyrazenie SQL: wejscie trade'a (z chwili przypiecia planu, jesli plan jest; inaczej biezace entry_time). */
+/**
+ * Wyrazenie SQL: JEDNA definicja wejscia trade'a dla calej slepej oceny = najwczesniejsze znane wejscie, czyli
+ * least(entry_time_at_attach planu, biezace entry_time). `least` w Postgresie pomija NULL-e. Najwczesniejsze wejscie
+ * ukrywa wiecej, wiec jest bezpieczniejsze (Slowa uzytkownika 15.10.2026: «Ukrywaj tylko notatki po wejsciu»;
+ * wybor wykonawcy zatwierdzony przez sesje glowna).
+ */
 export function sqlWejscieTradu(tradeId: SQL): SQL {
-  return sql`coalesce((select uw_p.entry_time_at_attach from trade_plans uw_p where uw_p.trade_id = ${tradeId} limit 1),
+  return sql`least((select uw_p.entry_time_at_attach from trade_plans uw_p where uw_p.trade_id = ${tradeId} limit 1),
     (select uw_e.entry_time from trades uw_e where uw_e.id = ${tradeId}))`;
 }
 
 /**
  * Warunek SQL: notatka przypieta do trade'a z ukrytym wynikiem jest ukryta, gdy powstala PO wejsciu albo byla zmieniana
- * po wejsciu (Slowa uzytkownika, 16.10.2026: «Ukrywaj tylko notatki po wejsciu»). Wybor przy notatce sprzed wejscia,
+ * po wejsciu (Slowa uzytkownika, 15.10.2026: «Ukrywaj tylko notatki po wejsciu»). Wybor przy notatce sprzed wejscia,
  * ale edytowanej po wejsciu: ukrywamy ja w calosci (bezpieczniej niz pokazywanie starej wersji; rewizji tresci API nie wystawia).
  */
 export function sqlNotatkaPoWejsciuUkrytego(tradeId: SQL, createdAt: SQL, updatedAt: SQL): SQL {
@@ -68,8 +73,8 @@ export async function czyNotatkaUkryta(tx: Db, noteId: number): Promise<boolean>
   return w?.h === true;
 }
 
-/** Wejscie trade'a (do porownan »po wejsciu«); null, gdy trade nie istnieje. */
+/** Wejscie trade'a (ta sama definicja co `sqlWejscieTradu`: najwczesniejsze znane); null, gdy trade nie istnieje. */
 export async function wejscieTradu(tx: Db, tradeId: number): Promise<Date | null> {
-  const [t] = await tx.select({ entryTime: trades.entryTime }).from(trades).where(eq(trades.id, tradeId)).limit(1);
-  return t?.entryTime ?? null;
+  const [w] = await tx.execute<{ t: Date | string | null }>(sql`select ${sqlWejscieTradu(sql`${tradeId}::int`)} as t`);
+  return w?.t == null ? null : new Date(w.t);
 }

@@ -184,7 +184,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     expect(szukajPo.json.results.map((r: { id: number }) => r.id)).toContain(notaId);
   });
 
-  it("notatki przypiete do trade'a: ukryte sa tylko te po wejsciu albo zmieniane po wejsciu; notatka sprzed wejscia i dopiski sprzed wejscia zostaja widoczne (Slowa uzytkownika, 16.10.2026)", async () => {
+  it("notatki przypiete do trade'a: ukryte sa tylko te po wejsciu albo zmieniane po wejsciu; notatka sprzed wejscia i dopiski sprzed wejscia zostaja widoczne (Slowa uzytkownika, 15.10.2026)", async () => {
     const { id } = await przygotuj();
     const mk = async (kind: string, tytul: string) => {
       const r = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind, title: `${tytul} ${TOKEN}`, bodyMd: `Tresc ${TOKEN}`, tradeId: id } });
@@ -237,6 +237,99 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     const dopiskiPo = (await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${strategia}/additions`, PARAMS({ id: String(strategia) }))).json.additions.map((a: { id: number }) => a.id);
     expect([...dopiskiPo].sort()).toEqual([dopisekPrzed, dopisekPo].sort());
   });
+
+  it("tytuly ukrytych notatek nie wyciekaja: lista notatek dnia, links w /trades/:id, backlinks i links w /notes/:id; additions ukrytej notatki = 404", async () => {
+    const { id } = await przygotuj();
+    const mk = async (tytul: string, bodyMd: string, tradeId?: number) => {
+      const r = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: tytul, bodyMd, ...(tradeId ? { tradeId } : {}), day: DZIEN } });
+      expect(r.status, JSON.stringify(r.json)).toBe(201);
+      return r.json.id as number;
+    };
+    const widoczna = await mk(`Widoczna ${TOKEN}`, `Tresc widocznej ${TOKEN}`, id);
+    const ukryta = await mk(`SekretnyTytul${TOKEN}`, `Odsyla do [[Widoczna ${TOKEN}]] ${TOKEN}`, id);
+    const odsylajaca = await mk(`Odsylajaca ${TOKEN}`, `Patrz [[SekretnyTytul${TOKEN}]]`);
+    const stempel = (nid: number, c: string, u: string) => sql`update notes set created_at = ${c}::timestamptz, updated_at = ${u}::timestamptz where id = ${nid}`;
+    await stempel(widoczna, `${DZIEN}T14:00:00Z`, `${DZIEN}T14:05:00Z`);
+    await stempel(ukryta, `${DZIEN}T15:00:00Z`, `${DZIEN}T15:00:00Z`);
+    await stempel(odsylajaca, `${DZIEN}T12:00:00Z`, `${DZIEN}T12:00:00Z`);
+    await sql`insert into trade_note_links (trade_id, note_id, role, origin) values (${id}, ${widoczna}, 'concept', 'user'), (${id}, ${ukryta}, 'mistake', 'ai')`;
+    const SEKRET = `SekretnyTytul${TOKEN}`;
+
+    const dzien = await get(import("@/app/api/v2/days/[date]/route"), `/days/${DZIEN}?accountId=${kontoId}`, PARAMS({ date: DZIEN }));
+    const noteIds = dzien.json.notes.map((n: { id: number }) => n.id);
+    expect(noteIds).toContain(widoczna);
+    expect(noteIds).not.toContain(ukryta);
+    expect(JSON.stringify(dzien.json)).not.toContain(SEKRET);
+
+    const t = await get(import("@/app/api/v2/trades/[id]/route"), `/trades/${id}`, PARAMS({ id: String(id) }));
+    zgodneZKontraktem("get", "/trades/{id}", t.json);
+    expect(t.json.links.map((l: { noteId: number }) => l.noteId)).toEqual([widoczna]);
+    expect(JSON.stringify(t.json)).not.toContain(SEKRET);
+    expect(t.json.hiddenFields).toContain("links(notatki po wejsciu)");
+
+    const wid = await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${widoczna}`, PARAMS({ id: String(widoczna) }));
+    expect(wid.json.backlinks.map((b: { id: number }) => b.id)).not.toContain(ukryta);
+    expect(JSON.stringify(wid.json)).not.toContain(SEKRET);
+    const odsy = await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${odsylajaca}`, PARAMS({ id: String(odsylajaca) }));
+    expect(odsy.json.links[0].resolved).toBeNull();
+
+    // notatka ukryta w calosci: i ona sama, i jej dopiski to 404
+    expect((await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${ukryta}`, PARAMS({ id: String(ukryta) }))).status).toBe(404);
+    expect((await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${ukryta}/additions`, PARAMS({ id: String(ukryta) }))).status).toBe(404);
+
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+    const po = await get(import("@/app/api/v2/trades/[id]/route"), `/trades/${id}`, PARAMS({ id: String(id) }));
+    expect(po.json.links.map((l: { noteId: number }) => l.noteId).sort()).toEqual([widoczna, ukryta].sort());
+    expect((await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${ukryta}/additions`, PARAMS({ id: String(ukryta) }))).status).toBe(200);
+  });
+
+  for (const sc of [
+    { opis: "wejscie przesuniete PO czasie przypiecia planu", nowe: "18:00", t: "15:00" },
+    { opis: "wejscie przesuniete PRZED czas przypiecia planu", nowe: "13:00", t: "14:00" },
+  ]) {
+    it(`jedna definicja wejscia = najwczesniejsze znane (least): ${sc.opis}; slowa, notatki, dopiski notatek i dopiski planu z czasu po nim sa ukryte`, async () => {
+      const { id } = await przygotuj();
+      const plan = await wywolaj(import("@/app/api/v2/trade-plans/route"), "POST", "/trade-plans", {
+        token: rw.token,
+        cialo: { accountId: kontoId, symbol: "NQ1!", day: DZIEN, direction: "long", entryPrice: 20000, stopLoss: 19990, contracts: 1, tradeId: id },
+      });
+      expect(plan.status, JSON.stringify(plan.json)).toBe(201);
+      const planId = plan.json.plan.id as number;
+      // wejscie z przypiecia = 14:35; teraz entry_time trade'a zmienia sie
+      await sql`update trades set entry_time = ${`${DZIEN}T${sc.nowe}:00Z`}::timestamptz where id = ${id}`;
+      const T = `${DZIEN}T${sc.t}:00Z`;
+
+      const slowo = await zapiszSlowa(rw.token, `Slowo z czasu po wejsciu ${unikat("sc")} ${TOKEN}`, { tradeId: id, capturedAt: T });
+      const mkNote = async (tytul: string, tradeId?: number) => {
+        const r = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: tytul, bodyMd: `Tresc ${TOKEN}`, ...(tradeId ? { tradeId } : {}) } });
+        expect(r.status, JSON.stringify(r.json)).toBe(201);
+        return r.json.id as number;
+      };
+      const notatka = await mkNote(`Notatka scen ${unikat("n")} ${TOKEN}`, id);
+      await sql`update notes set created_at = ${T}::timestamptz, updated_at = ${T}::timestamptz where id = ${notatka}`;
+      const bezTradu = await mkNote(`Strategia bez trade'a ${unikat("s")} ${TOKEN}`);
+      await sql`update notes set kind = 'strategy', created_at = ${`${DZIEN}T11:00:00Z`}::timestamptz, updated_at = ${`${DZIEN}T11:00:00Z`}::timestamptz where id = ${bezTradu}`;
+      // dopisek z tradeId ukrytego trade'a do notatki BEZ trade'a (created_at niezmienne: kopia wiersza z czasem T)
+      const slowaCytat = await zapiszSlowa(rw.token, `Cytat sc ${unikat("q")}`, { tradeId: id, capturedAt: `${DZIEN}T14:00:00Z` });
+      const dop = await wywolaj(import("@/app/api/v2/notes/[id]/additions/route"), "POST", `/notes/${bezTradu}/additions`, { token: rw.token, cialo: { bodyMd: `Dopisek ${unikat("d")}`, origin: "ai", tradeId: id, quoteWordsId: slowaCytat.id } }, PARAMS({ id: String(bezTradu) }));
+      expect(dop.status, JSON.stringify(dop.json)).toBeLessThan(300);
+      const [{ id: dopisekT }] = await sql`insert into note_additions (note_id, body_md, origin, trade_id, quote_words_id, created_at)
+        select note_id, body_md || ' (czas T)', origin, trade_id, quote_words_id, ${T}::timestamptz from note_additions where id = ${dop.json.id} returning id`;
+      const [{ id: dopisekPrzed }] = await sql`insert into note_additions (note_id, body_md, origin, trade_id, quote_words_id, created_at)
+        select note_id, body_md || ' (przed)', origin, trade_id, quote_words_id, ${`${DZIEN}T12:00:00Z`}::timestamptz from note_additions where id = ${dop.json.id} returning id`;
+      await sql`insert into trade_plan_addenda (plan_id, field, new_value, words_id, created_at) values (${planId}, 'stop_loss', ${sql.json(19995)}, ${slowaCytat.id}, ${T}::timestamptz)`;
+
+      const slowa = (await get(import("@/app/api/v2/user-words/route"), `/user-words?tradeId=${id}`)).json.words.map((w: { id: number }) => w.id);
+      expect(slowa).not.toContain(slowo.id);
+      const noty = (await get(import("@/app/api/v2/notes/route"), `/notes?tradeId=${id}`)).json.notes.map((n: { id: number }) => n.id);
+      expect(noty).not.toContain(notatka);
+      const dopiski = (await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${bezTradu}/additions`, PARAMS({ id: String(bezTradu) }))).json.additions.map((a: { id: number }) => a.id);
+      expect(dopiski).toContain(dopisekPrzed);
+      expect(dopiski).not.toContain(dopisekT);
+      const p = await get(import("@/app/api/v2/trade-plans/[id]/route"), `/trade-plans/${planId}`, PARAMS({ id: String(planId) }));
+      expect(p.json.addenda.map((a: { newValue: unknown }) => a.newValue)).not.toContain(19995);
+    });
+  }
 
   it("GET /trades/:id: zrzuty zrobione po wejsciu traca podpis, czas i stan wykresu; tresc korekty uzytkownika (summaryMd) jest ukryta", async () => {
     const { id } = await przygotuj();

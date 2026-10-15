@@ -135,7 +135,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
     if (!s) return odrzuc(422, "unknown_reference", `pole sessionId: »${d.sessionId}« - nie ma takiej sesji.`);
   }
 
-  let wejscieTradu: Date | null = null;
+  let wejscieTraduPrzyTworzeniu: Date | null = null;
   if (d.tradeId !== undefined) {
     const spr = await sprawdzTrade(tx, d.tradeId, {
       accountId: d.accountId,
@@ -144,7 +144,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
       day: d.day,
     });
     if (!spr.ok) return spr;
-    wejscieTradu = spr.entryTime;
+    wejscieTraduPrzyTworzeniu = spr.entryTime;
   }
 
   // Idempotencja: ten sam plan wyslany ponownie (retry) to ten sam wiersz. Plan niezmienny nie ma
@@ -199,7 +199,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
       // Przez API plan zawsze "przepisalo AI ze slow uzytkownika"; origin `user` jest zarezerwowane dla UI.
       origin: "ai",
       createdByTokenId: api.token.id,
-      entryTimeAtAttach: wejscieTradu,
+      entryTimeAtAttach: wejscieTraduPrzyTworzeniu,
     })
     .returning();
 

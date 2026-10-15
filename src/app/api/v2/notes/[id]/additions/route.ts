@@ -13,7 +13,9 @@ type Ctx = { params: Promise<{ id: string }> };
 export const GET = withApi<Ctx>({ scopes: ["read"] }, async (_request, _api, { params }) => {
   const id = idZAdresu((await params).id, "id notatki");
   if (!id.ok) return id.odpowiedz;
-  return odpowiedz(await listaDopiskow(db, id.dane));
+  const lista = await listaDopiskow(db, id.dane);
+  if (lista === null) return blad(404, "not_found", `Notatka #${id.dane} nie istnieje.`); // ukryta slepa ocena wyglada jak brak notatki
+  return odpowiedz(lista);
 });
 
 /**
