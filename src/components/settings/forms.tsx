@@ -44,10 +44,13 @@ function DeleteButton({
   onDelete,
   question,
   label = "Usuń",
+  nazwa,
 }: {
   onDelete: () => Promise<unknown>;
   question: string;
   label?: string;
+  /** Nazwa dostępna, gdy przycisk ma samą ikonę (axe button-name, etap 4). */
+  nazwa?: string;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +61,7 @@ function DeleteButton({
         type="button"
         variant="danger"
         size="s"
+        aria-label={label ? undefined : (nazwa ?? "Usuń")}
         disabled={pending}
         onClick={() => {
           if (!window.confirm(question)) return;
@@ -545,6 +549,7 @@ export function TagForm({
               onDelete={() => deleteTag(values.id as number)}
               question="Usunąć tag? Jeśli jest użyty w choćby jednym trade, usunięcie się nie powiedzie — użyj przycisku archiwizacji obok."
               label=""
+              nazwa={`Usuń tag ${values.name ?? ""}`.trim()}
             />
           </>
         )}

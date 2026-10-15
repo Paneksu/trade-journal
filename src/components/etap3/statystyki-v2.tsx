@@ -82,6 +82,13 @@ export function KafleStatystyk({ s }: { s: StatystykaZrodla }) {
   );
 }
 
+/** Długi tytuł skracany w kodzie do ok. 2 linii kolumny (bez przycinania CSS, które bramka liczy jako ucięty tekst); pełna treść w podpowiedzi i pod linkiem. */
+function skroc(t: string, max = 58): string {
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), max - 12)).trimEnd()}…`;
+}
+
 function Lista({ tytul, children, stopka }: { tytul: string; children: React.ReactNode; stopka?: React.ReactNode }) {
   return (
     <section aria-label={tytul} className="min-w-0">
@@ -93,11 +100,20 @@ function Lista({ tytul, children, stopka }: { tytul: string; children: React.Rea
   );
 }
 
-function Wiersz({ etykieta, wartosc, opis, href, slaby, kropka, slowo }: { etykieta: string; wartosc: string; opis?: string; href?: string; slaby?: boolean; kropka?: string; slowo?: boolean }) {
+function Wiersz({ etykieta, pelna, wartosc, opis, href, slaby, kropka, slowo }: { etykieta: string; pelna?: string; wartosc: string; opis?: string; href?: string; slaby?: boolean; kropka?: string; slowo?: boolean }) {
   const tresc = (
     <>
       <span aria-hidden className={cx("size-1.5 shrink-0 rounded-full", kropka ?? "bg-muted")} />
-      <span className="min-w-0 flex-1 py-2">{etykieta}</span>
+      <span className="min-w-0 flex-1 py-2" title={pelna}>
+        {pelna && pelna !== etykieta ? (
+          <>
+            <span aria-hidden>{etykieta}</span>
+            <span className="sr-only">{pelna}</span>
+          </>
+        ) : (
+          etykieta
+        )}
+      </span>
       {opis && <span className="num text-meta text-muted">{opis}</span>}
       <span className={slowo ? "text-meta whitespace-nowrap" : "num w-16 text-right"}>{wartosc}</span>
     </>
@@ -158,7 +174,7 @@ export function SekcjaStatystykV2({ v2, krzywaR, sumaR }: { v2: StatystykiV2; kr
           {v2.hipotezy.length === 0 ? (
             <li className="py-2 text-meta text-muted">Brak hipotez.</li>
           ) : (
-            v2.hipotezy.slice(0, 6).map((h) => <Wiersz key={h.id} etykieta={`${h.kod} ${h.tytul}`} opis={h.warianty > 0 ? `${h.warianty} war.` : undefined} wartosc={`${h.n}/${h.progN}`} slaby={h.n < h.progN} />)
+            v2.hipotezy.slice(0, 6).map((h) => <Wiersz key={h.id} href={h.noteId ? `/mozg/notatki/${h.noteId}` : undefined} etykieta={skroc(`${h.kod} ${h.tytul}`)} pelna={`${h.kod} ${h.tytul}`} opis={h.warianty > 0 ? `${h.warianty} war.` : undefined} wartosc={`${h.n}/${h.progN}`} slaby={h.n < h.progN} />)
           )}
         </Lista>
       </div>

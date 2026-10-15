@@ -39,7 +39,7 @@ export default async function DataSettingsPage() {
             Pełna kopia bazy to jedno polecenie na serwerze. Warto puścić je przed każdym
             wdrożeniem, które zmienia strukturę danych:
           </p>
-          <pre className="overflow-x-auto rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-3 py-2 text-xs text-text">
+          <pre tabIndex={0} aria-label="Polecenie (przewijane w bok)" className="overflow-x-auto focus-visible:outline-2 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-3 py-2 text-xs text-text">
             <code>docker exec &lt;kontener-bazy&gt; pg_dump -U journal journal &gt; kopia.sql</code>
           </pre>
           <p>

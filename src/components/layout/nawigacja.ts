@@ -18,8 +18,8 @@ import {
  * Mózg, Statystyki, Kalendarz, Ustawienia + licznik „Do decyzji”. Grupy jak we wzorze (Mercury:
  * pozycje główne, potem grupy z etykietą).
  *
- * `href: null` = ekran jeszcze nie zbudowany (kolejne etapy fazy 5). Pozycja jest widoczna, żeby
- * układ nawigacji był od razu docelowy, ale nie udaje linku (decyzja gustu, raport 15.10.2026).
+ * Od etapu 4 (16.10.2026) każda pozycja ma ekran; `href: null` (podpis „wkrótce”) zostaje tylko jako
+ * mechanizm na przyszłe ekrany i test pilnuje, żeby żadna pozycja go nie miała.
  */
 
 export type PozycjaNawigacji = {

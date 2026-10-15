@@ -112,6 +112,7 @@ test.describe("UI v2: Przegląd, Prop, Statystyki", () => {
     expect(reg.vf).toBe("2026-01-02");
     expect(reg.confirmed_at).not.toBeNull();
 
+    await page.getByText("Dodaj wpis do księgi", { exact: false }).click();
     await page.getByLabel("Kwota ($)").fill("149,50");
     await page.getByLabel("Notatka").fill(`eval e2e ${RUN}`);
     await page.getByRole("button", { name: "Dodaj wpis" }).click();

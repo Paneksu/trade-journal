@@ -7,6 +7,9 @@ const dev = process.env.NODE_ENV !== "production";
 const nextConfig: NextConfig = {
   // Standalone: obraz dockerowy dla Coolify nie wlecze calego node_modules.
   output: "standalone",
+  // Osobny katalog builda do lokalnych pomiarów (Lighthouse) obok działającego serwera dev: drugi proces Next
+  // w tym samym .next psuje serwer dev (wiedza: next-build-psuje-zywy-dev-serwer). Domyślnie .next.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Katalog nadrzedny ma wlasny package-lock.json; bez tego Turbopack szuka
   // korzenia projektu wyzej i wypisuje ostrzezenie przy kazdym starcie.
   turbopack: { root: __dirname },

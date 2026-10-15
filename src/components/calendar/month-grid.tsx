@@ -4,31 +4,47 @@ import { cx } from "@/lib/classes";
 import { moneyShort, rValue } from "@/lib/format";
 
 /**
- * Miesiac jako mapa wynikow. Tydzien zaczyna sie w poniedzialek.
- * Nasycenie tla oddaje wielkosc wyniku wzgledem najlepszego i najgorszego dnia,
- * dzieki czemu jeden zly dzien nie ginie wsrod dziesieciu przecietnych.
+ * Miesiąc jako siatka (UI v2, etap 4, wzór 11: Missive Calendar, Refero dca15c76). Forma ze wzoru: siatka 7 kolumn
+ * z liniami 1 px bez odstępów, numer dnia u góry na środku, kolumny weekendu o stopień ciemniejsze, dni spoza
+ * miesiąca przygaszone, dziś w kółku (u nas akcent zamiast czerwieni wzoru: czerwień = strata, ledger kierunek.md).
+ * W komórce zamiast wydarzeń: wynik dnia (R domyślnie), liczba trade'ów, „bez transakcji” z powodem, kropka notatki
+ * i kropka nie wziętego setupu. Tydzień od poniedziałku.
  */
 
 export type DayResult = { day: string; pnl: number; count: number; r: number };
 
-/** Dzien swiadomie odpuszczony: bez wyniku, ale z zapisem. */
+/** Dzień świadomie odpuszczony: bez wyniku, ale z zapisem. */
 export type NoTradeDay = { day: string; reason: string | null };
 
-const HEADERS = ["pon", "wt", "śr", "czw", "pt", "sob", "nd"];
+const NAGLOWKI = [
+  ["Pn", "Poniedziałek"],
+  ["Wt", "Wtorek"],
+  ["Śr", "Środa"],
+  ["Cz", "Czwartek"],
+  ["Pt", "Piątek"],
+  ["Sb", "Sobota"],
+  ["Nd", "Niedziela"],
+] as const;
 
-function daysInMonth(month: string): string[] {
+function dniMiesiaca(month: string): string[] {
   const [year, m] = month.split("-").map(Number);
   const last = new Date(Date.UTC(year, m, 0)).getUTCDate();
-  return Array.from(
-    { length: last },
-    (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`,
-  );
+  return Array.from({ length: last }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
 }
 
-/** Poniedzialek = 0, niedziela = 6. */
-function weekdayIndex(day: string): number {
-  const d = new Date(`${day}T12:00:00Z`).getUTCDay();
-  return (d + 6) % 7;
+/** Poniedziałek = 0, niedziela = 6. */
+function dzienTygodnia(day: string): number {
+  return (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7;
+}
+
+function przesun(day: string, dni: number): string {
+  return new Date(new Date(`${day}T12:00:00Z`).getTime() + dni * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Krótki zapis R na telefon: „+1.2”, „−0.6” (jednostka w nagłówku siatki). */
+function rKrotko(r: number): string {
+  const t = Math.abs(r).toFixed(1);
+  return r > 0 ? `+${t}` : r < 0 ? `−${t}` : "0.0";
 }
 
 export function MonthGrid({
@@ -36,152 +52,126 @@ export function MonthGrid({
   days,
   noTradeDays = [],
   missedDays = [],
+  noteDays = [],
   currency,
-  unit = "cash",
+  unit = "r",
   linkBase = "/calendar",
   linkDnia,
+  today,
+  selected,
 }: {
   month: string;
   days: DayResult[];
   noTradeDays?: NoTradeDay[];
-  /** Dni-pauzy, na ktorych mimo wszystko lezy trade `missed` (setup byl, nie wzieto go). */
+  /** Dni, na których leży trade `missed` (setup był, nie wzięto go). */
   missedDays?: string[];
+  /** Dni z notatką dnia (kropka jak znacznik wydarzenia we wzorze). */
+  noteDays?: string[];
   currency: string;
   unit?: "cash" | "r";
   linkBase?: string;
-  /** Wlasny adres kafla. Kalendarz sesji backtestu prowadzi do STRONY dnia,
-      a nie do parametru `?dzien=` na tej samej stronie (2026-08-29). */
+  /** Własny adres kafla. Kalendarz sesji backtestu prowadzi do STRONY dnia, a nie do `?dzien=` (2026-08-29). */
   linkDnia?: (day: string) => string;
+  today?: string;
+  selected?: string | null;
 }) {
-  const byDay = new Map(days.map((d) => [d.day, d]));
-  const noTradeByDay = new Map(noTradeDays.map((d) => [d.day, d]));
-  const missedSet = new Set(missedDays);
-  const all = daysInMonth(month);
-  const offset = all.length > 0 ? weekdayIndex(all[0]) : 0;
-
-  const values = days.map((d) => (unit === "cash" ? d.pnl : d.r));
-  const maxWin = Math.max(1, ...values.filter((w) => w > 0));
-  const maxLoss = Math.min(-1, ...values.filter((w) => w < 0));
-
-  /* Gorna granica nasycenia to 0,20. Powyzej niej tekst na kaflu spada
-     ponizej kontrastu 4,5:1 - sprawdzone axe, nie na oko. */
-  const intensity = (value: number): number => {
-    if (value === 0) return 0;
-    const share = value > 0 ? value / maxWin : value / maxLoss;
-    return Math.min(0.2, 0.07 + share * 0.13);
-  };
+  const wynik = new Map(days.map((d) => [d.day, d]));
+  const pauzy = new Map(noTradeDays.map((d) => [d.day, d]));
+  const pominiete = new Set(missedDays);
+  const notatki = new Set(noteDays);
+  const wszystkie = dniMiesiaca(month);
+  const przed = wszystkie.length ? dzienTygodnia(wszystkie[0]) : 0;
+  const po = (7 - ((przed + wszystkie.length) % 7)) % 7;
+  const komorki = [
+    ...Array.from({ length: przed }, (_, i) => ({ day: przesun(wszystkie[0], i - przed), obcy: true })),
+    ...wszystkie.map((day) => ({ day, obcy: false })),
+    ...Array.from({ length: po }, (_, i) => ({ day: przesun(wszystkie[wszystkie.length - 1], i + 1), obcy: true })),
+  ];
 
   return (
-    <div className="px-3 pb-3">
-      <div className="grid grid-cols-7 gap-1">
-        {HEADERS.map((h) => (
-          <div key={h} className="etykieta py-1 text-center">
-            {h}
+    <div className="border-t border-l border-line" data-siatka-miesiaca>
+      <div className="grid grid-cols-7" aria-hidden>
+        {NAGLOWKI.map(([k, pelna], i) => (
+          <div key={k} title={pelna} className={cx("border-r border-b border-line py-1.5 text-center text-meta text-muted", i >= 5 && "bg-bg/40")}>
+            {k}
           </div>
         ))}
-
-        {Array.from({ length: offset }, (_, i) => (
-          <div key={`pusty-${i}`} />
-        ))}
-
-        {all.map((day) => {
-          const result = byDay.get(day);
-          const pause = result ? undefined : noTradeByDay.get(day);
-          // Kropka ma sie pojawic na kazdym dniu z nie wzietym setupem, nawet
-          // gdy dzien nie ma pauzy ani wyniku - inaczej legenda liczy dni,
-          // ktorych siatka nie oznacza (recenzja 2026-08-30, znalezisko 2).
-          const missed = missedSet.has(day);
-          const value = result ? (unit === "cash" ? result.pnl : result.r) : 0;
-          const alpha = result ? intensity(value) : 0;
-          // Skladowe zgodne z tokenami --color-profit i --color-loss.
-          const rgb = value > 0 ? "70 192 139" : "229 101 79";
-
-          const opis = pause
-            ? [
-                pause.reason ? `Dzień bez transakcji: ${pause.reason.toLowerCase()}` : "Dzień bez transakcji",
-                missed && "1 trade nie wzięty",
-              ]
-                .filter(Boolean)
-                .join(" · ")
-            : missed
-              ? "1 trade nie wzięty"
-              : undefined;
-
+      </div>
+      <div className="grid grid-cols-7">
+        {komorki.map(({ day, obcy }) => {
+          const kolumna = dzienTygodnia(day);
+          const weekend = kolumna >= 5;
+          const numer = Number(day.slice(-2));
+          const dzis = day === today;
+          if (obcy) {
+            return (
+              <div key={day} aria-hidden className={cx("min-h-14 border-r border-b border-line p-1 text-center sm:min-h-28", weekend && "bg-bg/40")}>
+                <span className="num text-meta text-faint">{numer}</span>
+              </div>
+            );
+          }
+          const r = wynik.get(day);
+          const pauza = r ? undefined : pauzy.get(day);
+          const missed = pominiete.has(day);
+          const notatka = notatki.has(day);
+          const wartosc = r ? (unit === "cash" ? r.pnl : r.r) : 0;
+          const opis =
+            [
+              pauza ? (pauza.reason ? `Dzień bez transakcji: ${pauza.reason.toLowerCase()}` : "Dzień bez transakcji") : null,
+              missed ? "1 trade nie wzięty" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined;
           return (
             <Link
               key={day}
               href={linkDnia ? linkDnia(day) : `${linkBase}?dzien=${day}`}
               title={opis}
+              aria-current={selected === day ? "date" : undefined}
               className={cx(
-                "relative flex min-h-16 flex-col rounded-[var(--radius-control)] border p-1.5",
-                "transition-colors duration-150",
-                result || pause ? "border-line-strong" : "border-line hover:border-line-strong",
-                // Dzien bez transakcji nie jest ani zyskiem, ani strata - zadnego tintu.
-                pause && "bg-surface-2",
+                "przejscie relative flex min-h-14 flex-col items-center gap-0.5 border-r border-b border-line px-0.5 pt-1 pb-1.5 hover:bg-surface-2 sm:min-h-28 sm:px-1.5",
+                "focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2",
+                weekend && "bg-bg/40",
+                selected === day && "bg-surface-2 ring-1 ring-inset ring-line-strong",
               )}
-              style={
-                result && value !== 0
-                  ? { backgroundColor: `rgb(${rgb} / ${alpha})` }
-                  : undefined
-              }
             >
               <span
                 className={cx(
-                  "liczba text-[11px]",
-                  result || pause ? "text-muted" : "text-faint",
+                  "num inline-flex size-6 items-center justify-center rounded-full text-meta",
+                  dzis ? "bg-accent font-medium text-bg" : r || pauza ? "text-text" : "text-muted",
                 )}
               >
-                {Number(day.slice(-2))}
+                {numer}
+                {dzis && <span className="sr-only"> (dziś)</span>}
               </span>
-              {result && (
+              {r && (
                 <>
-                  <span
-                    className={cx(
-                      // `whitespace-nowrap`: `moneyShort` skleja U+2212 z symbolem
-                      // waluty ("−$460"), a przegladarka bez tego lamie wiersz na
-                      // znaku minus - strata wygladala jak kwota bez znaku
-                      // (recenzja 2026-08-30, znalezisko 11).
-                      "liczba mt-auto whitespace-nowrap text-xs font-medium",
-                      value > 0
-                        ? "text-profit-bright"
-                        : value < 0
-                          ? "text-loss-bright"
-                          : "text-muted",
-                    )}
-                  >
-                    {unit === "cash" ? moneyShort(result.pnl, currency) : rValue(result.r)}
+                  <span className={cx("num text-meta leading-tight font-medium whitespace-nowrap", wartosc > 0 ? "text-profit" : wartosc < 0 ? "text-loss" : "text-muted")}>
+                    <span className="sm:hidden">{unit === "cash" ? moneyShort(r.pnl, currency) : rKrotko(r.r)}</span>
+                    <span className="hidden sm:inline">{unit === "cash" ? moneyShort(r.pnl, currency) : rValue(r.r)}</span>
                   </span>
-                  <span className="liczba text-[11px] text-muted">{result.count} tr.</span>
+                  <span className="num text-meta leading-tight text-muted">
+                    {r.count}
+                    <span className="hidden sm:inline"> {r.count === 1 ? "trade" : "trade'y"}</span>
+                    <span className="sr-only sm:hidden"> trade</span>
+                  </span>
                 </>
               )}
-              {missed && (
+              {pauza && (
                 <>
-                  {/* Sama kropka nie moze byc jedynym nosnikiem informacji (WCAG 1.4.1)
-                      - ma odpowiednik w `title` kafla i w tekscie dla czytnika ekranu. */}
-                  <span
-                    aria-hidden="true"
-                    className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-accent"
-                  />
-                  <span className="sr-only">1 trade nie wzięty</span>
+                  <span className="text-meta leading-tight text-muted sm:hidden">pauza</span>
+                  <span className="hidden text-center text-meta leading-tight text-muted sm:block">bez transakcji</span>
+                  {pauza.reason && <span className="hidden text-center text-meta leading-tight text-faint sm:block">{pauza.reason}</span>}
                 </>
               )}
-              {pause && (
-                <>
-                  {/* Na waskim ekranie kafel ma szerokosc dwoch slow - dluzszy
-                      podpis lamalby siatke, wiec schodzi do skrotu. */}
-                  <span className="mt-auto text-[11px] leading-tight font-medium whitespace-nowrap text-muted sm:hidden">
-                    pauza
-                  </span>
-                  <span className="mt-auto hidden text-[11px] leading-tight font-medium text-muted sm:block">
-                    bez transakcji
-                  </span>
-                  {pause.reason && (
-                    <span className="hidden truncate text-[11px] leading-tight text-faint sm:block">
-                      {pause.reason}
-                    </span>
-                  )}
-                </>
+              {(notatka || missed) && (
+                <span className="mt-auto flex items-center gap-1" aria-hidden>
+                  {notatka && <span className="size-1.5 rounded-full bg-muted" />}
+                  {missed && <span className="size-1.5 rounded-full border border-accent" />}
+                </span>
               )}
+              {notatka && <span className="sr-only">notatka dnia</span>}
+              {missed && <span className="sr-only">1 trade nie wzięty</span>}
             </Link>
           );
         })}

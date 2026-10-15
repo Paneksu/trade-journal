@@ -10,6 +10,7 @@ import { cx } from "@/lib/classes";
 
 import { czyAktywna, NAWIGACJA, USTAWIENIA, type PozycjaNawigacji } from "./nawigacja";
 import { ZDARZENIE_PALETY } from "./paleta";
+import { SzybkiArkusz } from "./szybki-arkusz";
 import { Znak } from "./znak";
 
 /**
@@ -190,7 +191,7 @@ export function TopBar() {
   );
 }
 
-/** Dolny pasek na telefonie (wzór 14a): Dziś, Trade'y, + Nowy trade, Do decyzji, Więcej. */
+/** Dolny pasek na telefonie (wzór 14a): Dziś, Trade'y, + szybki wpis, Do decyzji, Więcej. */
 export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Promise<void>; liczniki: LicznikiNav }) {
   const pathname = usePathname();
   const [wiecej, setWiecej] = useState(false);
@@ -223,11 +224,8 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
             </Link>
           );
         })}
-        <Link href="/trades/new" className={klasa(false)} aria-label="Nowy trade">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-bg">
-            <Plus size={20} aria-hidden />
-          </span>
-        </Link>
+        {/* „+” otwiera arkusz szybkiego wpisu (etap 4, PWA): Nowy trade, Notatka dnia, Zdjęcie. */}
+        <SzybkiArkusz klasa={klasa(false)} />
         <Link href="/decyzje" aria-current={czyAktywna(pathname, "/decyzje") ? "page" : undefined} className={klasa(czyAktywna(pathname, "/decyzje"))}>
           <span className="relative">
             <Inbox size={20} aria-hidden />

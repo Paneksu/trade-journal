@@ -241,6 +241,41 @@
     --color-line-strong: oklch(39.08% 0.0236 255.7);
   }
 
+  /* Ustawienia UI v2 (etap 4, wzór 12: Linear Security & access): tytuł sekcji i opis NAD ramą, treść w ramie
+     karty. Te same komponenty Panel co wcześniej, więc logika i selektory testów zostają. */
+  .styl-ustawien .panel {
+    background-color: transparent;
+    border: 0;
+  }
+  .styl-ustawien .panel > header {
+    padding: 0 0 0.75rem;
+    border-bottom: 0;
+  }
+  .styl-ustawien .panel > header h2 {
+    /* !important: klasy text-sm i font-semibold z Panel leżą w warstwie utilities, która wygrywa z components. */
+    font-size: var(--text-sekcja) !important;
+    line-height: var(--text-sekcja--line-height) !important;
+    font-weight: 400 !important;
+  }
+  .styl-ustawien .panel > header p {
+    font-size: var(--text-meta) !important;
+    line-height: 1.25rem !important;
+    color: var(--color-muted) !important;
+  }
+  .styl-ustawien .panel > div:last-child {
+    background-color: var(--color-panel);
+    border: 1px solid oklch(35.71% 0.022 256.4);
+    border-radius: var(--radius-panel);
+    --color-surface: oklch(25.34% 0.0199 254.9);
+    --color-surface-2: oklch(27.36% 0.0218 254.2);
+    --color-surface-3: oklch(30.99% 0.0212 254.1);
+    --color-line: oklch(32.7% 0.0218 259.4);
+    --color-line-strong: oklch(39.08% 0.0236 255.7);
+  }
+  .styl-ustawien .panel > div:last-child:empty {
+    display: none;
+  }
+
   .etykieta {
     font-size: 11px;
     line-height: 1.2;

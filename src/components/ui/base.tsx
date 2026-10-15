@@ -128,7 +128,7 @@ export function Checkbox({
 }: ComponentProps<"input"> & { label: ReactNode; hint?: string }) {
   return (
     <div>
-      <label className="flex cursor-pointer items-center gap-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+      <label className="flex cursor-pointer items-center gap-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-70">
         <input
           type="checkbox"
           className={cx(

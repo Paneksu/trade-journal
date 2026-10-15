@@ -53,7 +53,7 @@ export default async function DevicesSettingsPage() {
         {tokeny.length === 0 ? (
           <EmptyState title="Brak urządzeń" description="Uruchom `tj login` w terminalu, a potem przepisz kod tutaj." />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2" tabIndex={0} role="region" aria-label="Tabela urządzeń (przewijana w bok)">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs text-faint">

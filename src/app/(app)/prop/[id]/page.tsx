@@ -38,7 +38,7 @@ function WykresSalda({ k }: { k: KontoProp }) {
   const punkty = [{ dzien: "start", saldoCents: k.konto.startingBalance }, ...k.krzywa];
   const prog = k.status?.state.drawdownFloorCents ?? null;
   if (punkty.length < 2) {
-    return <div className="flex h-[236px] items-center justify-center text-meta text-faint">Brak zamkniętych dni na tym koncie.</div>;
+    return <div className="flex h-[236px] lg:h-[340px] items-center justify-center text-meta text-faint">Brak zamkniętych dni na tym koncie.</div>;
   }
   const wartosci = [...punkty.map((p) => p.saldoCents), ...(prog === null ? [] : [prog])];
   const min = Math.min(...wartosci);
@@ -52,7 +52,7 @@ function WykresSalda({ k }: { k: KontoProp }) {
   const etykiety = [0.1, 0.3, 0.5, 0.7, 0.9].map((f) => punkty[Math.max(1, Math.round(f * (punkty.length - 1)))]);
   return (
     <figure className="m-0">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block h-[236px] w-full" role="img" aria-label={`Saldo konta dzień po dniu (${k.krzywa.length} dni)${prog !== null ? `, próg DD ${money(prog, { decimals: 0 })}` : ""}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block h-[236px] lg:h-[340px] w-full" role="img" aria-label={`Saldo konta dzień po dniu (${k.krzywa.length} dni)${prog !== null ? `, próg DD ${money(prog, { decimals: 0 })}` : ""}`}>
         <defs>
           <linearGradient id="saldo-wypelnienie" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="var(--color-viz-8)" stopOpacity="0.28" />
@@ -97,6 +97,17 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
   const waluta = k.konto.currency;
   const poziom = s ? s.warnings.reduce<number>((m, w) => Math.max(m, w.level), 0) : 0;
   const obecna = k.status?.rules ?? null;
+  const krytyczne = s ? s.warnings.filter((w) => w.level >= 90) : [];
+  const pozostale = s ? s.warnings.filter((w) => w.level < 90) : [];
+  // Wiersz „Ten miesiąc” (wzór: „This month” z liczbami): wynik handlu, dni i koszty z księgi w bieżącym miesiącu.
+  const mies = k.dzis.slice(0, 7);
+  const przed = [...k.krzywa].reverse().find((p) => p.dzien < `${mies}-01`)?.saldoCents ?? k.konto.startingBalance;
+  const wMies = k.krzywa.filter((p) => p.dzien.startsWith(mies));
+  const miesiac = {
+    pnlCents: wMies.length ? wMies[wMies.length - 1].saldoCents - przed : 0,
+    dni: wMies.length,
+    kosztyCents: (k.ksiega?.entries ?? []).filter((w) => w.occurredOn.startsWith(mies) && w.amountCents < 0).reduce((a, w) => a + w.amountCents, 0),
+  };
   const opcje: PresetOpcja[] = presety.presets.map((p) => ({
     id: p.id,
     firm: p.firm,
@@ -115,6 +126,15 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
         <ProgOstrzezenia poziom={poziom} />
         {k.status && !k.status.rulesConfirmed && <Chip className="border-dashed">reguły niepotwierdzone</Chip>}
       </header>
+      {krytyczne.length > 0 && (
+        <ul className="mt-3 space-y-0.5 rounded-[var(--radius-tab)] border border-loss/40 px-4 py-2" aria-label="Ostrzeżenia powyżej 90%">
+          {krytyczne.map((w) => (
+            <li key={w.code} className="text-meta text-loss">
+              {w.text}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-16">
         <div>
@@ -160,15 +180,6 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
                   />
                 )}
               </div>
-              {s.warnings.length > 0 && (
-                <ul className="mt-4 space-y-1">
-                  {s.warnings.map((w) => (
-                    <li key={w.code} className={cx("text-meta", w.level >= 90 ? "text-loss" : "text-muted")}>
-                      {w.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
             </>
           ) : (
             <p className="mt-3 text-karta text-muted">{k.bladStatusu ?? "Bez reguł na dziś."} Przypnij preset niżej.</p>
@@ -177,7 +188,69 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
         <WykresSalda k={k} />
       </div>
 
-      <section aria-labelledby="reguly-h" className="mt-12">
+      <section aria-labelledby="ksiega-h" className="mt-10">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line pb-3">
+          <h2 id="ksiega-h" className="text-sekcja text-text">
+            Ten miesiąc
+          </h2>
+          <span className={cx("num text-karta", pnlClass(miesiac.pnlCents))}>{money(miesiac.pnlCents, { currency: waluta, sign: true, decimals: 0 })} z handlu</span>
+          <span className="num text-karta text-text">{miesiac.dni} dni handlu</span>
+          <span className="num text-karta text-text">koszty {money(miesiac.kosztyCents, { currency: waluta, decimals: 0 })}</span>
+          {k.ksiega && (
+            <span className={cx("num text-karta", pnlClass(k.ksiega.summary.netCents))}>księga netto {money(k.ksiega.summary.netCents, { currency: waluta, sign: true, decimals: 0 })}</span>
+          )}
+        </div>
+        {k.ksiega && k.ksiega.entries.length > 0 ? (
+          <table className="w-full text-karta">
+            <caption className="sr-only">Wpisy księgi konta {k.konto.name}</caption>
+            <thead>
+              <tr className="border-b border-line text-left text-meta text-muted">
+                <th className="w-20 py-2 pr-3 font-normal">Data</th>
+                <th className="py-2 pr-3 font-normal">Opis</th>
+                <th className="py-2 text-right font-normal">Kwota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {k.ksiega.entries.map((w) => (
+                <tr key={w.id} className="border-b border-line" data-wpis={w.id}>
+                  <td className="num py-3 pr-3 align-top text-muted">{shortDate(w.occurredOn)}</td>
+                  <td className="py-3 pr-3">
+                    <span className="text-text">{RODZAJE_KSIEGI[w.kind] ?? w.kind}</span>
+                    {w.note && <span className="block text-meta text-muted">{w.note}</span>}
+                  </td>
+                  <td className={cx("num py-3 text-right align-top", pnlClass(w.amountCents))}>{money(w.amountCents, { currency: waluta, sign: true })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="py-5 text-karta text-muted">Brak wpisów. Dopisz opłatę za eval, reset albo wypłatę, żeby widzieć realny zwrot.</p>
+        )}
+        <details className="mt-4">
+          <summary className="przejscie cursor-pointer text-karta text-muted hover:text-text">Dodaj wpis do księgi (eval, reset, wypłata)</summary>
+          <Karta className="mt-3">
+            <FormularzKsiegi accountId={k.konto.id} dzis={k.dzis} />
+          </Karta>
+        </details>
+      </section>
+
+      {pozostale.length > 0 && (
+        <section aria-labelledby="ostrz-h" className="mt-10">
+          <h2 id="ostrz-h" className="border-b border-line pb-3 text-sekcja text-text">
+            Ostrzeżenia
+          </h2>
+          <ul className="mt-3 space-y-1">
+            {pozostale.map((w) => (
+              <li key={w.code} className="flex gap-2 text-meta text-muted">
+                <span className="num shrink-0 text-text">≥{w.level}%</span>
+                {w.text}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section aria-labelledby="reguly-h" className="mt-10">
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line pb-3">
           <h2 id="reguly-h" className="text-sekcja text-text">
             Reguły konta
@@ -238,48 +311,6 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
         )}
       </section>
 
-      <section aria-labelledby="ksiega-h" className="mt-12">
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line pb-3">
-          <h2 id="ksiega-h" className="text-sekcja text-text">
-            Księga
-          </h2>
-          {k.ksiega && (
-            <span className="num text-karta text-muted">
-              koszty {money(k.ksiega.summary.costsCents, { currency: waluta })} · wpływy {money(k.ksiega.summary.inflowsCents, { currency: waluta })} ·{" "}
-              <span className={pnlClass(k.ksiega.summary.netCents)}>netto {money(k.ksiega.summary.netCents, { currency: waluta, sign: true })}</span>
-            </span>
-          )}
-        </div>
-        {k.ksiega && k.ksiega.entries.length > 0 ? (
-          <table className="w-full text-karta">
-            <caption className="sr-only">Wpisy księgi konta {k.konto.name}</caption>
-            <thead>
-              <tr className="border-b border-line text-left text-meta text-muted">
-                <th className="w-20 py-2 pr-3 font-normal">Data</th>
-                <th className="py-2 pr-3 font-normal">Opis</th>
-                <th className="py-2 text-right font-normal">Kwota</th>
-              </tr>
-            </thead>
-            <tbody>
-              {k.ksiega.entries.map((w) => (
-                <tr key={w.id} className="border-b border-line" data-wpis={w.id}>
-                  <td className="num py-3 pr-3 align-top text-muted">{shortDate(w.occurredOn)}</td>
-                  <td className="py-3 pr-3">
-                    <span className="text-text">{RODZAJE_KSIEGI[w.kind] ?? w.kind}</span>
-                    {w.note && <span className="block text-meta text-muted">{w.note}</span>}
-                  </td>
-                  <td className={cx("num py-3 text-right align-top", pnlClass(w.amountCents))}>{money(w.amountCents, { currency: waluta, sign: true })}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="py-5 text-karta text-muted">Brak wpisów. Dopisz opłatę za eval, reset albo wypłatę, żeby widzieć realny zwrot.</p>
-        )}
-        <Karta tytul="Dodaj wpis" className="mt-6">
-          <FormularzKsiegi accountId={k.konto.id} dzis={k.dzis} />
-        </Karta>
-      </section>
     </Strona>
   );
 }

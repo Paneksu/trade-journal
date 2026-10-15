@@ -62,10 +62,15 @@ export async function statystykiV2() {
   return {
     zrodla,
     setupy: setupy.map((s) => ({ slug: s.slug, nazwa: s.name, status: s.statystyka?.statusNazwa ?? "brak danych", statusKod: s.statystyka?.status ?? null, n: s.statystyka?.n ?? 0, zrodlo: s.zrodloStatystyki })),
-    hipotezy: hipotezy.map((h) => ({ id: h.id, kod: h.code, tytul: h.title, n: h.n, progN: h.progN, faza: h.phase, decyzja: h.decision, warianty: h.warianty })),
+    hipotezy: hipotezy.map((h) => ({ id: h.id, noteId: h.noteId, kod: h.code, tytul: h.title, n: h.n, progN: h.progN, faza: h.phase, decyzja: h.decision, warianty: h.warianty })),
     dyscyplina,
     warianty: k > 0 ? ostrzezenieWariantow(k, zrodla.bySource.live?.n ?? null) : null,
   };
 }
 
 export type StatystykiV2 = Awaited<ReturnType<typeof statystykiV2>>;
+
+/** Porównanie źródeł danych (backtest, forward, demo, live) dla ekranu Backtest (wzór 6). */
+export async function porownanieZrodel() {
+  return statystykaPoZrodlach(await pomiaryZamknietych(db, sql`true`), DOMYSLNE_PROGI_STATUSU);
+}

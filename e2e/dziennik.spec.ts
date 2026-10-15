@@ -435,8 +435,8 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   await page.getByRole("button", { name: "Zapisz notatkę" }).click();
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
 
-  const kafelPauz = page.locator("div.panel").filter({ hasText: "Dni bez transakcji" }).first();
-  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("0");
+  const kafelPauz = page.locator('[data-kpi="pauzy"]');
+  await expect(kafelPauz.locator("[data-wartosc]")).toHaveText("0");
 
   await page.getByLabel("Dzień bez transakcji").check();
   await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
@@ -444,7 +444,7 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
 
   await page.goto("/calendar?miesiac=2020-03");
-  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("1");
+  await expect(kafelPauz.locator("[data-wartosc]")).toHaveText("1");
   await expect(page.getByText("Brak setupu 1")).toBeVisible();
 
   // Kafel dnia mowi wprost, ze to pauza, a nie dziura w dzienniku.
@@ -459,7 +459,7 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
 
   await page.goto("/calendar?miesiac=2020-03");
-  await expect(kafelPauz.locator("p.liczba").first()).toHaveText("0");
+  await expect(kafelPauz.locator("[data-wartosc]")).toHaveText("0");
 });
 
 test("dnia z trade'ami nie da się oznaczyć jako bez transakcji", async ({ page }) => {

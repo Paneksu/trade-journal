@@ -26,26 +26,17 @@ export function MonthNav({
   /** Podpis srodkowego przycisku - wraca do miesiaca domyslnego. */
   srodek?: string;
 }) {
+  // UI v2 (etap 4): ta sama pigułka zakresu co w Przeglądzie (wzór 11: strzałki wokół „Today”).
+  const p = "przejscie inline-flex size-8 items-center justify-center rounded-full text-muted hover:bg-surface-3 hover:text-text focus-visible:outline-2 focus-visible:outline-offset-2";
   return (
-    <div className="inline-flex overflow-hidden rounded-[var(--radius-control)] border border-line-strong">
-      <Link
-        href={`${base}?miesiac=${shiftMonth(month, -1)}`}
-        aria-label="Poprzedni miesiąc"
-        className="flex h-8 w-8 items-center justify-center bg-surface text-muted hover:bg-surface-2 hover:text-text"
-      >
+    <div className="inline-flex items-center gap-0.5 rounded-full border border-line p-0.5">
+      <Link href={`${base}?miesiac=${shiftMonth(month, -1)}`} aria-label="Poprzedni miesiąc" className={p}>
         <ChevronLeft size={16} aria-hidden />
       </Link>
-      <Link
-        href={base}
-        className="flex h-8 items-center border-x border-line-strong bg-surface px-3 text-xs text-muted hover:bg-surface-2 hover:text-text"
-      >
+      <Link href={base} className="przejscie inline-flex h-8 items-center rounded-full px-3 text-karta text-text hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-offset-2">
         {srodek}
       </Link>
-      <Link
-        href={`${base}?miesiac=${shiftMonth(month, 1)}`}
-        aria-label="Następny miesiąc"
-        className="flex h-8 w-8 items-center justify-center bg-surface text-muted hover:bg-surface-2 hover:text-text"
-      >
+      <Link href={`${base}?miesiac=${shiftMonth(month, 1)}`} aria-label="Następny miesiąc" className={p}>
         <ChevronRight size={16} aria-hidden />
       </Link>
     </div>

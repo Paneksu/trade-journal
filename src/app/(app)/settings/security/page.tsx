@@ -109,7 +109,7 @@ export default async function SecuritySettingsPage() {
         {zdarzenia.length === 0 ? (
           <p className="p-4 text-sm text-faint">Brak zdarzeń.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2" tabIndex={0} role="region" aria-label="Dziennik zdarzeń (przewijany w bok)">
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-line text-xs text-faint">

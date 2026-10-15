@@ -5,9 +5,9 @@ import { MonthNav } from "@/components/calendar/month-nav";
 import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader";
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { UnitSwitch } from "@/components/layout/toolbar";
-import { Kpi, KpiGrid } from "@/components/stats/kpi";
 import { TradeList } from "@/components/trades/trade-list";
-import { Panel } from "@/components/ui/base";
+import { Karta, Strona } from "@/components/ui/v2";
+import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/lib/domain/day-log";
@@ -17,7 +17,7 @@ import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
-import { longDate, money, monthName, percent, plural, rValue, tradesCount } from "@/lib/format";
+import { longDate, money, monthName, percent, plural, pnlClass, rValue, tradesCount } from "@/lib/format";
 
 export const metadata = { title: "Kalendarz — Dziennik tradingowy" };
 
@@ -32,7 +32,7 @@ export default async function CalendarPage({
   const today = localDate(new Date(), settings.timezone);
   const day = params.dzien ?? null;
   const month = params.miesiac ?? (day ? day.slice(0, 7) : today.slice(0, 7));
-  const unit = params.jednostka === "r" ? "r" : "cash";
+  const unit = params.jednostka === "cash" ? "cash" : "r";
 
   const { from, to } = monthBounds(month);
   const [accounts, monthTrades] = await Promise.all([
@@ -91,14 +91,33 @@ export default async function CalendarPage({
     noTradeDays: pauses.map((n) => n.day),
   });
 
+  // Kropka notatki: dzień z wpisaną notatką przed albo po sesji (wzór: znacznik wydarzenia w komórce).
+  const noteDays = notes.filter((n) => (n.preSession ?? "").trim() || (n.postSession ?? "").trim()).map((n) => n.day);
+
+  const kpi: { klucz: string; etykieta: string; wartosc: string; pod?: string; ton?: string }[] = [
+    { klucz: "r", etykieta: "Suma R", wartosc: rValue(stats.sumR), pod: `śr. ${rValue(stats.expectancyR)} · n=${stats.count}`, ton: pnlClass(stats.sumR) },
+    { klucz: "wynik", etykieta: "Wynik miesiąca", wartosc: money(stats.pnl, { currency, sign: true }), pod: tradesCount(stats.count), ton: pnlClass(stats.pnl) },
+    { klucz: "dni", etykieta: "Dni handlowe", wartosc: String(tradingDays), pod: `${winningDays} na plusie` },
+    { klucz: "pauzy", etykieta: "Dni bez transakcji", wartosc: String(pauses.length), pod: powody.length > 0 ? `najczęściej: ${powody[0].label.toLowerCase()}` : "świadome pauzy" },
+    { klucz: "skutecznosc", etykieta: "Skuteczność", wartosc: percent(stats.winRate), pod: `${stats.wins} W / ${stats.losses} L / ${stats.be} BE` },
+    {
+      klucz: "pokrycie",
+      etykieta: "Pokrycie dziennika",
+      wartosc: percent(coverage.ratio, 0),
+      pod: coverage.missing.length === 0 ? `${coverage.covered}/${coverage.expected} dni roboczych` : `${coverage.missing.length} ${plural(coverage.missing.length, "dzień", "dni", "dni")} bez zapisu`,
+    },
+  ];
+
+  /*
+   * UI v2 (etap 4, wzór 11 Missive Calendar): nagłówek z miesiącem i strzałkami wokół „dziś”, pasek liczb miesiąca,
+   * siatka bez odstępów z liniami 1 px na całą szerokość treści, pod nią panel dnia (trade'y, zrzuty, notatka).
+   */
   return (
-    <div className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="etykieta">Dziennik</p>
-          <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
-            {monthName(month)}
-          </h1>
+    <Strona className="space-y-5">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-meta text-muted">Kalendarz</p>
+          <h1 className="text-tytul font-medium tracking-tight text-text first-letter:uppercase">{monthName(month)}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <MonthNav month={month} base="/calendar" />
@@ -106,119 +125,83 @@ export default async function CalendarPage({
         </div>
       </header>
 
-      <KpiGrid className="xl:grid-cols-4">
-        <Kpi
-          label="Wynik miesiąca"
-          value={money(stats.pnl, { currency, sign: true })}
-          sub={tradesCount(stats.count)}
-          tone={stats.pnl > 0 ? "profit" : stats.pnl < 0 ? "loss" : "neutral"}
-        />
-        <Kpi label="Suma R" value={rValue(stats.sumR)} sub={`śr. ${rValue(stats.expectancyR)}`} />
-        <Kpi
-          label="Dni handlowe"
-          value={tradingDays}
-          sub={`${winningDays} na plusie`}
-        />
-        <Kpi
-          label="Dni bez transakcji"
-          value={pauses.length}
-          sub={powody.length > 0 ? `najczęściej: ${powody[0].label.toLowerCase()}` : "świadome pauzy"}
-        />
-        <Kpi
-          label="Skuteczność"
-          value={percent(stats.winRate)}
-          sub={`${stats.wins} W / ${stats.losses} L / ${stats.be} BE`}
-        />
-        <Kpi
-          label="Maks. obsunięcie"
-          value={money(-stats.maxDrawdown, { currency })}
-          tone={stats.maxDrawdown > 0 ? "loss" : "neutral"}
-        />
-        <Kpi
-          label="Pokrycie dziennika"
-          value={percent(coverage.ratio, 0)}
-          sub={
-            coverage.missing.length === 0
-              ? `${coverage.covered}/${coverage.expected} dni roboczych`
-              : `${coverage.missing.length} ${plural(coverage.missing.length, "dzień", "dni", "dni")} bez zapisu`
-          }
-        />
-      </KpiGrid>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-line py-4 sm:grid-cols-3 lg:grid-cols-6">
+        {kpi.map((k) => (
+          <div key={k.klucz} data-kpi={k.klucz} className="min-w-0">
+            <dt className="text-meta text-muted">{k.etykieta}</dt>
+            <dd className={cx("num mt-0.5 text-sekcja", k.ton || "text-text")} data-wartosc>
+              {k.wartosc}
+            </dd>
+            {k.pod && <dd className="text-meta text-muted">{k.pod}</dd>}
+          </div>
+        ))}
+      </dl>
 
-      <Panel title="Wynik dzień po dniu" description="Kliknij dzień, żeby zobaczyć trade'y i notatkę.">
+      <section aria-label={`Siatka miesiąca: ${monthName(month)}`}>
         <MonthGrid
           month={month}
           days={days}
           noTradeDays={noTradeDays}
           missedDays={missedDays}
+          noteDays={noteDays}
           currency={currency}
           unit={unit}
+          today={today}
+          selected={day}
         />
-        {(powody.length > 0 || missedDays.length > 0) && (
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-3 py-2 text-xs text-muted">
-            {powody.length > 0 && (
-              <span>
-                <span className="etykieta mr-2">Powody pauz</span>
-                {powody.map((p) => `${p.label} ${p.count}`).join(" · ")}
-              </span>
-            )}
-            {missedDays.length > 0 && (
-              // Znaczenie kropki na kaflu zylo dotad tylko w `title` i
-              // `sr-only` - bez wpisu w legendzie nie da sie go odczytac bez
-              // najechania (recenzja 2026-08-30, znalezisko 12).
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className="size-1.5 rounded-full bg-accent" />
-                nie wzięty setup {missedDays.length}
-              </span>
-            )}
-          </p>
-        )}
-      </Panel>
+        <p className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-meta text-muted">
+          <span>Kliknij dzień: trade&apos;y, zrzuty i notatka pod siatką.</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="size-1.5 rounded-full bg-muted" /> notatka dnia
+          </span>
+          {missedDays.length > 0 && (
+            <span className="inline-flex items-center gap-1.5">
+              <span aria-hidden className="size-1.5 rounded-full border border-accent" />
+              nie wzięty setup {missedDays.length}
+            </span>
+          )}
+          {powody.length > 0 && <span>Powody pauz: {powody.map((p) => `${p.label} ${p.count}`).join(" · ")}</span>}
+        </p>
+      </section>
 
       {day && (
-        <div className="grid items-start gap-4 xl:grid-cols-2">
-          <div className="space-y-4">
-            <Panel
-              title={longDate(day)}
-              description={
-                dayRealne.length > 0
-                  ? `${tradesCount(dayStats.count)} · ${money(dayStats.pnl, { currency, sign: true })} · ${rValue(dayStats.sumR)}${dayStats.be > 0 ? ` · ${dayStats.be} BE` : ""}`
-                  : note?.noTrade
-                    ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? ` — ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
-                    : "Brak trade'ów tego dnia."
+        <section aria-labelledby="dzien-h" className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div className="space-y-5">
+            <Karta
+              tytul={
+                <span>
+                  <span id="dzien-h" className="block text-sekcja text-text first-letter:uppercase">
+                    {longDate(day)}
+                  </span>
+                  <span className="block text-meta text-muted">
+                    {dayRealne.length > 0
+                      ? `${tradesCount(dayStats.count)} · ${rValue(dayStats.sumR)} · ${money(dayStats.pnl, { currency, sign: true })}${dayStats.be > 0 ? ` · ${dayStats.be} BE` : ""}`
+                      : note?.noTrade
+                        ? `Dzień bez transakcji${reasonName(note.noTradeReason) ? `: ${reasonName(note.noTradeReason)!.toLowerCase()}` : ""}`
+                        : "Brak trade'ów tego dnia."}
+                  </span>
+                </span>
               }
-              actions={
-                // Byl 120x16px tekstem z podkresleniem na hover - ponizej
-                // minimalnego celu dotykowego 24x24 z WCAG 2.2 AA (2.5.8) i
-                // czytal sie jak etykieta stanu, nie akcja (recenzja
-                // 2026-08-30, znalezisko 13). Ramka i tlo daja mu forme
-                // przycisku, h-7 (28px) daje cel dotykowy z zapasem.
+              akcje={
                 <Link
                   href={`/trades/new?dzien=${day}&status=missed`}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 text-xs text-text transition-colors duration-150 hover:border-accent hover:text-accent"
+                  className="przejscie inline-flex h-8 items-center rounded-full bg-surface-3 px-3.5 text-karta whitespace-nowrap text-text hover:bg-line-strong focus-visible:outline-2 focus-visible:outline-offset-2"
                 >
                   Był setup, nie wziąłem
                 </Link>
               }
             >
-              <TradeList
-                trades={dayTrades}
-                    emptyText="Tego dnia nie było żadnego trade'a."
-              />
-            </Panel>
+              <TradeList trades={dayTrades} emptyText="Tego dnia nie było żadnego trade'a." />
+            </Karta>
 
-            <Panel title="Zrzuty dnia" description="Także dzień bez transakcji ma czego dowodzić.">
-              <ScreenshotUploader
-                key={day}
-                cel={{ typ: "dzien", day, accountId: account?.id ?? null }}
-                shots={dayShots}
-                opis={`dzień ${day}`}
-              />
-            </Panel>
+            <Karta tytul="Zrzuty dnia">
+              <p className="-mt-2 mb-3 text-meta text-muted">Także dzień bez transakcji ma czego dowodzić.</p>
+              <ScreenshotUploader key={day} cel={{ typ: "dzien", day, accountId: account?.id ?? null }} shots={dayShots} opis={`dzień ${day}`} />
+            </Karta>
           </div>
 
-          <Panel title="Notatka dnia">
-            {/* Klucz z dnia: bez niego przejscie na inny dzien zostawia w polach stara tresc. */}
+          <Karta tytul="Notatka dnia">
+            {/* Klucz z dnia: bez niego przejście na inny dzień zostawia w polach starą treść. */}
             <DayNoteForm
               key={day}
               day={day}
@@ -234,9 +217,9 @@ export default async function CalendarPage({
                 noTradeReason: note?.noTradeReason,
               }}
             />
-          </Panel>
-        </div>
+          </Karta>
+        </section>
       )}
-    </div>
+    </Strona>
   );
 }

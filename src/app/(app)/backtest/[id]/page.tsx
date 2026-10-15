@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Strona } from "@/components/ui/v2";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
@@ -122,16 +123,16 @@ export default async function BacktestSessionPage({
       : null;
 
   return (
-    <div className="space-y-4">
+    <Strona className="styl-v2 space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="etykieta">
+          <p className="text-meta text-muted">
             <Link href="/backtest" className="hover:text-text">
               Backtesting
             </Link>{" "}
             / sesja
           </p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-text sm:text-2xl">
+          <h1 className="mt-1 text-tytul font-medium tracking-tight text-text">
             {session.name}
           </h1>
           <p className="mt-1 text-sm text-muted">
@@ -414,6 +415,6 @@ export default async function BacktestSessionPage({
           }}
         />
       </Panel>
-    </div>
+    </Strona>
   );
 }
