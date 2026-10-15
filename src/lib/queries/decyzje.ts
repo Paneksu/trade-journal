@@ -174,13 +174,11 @@ export async function sugestieDoDecyzji() {
 }
 
 export async function licznikiDoDecyzji(dzis: string = dzienHandlowyTeraz()): Promise<{ decyzje: number; rozstrzygniecia: number }> {
-  const dzisiejszy = dzis;
   const [w] = await db.execute<{ decyzje: number; rozstrzygniecia: number }>(sql`
     select ((select count(*) from rule_versions where status = 'proposed')
           + (select count(*) from setup_versions where status = 'proposed')
           + (select count(*) from ai_suggestions where status = 'pending')
-          + (select count(*) from prop_rules where confirmed_at is null and valid_from >= coalesce(
-              (select max(p2.valid_from) from prop_rules p2 where p2.account_id = prop_rules.account_id and p2.valid_from <= ${dzisiejszy}::date), valid_from)))::int as decyzje,
+          + (select count(*) from prop_rules where ${niepotwierdzonaAktualna(dzis)}))::int as decyzje,
            (select count(*) from strategy_gaps where kind = 'mentor_conflict' and status in ('open', 'asked'))::int as rozstrzygniecia`);
   return { decyzje: Number(w?.decyzje ?? 0), rozstrzygniecia: Number(w?.rozstrzygniecia ?? 0) };
 }

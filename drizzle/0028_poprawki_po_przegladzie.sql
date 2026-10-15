@@ -71,6 +71,7 @@ BEGIN
 END
 $$;--> statement-breakpoint
 -- Uzupelnienie istniejacych planow z przypietym trade'em (jednorazowo, z wylaczonym straznikiem planu).
+-- Uwaga: bierze DZISIEJSZE entry_time trade'a, bo czasu z chwili przypiecia sprzed tej migracji nie da sie odtworzyc.
 ALTER TABLE "trade_plans" DISABLE TRIGGER "trade_plans_guard";--> statement-breakpoint
 UPDATE "trade_plans" p SET "entry_time_at_attach" = t."entry_time" FROM "trades" t WHERE t."id" = p."trade_id";--> statement-breakpoint
 ALTER TABLE "trade_plans" ENABLE TRIGGER "trade_plans_guard";
