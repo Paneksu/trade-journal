@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<defs>
+<linearGradient id="s03t" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b212a"/><stop offset=".55" stop-color="#10141a"/><stop offset="1" stop-color="#0b0e12"/></linearGradient>
+<linearGradient id="s03a" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="54"><stop offset="0" stop-color="#f5b968"/><stop offset=".6" stop-color="#e8a44c"/><stop offset="1" stop-color="#d68a2e"/></linearGradient>
+<linearGradient id="s03d" gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="54"><stop offset="0" stop-color="#e8a44c" stop-opacity=".42"/><stop offset="1" stop-color="#e8a44c" stop-opacity=".26"/></linearGradient>
+<radialGradient id="s03g" cx=".5" cy=".55" r=".5"><stop offset="0" stop-color="#e8a44c" stop-opacity=".16"/><stop offset="1" stop-color="#e8a44c" stop-opacity="0"/></radialGradient>
+<linearGradient id="s03h" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset=".35" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect width="64" height="64" rx="14" fill="url(#s03t)"/>
+<rect width="64" height="64" rx="14" fill="url(#s03g)"/>
+<rect x=".5" y=".5" width="63" height="63" rx="13.5" fill="none" stroke="url(#s03h)"/>
+<path fill-rule="evenodd" fill="url(#s03a)" d="M17 10h21l11 11v31a2 2 0 0 1-2 2H17a2 2 0 0 1-2-2V12a2 2 0 0 1 2-2Zm4 26h22v4H21Z"/>
+</svg>

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="pl"><head><meta charset="utf-8"><title>Znak dziennika: runda 2</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0e12;--surface:#12161c;--surface-2:#191f26;--line:#262e38;--line-strong:#35404d;--text:#e7ecf1;--muted:#97a3b0;--faint:#838f9d;--accent:#e8a44c}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 "IBM Plex Sans",sans-serif}
+main{width:1440px;padding:48px 56px 64px}
+h1{font-size:28px;line-height:36px;font-weight:600;margin:0 0 4px}
+h2.sekcja{font-size:20px;line-height:28px;font-weight:600;margin:48px 0 16px}
+.lead{color:var(--muted);margin:0 0 24px;max-width:960px}
+.karta{background:var(--surface);border:1px solid rgb(255 255 255 / .12);border-radius:12px;padding:24px}
+.etykieta{font:500 11px/16px "IBM Plex Mono",monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:0 0 12px}
+.zasady{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.zasady .karta{padding:18px}.zasady b{display:block;margin-bottom:4px;font-weight:600}.zasady p{margin:0;color:var(--muted);font-size:13px}
+.szkice{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.szkic{margin:0;background:var(--surface);border:1px solid rgb(255 255 255 / .12);border-radius:12px;padding:18px}
+.szkic.wybrany{border-color:rgb(232 164 76 / .55)}
+.sz-duzy{width:112px;height:112px;display:block}
+.sz-male{display:flex;align-items:flex-end;gap:12px;margin:12px 0}
+.szkic figcaption{font-size:12.5px;color:var(--muted);line-height:1.45}.szkic b{color:var(--text);font-weight:600;font-size:14px}
+.werdykt{display:block;margin-top:6px;color:var(--faint);font-family:"IBM Plex Mono",monospace;font-size:11px;line-height:1.5}
+.znacznik{font:500 10px "IBM Plex Mono",monospace;color:var(--bg);background:var(--accent);padding:1px 6px;border-radius:999px;vertical-align:2px}
+.piksele{image-rendering:pixelated;width:64px;height:64px}
+.final{display:grid;grid-template-columns:400px 230px 300px 1fr;gap:20px;margin-bottom:24px;align-items:start}
+.nazwa{font-size:20px;font-weight:600;margin:0 0 8px}.opis{color:var(--muted);margin:0}
+.duzy{width:240px;height:240px;display:block;margin:20px 0 16px}
+.ocena{font-size:13px;color:var(--muted);margin:8px 0 0}.ocena b{color:var(--text);font-weight:600}
+.rozmiary{display:flex;gap:14px;align-items:flex-end;margin-bottom:12px}
+.rozmiary figure{margin:0;text-align:center;font:11px "IBM Plex Mono",monospace;color:var(--faint)}
+.rozmiary img{display:block;margin:0 auto 6px}.ios{border-radius:13px}
+.maski{display:flex;gap:12px}.maski img{width:48px;height:48px;display:block}
+.kolo{border-radius:50%}.squircle{border-radius:22%}.kropla{border-radius:50% 50% 50% 12%}
+.pasek{border-radius:8px;padding:8px 8px 0;margin-bottom:12px}.pasek.ciemny{background:#1f2329}.pasek.jasny{background:#dfe3e8}
+.zakladki{display:flex;gap:2px}.zakladka{display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border-radius:8px 8px 0 0;font-size:12px;width:128px;white-space:nowrap;overflow:hidden}
+.ciemny .zakladka{color:#9aa3ad}.ciemny .zakladka.aktywna{background:#35393f;color:#e8eaed}
+.jasny .zakladka{color:#5f6368}.jasny .zakladka.aktywna{background:#fff;color:#202124}
+.zakladka i{width:16px;height:16px;border-radius:3px;background:#6b7280;flex:none}.zakladka img{width:16px;height:16px;flex:none}
+.telefon{border-radius:24px;padding:22px 16px;background:linear-gradient(160deg,#2a3644,#0f141a 75%);border:1px solid var(--line-strong);display:grid;grid-template-columns:repeat(4,1fr);row-gap:16px}
+.apka{text-align:center;font-size:10px;color:#dfe5ea}.apka span,.apka img{display:block;width:46px;height:46px;margin:0 auto 5px;border-radius:12px}
+.a1{background:#3b6fd8}.a2{background:#2f9e6a}.a3{background:#d1503e}.a4{background:#8a5cd0}.a5{background:#e1e5ea}.a6{background:#4b5563}.a7{background:#c9862e}
+.app{display:grid;grid-template-columns:150px 1fr;height:300px;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.sidebar{background:#080a0d;padding:16px 10px;border-right:1px solid var(--line)}
+.logo{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;padding:2px 8px 16px}.logo img{width:22px;height:22px}
+.nav{font-size:13px;color:var(--muted);padding:6px 8px;border-radius:6px}.nav.aktywny{background:var(--surface-2);color:var(--text)}
+.tresc{padding:16px 20px}.tresc h2{font-size:22px;line-height:28px;font-weight:600;margin:0 0 12px}
+.pigulka{display:inline-block;font-size:12px;padding:4px 12px;border-radius:999px;border:1px solid var(--line-strong);color:var(--muted);margin:0 6px 6px 0}
+.pigulka.glowna{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:500}
+.liczba{font:500 28px/36px "IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;margin-top:16px}
+.roboczy{font:11px "IBM Plex Mono",monospace;color:var(--faint);margin-top:6px}
+.stopka{color:var(--muted);max-width:1100px;margin-top:24px;font-size:13px}.stopka b{color:var(--text);font-weight:500}
+</style></head><body><main>
+<h1>Znak dziennika: runda 2</h1>
+<p class="lead">Najpierw research, potem 10 szkiców w różnych kierunkach, z nich 3 finały dopracowane w wielkości od 16 do 512 px. Tożsamość bez zmian: tło #0b0e12, akcent #e8a44c. „Dziennik” to nazwa robocza (tekst roboczy).</p>
+<p class="etykieta">Co sprawia, że znaki Mercury, Linear, Raycast, Arc i Things są ładne</p>
+<div class="zasady"><div class="karta"><b>Pełna forma, nie kreska</b><p>Linear, Raycast i Arc to wypełnione bryły. Szczegół robi przestrzeń negatywna (cięcie, luka), nie cienka linia, która przy 16 px znika.</p></div><div class="karta"><b>Jedna idea, jedno cięcie</b><p>Linear: koło i ukośne cięcia. Things: jeden ptaszek. Znak zrozumiały w pół sekundy i opisywalny jednym zdaniem.</p></div><div class="karta"><b>Duży glif w kaflu</b><p>Glif zajmuje ok. 60% kafla (Things nawet więcej), na faviconie więcej niż w ikonie. Przy 16 px liczy się sylwetka.</p></div><div class="karta"><b>Optyczne wyrównanie</b><p>Koła rysuje się nieco większe od kwadratów, a środek ciężkości ustawia lekko nad środkiem geometrycznym. Luka ma co najmniej 1 px przy 16 px.</p></div><div class="karta"><b>Głębia po cichu</b><p>Ciemny kafel z gradientem o kilka procent jasności, światło na górnej krawędzi i ciepła poświata pod glifem (Raycast, Mercury). Glif ma gradient w obrębie jednego koloru.</p></div></div>
+<h2 class="sekcja">10 szkiców</h2>
+<p class="lead">Każdy szkic jako ikona aplikacji (112 px) i jako favicon w rzeczywistych 16 px, obok powiększony 4 razy. Obwódka w akcencie oznacza szkice, które przeszły do finału.</p>
+<div class="szkice"><figure class="szkic wybrany">
+  <img class="sz-duzy" src="szkice/s01.svg" alt="">
+  <div class="sz-male"><img src="szkice/s01-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s01-16.png" alt=""></div>
+  <figcaption><b>1. Przesunięcie</b> <span class="znacznik">do finału</span><br>Krążek przecięty na poziomie, połowy rozsunięte: luka (FVG) i przemieszczenie.<br><span class="werdykt">Najmocniejsza sylwetka i ruch. Do finału.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s02.svg" alt="">
+  <div class="sz-male"><img src="szkice/s02-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s02-16.png" alt=""></div>
+  <figcaption><b>2. Równowaga</b><br>Krążek z linią 50%: dół pełny, góra przygaszona, premium i discount.<br><span class="werdykt">Spokojny, ale przygaszona połowa wychodzi brązowa, a w obrysie zamienia się w koszyk. Odpadł przy dopracowaniu.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s03.svg" alt="">
+  <div class="sz-male"><img src="szkice/s03-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s03-16.png" alt=""></div>
+  <figcaption><b>3. Karta</b><br>Strona dziennika z zagiętym rogiem i jedną szczeliną wpisu.<br><span class="werdykt">Czytelny, ale to ikona pliku z każdego systemu.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s04.svg" alt="">
+  <div class="sz-male"><img src="szkice/s04-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s04-16.png" alt=""></div>
+  <figcaption><b>4. Księga</b><br>Trzy wpisy jeden pod drugim, środkowy pełny: rejestr dnia.<br><span class="werdykt">Wygląda jak ikona listy albo menu.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s05.svg" alt="">
+  <div class="sz-male"><img src="szkice/s05-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s05-16.png" alt=""></div>
+  <figcaption><b>5. Klepsydra</b><br>Dwa trójkąty czubkami do siebie: czas sesji i cierpliwość.<br><span class="werdykt">Klepsydra kojarzy się z ładowaniem i czekaniem.</span></figcaption>
+</figure>
+<figure class="szkic wybrany">
+  <img class="sz-duzy" src="szkice/s06.svg" alt="">
+  <div class="sz-male"><img src="szkice/s06-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s06-16.png" alt=""></div>
+  <figcaption><b>6. Romb</b> <span class="znacznik">do finału</span><br>Romb rozcięty na poziomie: zakres z linią równowagi, ostry jak decyzja.<br><span class="werdykt">Najostrzejszy, dobrze niesie zakres. Do finału, z większą luką na 16 px.</span></figcaption>
+</figure>
+<figure class="szkic wybrany">
+  <img class="sz-duzy" src="szkice/s07.svg" alt="">
+  <div class="sz-male"><img src="szkice/s07-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s07-16.png" alt=""></div>
+  <figcaption><b>7. Horyzont</b> <span class="znacznik">do finału</span><br>Półkole nad poziomą kreską: otwarcie sesji nad poziomem.<br><span class="werdykt">Najcieplejszy i najładniejszy w kaflu. Do finału.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s08.svg" alt="">
+  <div class="sz-male"><img src="szkice/s08-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s08-16.png" alt=""></div>
+  <figcaption><b>8. Narożniki</b><br>Dwa narożniki zakresu, górny w akcencie: ramka dnia.<br><span class="werdykt">Czyta się jak narzędzie kadrowania zrzutu.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s09.svg" alt="">
+  <div class="sz-male"><img src="szkice/s09-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s09-16.png" alt=""></div>
+  <figcaption><b>9. Teta</b><br>Pierścień przecięty poziomem wychodzącym poza obrys.<br><span class="werdykt">Kojarzy się z fi albo symbolem zakazu.</span></figcaption>
+</figure>
+<figure class="szkic">
+  <img class="sz-duzy" src="szkice/s10.svg" alt="">
+  <div class="sz-male"><img src="szkice/s10-16.png" width="16" height="16" alt=""><img class="piksele" src="szkice/s10-16.png" alt=""></div>
+  <figcaption><b>10. Sierp</b><br>Krążek z wyciętym kołem: sesja azjatycka, noc przed otwarciem.<br><span class="werdykt">Ładny, ale to księżyc i tryb nocny.</span></figcaption>
+</figure></div>
+<h2 class="sekcja">3 finały</h2>
+<section class="final">
+  <div class="karta glowna">
+    <p class="etykieta">Finał A · ze szkicu 1</p>
+    <p class="nazwa">Przesunięcie</p>
+    <p class="opis">Krążek przecięty poziomą luką, górna połowa przesunięta w prawo: luka i przemieszczenie z ICT, jedna pełna forma w akcencie.</p>
+    <img class="duzy" src="f1-przesuniecie/icon-512.png" alt="">
+    <p class="ocena"><b>7/10.</b> 10 wyglądałoby tak: ta sama sylwetka, ale z jednym własnym detalem widocznym od 180 px w górę (np. światło na krawędzi luki), i pewność, że rozcięty krążek nie przypomina znaków kryptowalut. Przy 16 px luka ma tylko 1,5 px i lekko się rozmywa.</p>
+    <p class="ocena"><b>Poprawione po ocenie:</b> przesunięcie połówek z 3,5 do 5 jednostek (ruch jest wyraźny, nie wygląda na błąd), luka z 4 do 5, glif zmniejszony do ok. 57% kafla, rogi cięciwy zaokrąglone o 1 jednostkę, osobny większy rysunek na 16–32 px z luką 6.</p>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Rozmiary</p>
+    <div class="rozmiary">
+      <figure><img src="f1-przesuniecie/icon-192.png" width="96" height="96" alt="">512 / 192</figure>
+      <figure><img class="ios" src="f1-przesuniecie/apple-touch-icon-180.png" width="60" height="60" alt="">180 iOS</figure>
+    </div>
+    <div class="rozmiary">
+      <figure><img src="f1-przesuniecie/favicon-32.png" width="32" height="32" alt="">32</figure>
+      <figure><img src="f1-przesuniecie/favicon-16.png" width="16" height="16" alt="">16</figure>
+      <figure><img class="piksele" src="f1-przesuniecie/favicon-16.png" alt="">16 ×4</figure>
+    </div>
+    <p class="etykieta" style="margin-top:20px">Maskable (Android)</p>
+    <div class="maski"><img class="kolo" src="f1-przesuniecie/icon-maskable.svg" alt=""><img class="squircle" src="f1-przesuniecie/icon-maskable.svg" alt=""><img class="kropla" src="f1-przesuniecie/icon-maskable.svg" alt=""></div>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Karta przeglądarki</p>
+    <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="f1-przesuniecie/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="f1-przesuniecie/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+    <div class="telefon">
+      <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="f1-przesuniecie/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      <div class="apka"><span class="a3"></span>Kalendarz</div><div class="apka"><span class="a6"></span>Ustawienia</div><div class="apka"><span class="a4"></span>Muzyka</div><div class="apka"><span class="a7"></span>Notatki</div>
+    </div>
+  </div>
+  <div class="app">
+    <div class="sidebar"><div class="logo"><img src="f1-przesuniecie/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+    <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+  </div>
+</section>
+<section class="final">
+  <div class="karta glowna">
+    <p class="etykieta">Finał B · ze szkicu 6</p>
+    <p class="nazwa">Zakres</p>
+    <p class="opis">Romb od szczytu do dołka rozcięty linią równowagi, połowy przesunięte: zakres dnia i przemieszczenie w ostrej, pełnej bryle.</p>
+    <img class="duzy" src="f2-zakres/icon-512.png" alt="">
+    <p class="ocena"><b>6/10.</b> 10 wyglądałoby tak: romb czytany od razu jako zakres, bez skojarzenia ze strzałkami sortowania w górę i w dół, i z luką, która przy 16 px zostaje czystą kreską, a nie brązową smugą.</p>
+    <p class="ocena"><b>Poprawione po ocenie:</b> połowy rozsunięte w poziomie (bez tego romb był ikoną sortowania), rogi zaokrąglone, na 16–32 px romb prawie na całą szerokość kafla i luka 6 jednostek.</p>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Rozmiary</p>
+    <div class="rozmiary">
+      <figure><img src="f2-zakres/icon-192.png" width="96" height="96" alt="">512 / 192</figure>
+      <figure><img class="ios" src="f2-zakres/apple-touch-icon-180.png" width="60" height="60" alt="">180 iOS</figure>
+    </div>
+    <div class="rozmiary">
+      <figure><img src="f2-zakres/favicon-32.png" width="32" height="32" alt="">32</figure>
+      <figure><img src="f2-zakres/favicon-16.png" width="16" height="16" alt="">16</figure>
+      <figure><img class="piksele" src="f2-zakres/favicon-16.png" alt="">16 ×4</figure>
+    </div>
+    <p class="etykieta" style="margin-top:20px">Maskable (Android)</p>
+    <div class="maski"><img class="kolo" src="f2-zakres/icon-maskable.svg" alt=""><img class="squircle" src="f2-zakres/icon-maskable.svg" alt=""><img class="kropla" src="f2-zakres/icon-maskable.svg" alt=""></div>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Karta przeglądarki</p>
+    <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="f2-zakres/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="f2-zakres/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+    <div class="telefon">
+      <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="f2-zakres/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      <div class="apka"><span class="a3"></span>Kalendarz</div><div class="apka"><span class="a6"></span>Ustawienia</div><div class="apka"><span class="a4"></span>Muzyka</div><div class="apka"><span class="a7"></span>Notatki</div>
+    </div>
+  </div>
+  <div class="app">
+    <div class="sidebar"><div class="logo"><img src="f2-zakres/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+    <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+  </div>
+</section>
+<section class="final">
+  <div class="karta glowna">
+    <p class="etykieta">Finał C · ze szkicu 7</p>
+    <p class="nazwa">Horyzont</p>
+    <p class="opis">Pełne półkole w akcencie wschodzące nad jasnym poziomem: otwarcie sesji nad zaznaczonym poziomem, plan przed wejściem.</p>
+    <img class="duzy" src="f3-horyzont/icon-512.png" alt="">
+    <p class="ocena"><b>6,5/10.</b> 10 wyglądałoby tak: forma tak samo ciepła, ale bez skojarzenia z aplikacją pogodową i ze wschodem słońca; jasny poziom konkuruje z akcentem, więc znak ma dwa środki ciężkości zamiast jednego.</p>
+    <p class="ocena"><b>Poprawione po ocenie:</b> poziom skrócony z 46 do 40 jednostek i przyciemniony do 92%, żeby nie przykrywał półkola; luka 4 jednostki; na 16 px poziom grubszy (7 jednostek), bo cienki znikał.</p>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Rozmiary</p>
+    <div class="rozmiary">
+      <figure><img src="f3-horyzont/icon-192.png" width="96" height="96" alt="">512 / 192</figure>
+      <figure><img class="ios" src="f3-horyzont/apple-touch-icon-180.png" width="60" height="60" alt="">180 iOS</figure>
+    </div>
+    <div class="rozmiary">
+      <figure><img src="f3-horyzont/favicon-32.png" width="32" height="32" alt="">32</figure>
+      <figure><img src="f3-horyzont/favicon-16.png" width="16" height="16" alt="">16</figure>
+      <figure><img class="piksele" src="f3-horyzont/favicon-16.png" alt="">16 ×4</figure>
+    </div>
+    <p class="etykieta" style="margin-top:20px">Maskable (Android)</p>
+    <div class="maski"><img class="kolo" src="f3-horyzont/icon-maskable.svg" alt=""><img class="squircle" src="f3-horyzont/icon-maskable.svg" alt=""><img class="kropla" src="f3-horyzont/icon-maskable.svg" alt=""></div>
+  </div>
+  <div class="karta">
+    <p class="etykieta">Karta przeglądarki</p>
+    <div class="pasek ciemny"><div class="zakladki"><div class="zakladka aktywna"><img src="f3-horyzont/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <div class="pasek jasny"><div class="zakladki"><div class="zakladka aktywna"><img src="f3-horyzont/favicon.svg" alt="">Dziś · Dziennik</div><div class="zakladka"><i></i>TradingView</div></div></div>
+    <p class="etykieta" style="margin-top:20px">Ekran główny telefonu</p>
+    <div class="telefon">
+      <div class="apka"><span class="a1"></span>Poczta</div><div class="apka"><img src="f3-horyzont/icon-maskable.svg" alt="">Dziennik</div><div class="apka"><span class="a2"></span>Bank</div><div class="apka"><span class="a5"></span>Zdjęcia</div>
+      <div class="apka"><span class="a3"></span>Kalendarz</div><div class="apka"><span class="a6"></span>Ustawienia</div><div class="apka"><span class="a4"></span>Muzyka</div><div class="apka"><span class="a7"></span>Notatki</div>
+    </div>
+  </div>
+  <div class="app">
+    <div class="sidebar"><div class="logo"><img src="f3-horyzont/glif.svg" alt="">Dziennik</div><div class="nav aktywny">Dziś</div><div class="nav">Trade'y</div><div class="nav">Prop</div><div class="nav">Mózg</div></div>
+    <div class="tresc"><h2>Dziś</h2><span class="pigulka glowna">Przed sesją</span><span class="pigulka">Po sesji</span><div class="liczba">+1,8 R</div><p class="roboczy">tekst roboczy</p></div>
+  </div>
+</section>
+<p class="stopka"><b>Siatka:</b> 64 × 64. <b>Ikona aplikacji:</b> kafel r = 14 z gradientem tła #1b212a → #0b0e12, poświata akcentu 16%, światło na górnej krawędzi; glif z gradientem #f5b968 → #e8a44c → #d68a2e. <b>Favicon:</b> płaski kafel z ramką #35404d i osobny, większy rysunek glifu do 16–32 px. <b>Maskable:</b> pełne tło, glif w 80% (mieści się w kole bezpiecznym r = 40%). <b>Apple touch 180:</b> pełne tło, glif 92%.</p>
+</main></body></html>
