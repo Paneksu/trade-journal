@@ -544,7 +544,7 @@ test.describe("API synchronizacji", () => {
       brainVerdict: "wejdz",
       brainPlan: { entry: 20000, stopLoss: 19990, takeProfit: 20020, interwalWejscia: "5m" },
       brainVersion: "abc1234",
-      evidenceCutoff: "1991-03-12T09:34:00-05:00",
+      evidenceCutoff: "1991-03-12T09:30:00-05:00", // nie pozniej niz wejscie (09:31): ocena chart nie widzi przyszlosci, takze bez evidence
       model: "test-model",
       ruleChecks: [
         { ruleId: "R-001", ruleText: "Wchodzimy tylko w oknie 9:30-10:30", verdict: "pass", evidence: "09:35" },
@@ -560,7 +560,7 @@ test.describe("API synchronizacji", () => {
     const [rev] = await sql`select * from trade_reviews where id = ${b1.reviewId}`;
     expect(rev).toMatchObject({ trade_id: id, basis: "chart", brain_verdict: "wejdz", brain_version: "abc1234", setup_type: "kontynuacja" });
     expect(rev.brain_plan).toMatchObject({ stopLoss: 19990, interwalWejscia: "5m" });
-    expect(rev.evidence_cutoff.toISOString()).toBe("1991-03-12T14:34:00.000Z");
+    expect(rev.evidence_cutoff.toISOString()).toBe("1991-03-12T14:30:00.000Z");
     const reguly = await sql`select rule_id, rule_text, verdict, evidence, user_verdict from trade_rule_checks where review_id = ${b1.reviewId} order by rule_id`;
     expect(reguly.map((x) => [x.rule_id, x.verdict, x.rule_text])).toEqual([
       ["R-001", "pass", "Wchodzimy tylko w oknie 9:30-10:30"],
@@ -571,7 +571,11 @@ test.describe("API synchronizacji", () => {
     // Użytkownik zgadza się z oceną dwóch reguł (UI jeszcze nie ma - robi to samo, co zrobi przycisk).
     await sql`update trade_rule_checks set user_verdict = 'agree' where review_id = ${b1.reviewId} and rule_id in ('R-001', 'R-002')`;
 
-    // Ponowne wysłanie: R-001 zmienia werdykt, R-002 bez zmian, R-003 znika, R-004 dochodzi.
+    // Werdykt jest NIEZMIENNY takze bez evidence (Slowa uzytkownika 15.10.2026: «Niezmienny zawsze»): ta sama tresc to ten sam werdykt (200),
+    // inna tresc to 409, a zdanie uzytkownika zostaje nietkniete.
+    const powtorka = await api.post(`/api/ingest/trades/${id}/reviews`, { data: ocena });
+    expect(powtorka.status()).toBe(200);
+    expect(await powtorka.json()).toMatchObject({ created: false, reviewId: b1.reviewId });
     const druga = {
       ...ocena,
       ruleChecks: [
@@ -581,16 +585,14 @@ test.describe("API synchronizacji", () => {
       ],
     };
     const r2 = await api.post(`/api/ingest/trades/${id}/reviews`, { data: druga });
-    expect(r2.status()).toBe(200);
-    const b2 = await r2.json();
-    expect(b2).toMatchObject({ created: false, reviewId: b1.reviewId, userVerdictsKept: 1 });
+    expect(r2.status()).toBe(409);
+    expect((await r2.json()).code).toBe("verdict_immutable");
     const po = await sql`select rule_id, verdict, rule_text, user_verdict from trade_rule_checks where review_id = ${b1.reviewId} order by rule_id`;
     expect(po.map((x) => [x.rule_id, x.verdict, x.user_verdict])).toEqual([
-      ["R-001", "fail", null], // werdykt się zmienił - zdanie użytkownika dotyczyło czego innego
-      ["R-002", "fail", "agree"], // werdykt ten sam - zdanie zostaje
-      ["R-004", "pass", null],
+      ["R-001", "pass", "agree"],
+      ["R-002", "fail", "agree"],
+      ["R-003", "na", null],
     ]);
-    expect(po[1].rule_text).toBe("Cel to niezapełniony FVG (nowa treść)");
     const [ile] = await sql`select count(*)::int as n from trade_reviews where trade_id = ${id}`;
     expect(ile.n).toBe(1);
 
