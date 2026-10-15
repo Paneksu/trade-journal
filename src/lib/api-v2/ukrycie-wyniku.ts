@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { and, inArray, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
