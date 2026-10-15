@@ -115,6 +115,39 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
       expect(await setupTradu(id)).toEqual({ setup_id: sId, setup_version_id: v1 });
     });
 
+    it("sugestia trade_setup z API liczy wersje od NAJWCZESNIEJSZEGO wejscia (least z czasem przypiecia planu), nie od biezacego entry_time", async () => {
+      const { przyjmijWersjeSetupu } = await import("@/lib/decyzje/wersje");
+      const { zapisJakoUi } = await import("./zapis");
+      const { sql: dsql } = await import("drizzle-orm");
+      const nowy = await wywolaj(import("@/app/api/v2/setups/route"), "POST", "/setups", {
+        token: rw.token,
+        cialo: { name: unikat("Setup least"), bodyMd: "x", origin: "ai", counterargument: "Szum.", evidence: { n: 12 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S1" },
+      });
+      const slugN = nowy.json.slug as string;
+      const [{ id: sId }] = await sql`select id from setups where slug = ${slugN}`;
+      const [{ id: v1 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v1)).ok).toBe(true);
+      await wywolaj(import("@/app/api/v2/setups/[slug]/versions/route"), "POST", `/setups/${slugN}/versions`, { token: rw.token, cialo: { origin: "ai", counterargument: "Szum.", evidence: { n: 20 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S2" } }, PARAMS({ slug: slugN }));
+      const [{ id: v2 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v2)).ok).toBe(true);
+      await zapisJakoUi(async (tx) => {
+        await tx.execute(dsql`update setup_versions set decided_at = '2099-01-05T16:00:00Z'::timestamptz where id = ${v2}`);
+        await tx.execute(dsql`update setup_versions set superseded_at = '2099-01-05T16:00:00Z'::timestamptz where id = ${v1}`);
+      });
+      const id = await trade(PRZYSZLOSC);
+      const p = await utworzPlan(plan(PRZYSZLOSC, { tradeId: id, setupSlug: undefined }));
+      expect(p.status, JSON.stringify(p.json)).toBe(201);
+      // wejscie przesuniete PO zatwierdzeniu v2: najwczesniejsze znane wejscie (z przypiecia) nadal sprzed v2
+      await sql`update trades set entry_time = '2099-01-06T10:00:00Z'::timestamptz where id = ${id}`;
+      const sug = await wywolaj(import("@/app/api/v2/ai-suggestions/route"), "POST", "/ai-suggestions", {
+        token: rw.token,
+        cialo: { kind: "trade_setup", target: { type: "trade", id }, payload: { setupSlug: slugN }, claim: "Pasuje do setupu.", evidence: [{ type: "trade", ref: id, note: "x" }], evidenceLevel: "partial", n: 3 },
+      });
+      expect(sug.status, JSON.stringify(sug.json)).toBe(201);
+      const [{ payload }] = await sql`select payload from ai_suggestions where id = ${sug.json.suggestion.id}`;
+      expect(payload.setupVersionId).toBe(v1);
+    });
+
     it("plan BEZ tezy ze slow uzytkownika: trade nie dostaje setupu, powstaje sugestia trade_setup; statystyki setupu go nie licza", async () => {
       const id = await trade(PRZYSZLOSC);
       const p = await utworzPlan(plan(PRZYSZLOSC, { tradeId: id }));

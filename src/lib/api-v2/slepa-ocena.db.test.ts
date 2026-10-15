@@ -469,6 +469,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
       expect(zapis.status, JSON.stringify(zapis.json)).toBe(422);
       expect(zapis.json.code).toBe("unknown_reference");
       // odczyt: przeglad zapisany SQL-em (z ukrytymi slowami) nie oddaje ich tekstu
+      await sql`delete from weekly_reviews where week_start = ${DZIEN}`; // pozostalosc po przerwanym przebiegu
       const [r] = await sql`insert into weekly_reviews (week_start, commitment_words_id) values (${DZIEN}, ${dnia.id}) returning id`;
       sprzatanie.push(() => sql`delete from weekly_reviews where id = ${r.id}`);
       const odczyt = await get(import("@/app/api/v2/reviews/weekly/route"), `/reviews/weekly?weekStart=${DZIEN}`);
