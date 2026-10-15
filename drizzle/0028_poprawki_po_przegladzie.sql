@@ -6,6 +6,8 @@
 --    (chyba ze zapis robi UI). Wczesniej mogl je podmienic agent, bo trigger pilnowal tylko statusu.
 -- 3) mentor_claims.status: review_ok i review_bad to ocena zgodnosci z filmem, czyli decyzja uzytkownika.
 -- 4) prop_rules.confirmed_at: potwierdza uzytkownik w aplikacji.
+-- Plany z juz przypietym trade'em dostaja entry_time_at_attach z entry_time trade'a z DNIA MIGRACJI (czasu z chwili
+-- przypiecia sprzed migracji nie da sie odtworzyc). Na produkcji (migracja 0015) takich planow nie ma.
 -- Cofniecie: docs/v2/rollback/0028_down.sql.
 -- Separator miedzy instrukcjami nie moze wystapic ani w tresci funkcji, ani w komentarzu.
 

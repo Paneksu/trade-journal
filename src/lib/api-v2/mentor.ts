@@ -16,6 +16,7 @@ import type {
 import { linkMentora } from "./luki";
 import { KINDY_ZARZADZANE } from "./notatki";
 import { skrotTekstu } from "./skrot";
+import { czyNotatkaUkryta, sqlWejscieTradu, sqlWynikUkryty } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -302,6 +303,20 @@ export function zDopiska(d: typeof noteAdditions.$inferSelect) {
 }
 
 export async function listaDopiskow(tx: Db, noteId: number) {
-  const wiersze = await tx.select().from(noteAdditions).where(eq(noteAdditions.noteId, noteId)).orderBy(asc(noteAdditions.id));
-  return { additions: wiersze.map(zDopiska) };
+  // Slepa ocena: dopiski dodane po wejsciu trade'a z ukrytym wynikiem (trade notatki albo trade dopisku) nie wychodza;
+  // notatka ukryta w calosci nie ma widocznych dopiskow.
+  if (await czyNotatkaUkryta(tx, noteId)) return { additions: [] };
+  const wiersze = await tx
+    .select({ d: noteAdditions })
+    .from(noteAdditions)
+    .innerJoin(notes, eq(notes.id, noteAdditions.noteId))
+    .where(
+      and(
+        eq(noteAdditions.noteId, noteId),
+        sql`not (${sqlWynikUkryty(sql`${notes.tradeId}`)} and ${noteAdditions.createdAt} > ${sqlWejscieTradu(sql`${notes.tradeId}`)})`,
+        sql`not (${sqlWynikUkryty(sql`${noteAdditions.tradeId}`)} and ${noteAdditions.createdAt} > ${sqlWejscieTradu(sql`${noteAdditions.tradeId}`)})`,
+      ),
+    )
+    .orderBy(asc(noteAdditions.id));
+  return { additions: wiersze.map((w) => zDopiska(w.d)) };
 }

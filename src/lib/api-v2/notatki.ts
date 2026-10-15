@@ -7,7 +7,7 @@ import { slugZNumerem, slugZTytulu, wyciagnijLinki } from "@/lib/domain/notatki"
 import { originEfektywny } from "@/lib/domain/reguly";
 
 import type { NotatkaUtworzSchema, NotatkaZmienSchema, NotatkiListaQuery } from "./contract/v2";
-import { czyWynikUkryty, sqlWynikUkryty } from "./ukrycie-wyniku";
+import { czyNotatkaUkryta, sqlNotatkaPoWejsciuUkrytego } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -279,7 +279,7 @@ export async function listaNotatek(tx: Transakcja | typeof import("@/lib/db").db
   if (f.externalRef) warunki.push(eq(notes.externalRef, f.externalRef));
   if (f.day) warunki.push(eq(notes.day, f.day));
   if (f.tradeId) warunki.push(eq(notes.tradeId, f.tradeId));
-  warunki.push(sql`not ${sqlWynikUkryty(sql`${notes.tradeId}`)}`); // slepa ocena (notatki trade'a z ukrytym wynikiem)
+  warunki.push(sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`); // slepa ocena (tylko notatki po wejsciu)
   if (!f.includeArchived) warunki.push(isNull(notes.archivedAt));
 
   const wiersze = await tx
@@ -314,8 +314,8 @@ export async function listaNotatek(tx: Transakcja | typeof import("@/lib/db").db
 export async function szczegolyNotatki(tx: Transakcja | typeof import("@/lib/db").db, id: number) {
   const [n] = await tx.select().from(notes).where(eq(notes.id, id)).limit(1);
   if (!n) return null;
-  // Slepa ocena: notatka przypieta do trade'a z ukrytym wynikiem nie wychodzi z API do zamkniecia trade'a.
-  if (n.tradeId !== null && (await czyWynikUkryty(tx, n.tradeId))) return null;
+  // Slepa ocena: notatka przypieta do trade'a z ukrytym wynikiem, utworzona lub zmieniana po wejsciu, nie wychodzi z API.
+  if (n.tradeId !== null && (await czyNotatkaUkryta(tx, id))) return null;
   const wychodzace = await tx
     .select({ target: noteLinks.target, toNoteId: noteLinks.toNoteId })
     .from(noteLinks)

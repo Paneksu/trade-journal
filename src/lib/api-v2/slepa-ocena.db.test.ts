@@ -184,6 +184,60 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     expect(szukajPo.json.results.map((r: { id: number }) => r.id)).toContain(notaId);
   });
 
+  it("notatki przypiete do trade'a: ukryte sa tylko te po wejsciu albo zmieniane po wejsciu; notatka sprzed wejscia i dopiski sprzed wejscia zostaja widoczne (Slowa uzytkownika, 16.10.2026)", async () => {
+    const { id } = await przygotuj();
+    const mk = async (kind: string, tytul: string) => {
+      const r = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind, title: `${tytul} ${TOKEN}`, bodyMd: `Tresc ${TOKEN}`, tradeId: id } });
+      expect(r.status, JSON.stringify(r.json)).toBe(201);
+      return r.json.id as number;
+    };
+    const przed = await mk("concept", "Sprzed wejscia");
+    const edytowana = await mk("concept", "Edytowana po wejsciu");
+    const po = await mk("concept", "Po wejsciu");
+    const strategia = await mk("strategy", "Strategia z dopiskami");
+    const stempel = (nid: number, c: string, u: string) => sql`update notes set created_at = ${c}::timestamptz, updated_at = ${u}::timestamptz where id = ${nid}`;
+    await stempel(przed, `${DZIEN}T14:00:00Z`, `${DZIEN}T14:05:00Z`);
+    await stempel(edytowana, `${DZIEN}T14:00:00Z`, `${DZIEN}T15:00:00Z`);
+    await stempel(strategia, `${DZIEN}T14:00:00Z`, `${DZIEN}T14:05:00Z`);
+    await stempel(po, `${DZIEN}T15:00:00Z`, `${DZIEN}T15:00:00Z`);
+
+    const status = async (nid: number) => (await get(import("@/app/api/v2/notes/[id]/route"), `/notes/${nid}`, PARAMS({ id: String(nid) }))).status;
+    expect(await status(przed)).toBe(200);
+    expect(await status(edytowana)).toBe(404); // zmieniana po wejsciu: ukryta w calosci (wybor bezpieczniejszy)
+    expect(await status(po)).toBe(404);
+    const lista = (await get(import("@/app/api/v2/notes/route"), `/notes?tradeId=${id}`)).json.notes.map((n: { id: number }) => n.id);
+    expect(lista).toContain(przed);
+    expect(lista).not.toContain(edytowana);
+    expect(lista).not.toContain(po);
+    const znalezione = (await get(import("@/app/api/v2/search/route"), `/search?q=${TOKEN}&types=notes`)).json.results.map((r: { id: number }) => r.id);
+    expect(znalezione).toContain(przed);
+    expect(znalezione).not.toContain(edytowana);
+    expect(znalezione).not.toContain(po);
+
+    // dopiski do widocznej notatki: sprzed wejscia widoczny, po wejsciu ukryty
+    const slowa = await zapiszSlowa(rw.token, `Cytat do dopiskow ${TOKEN}`, { tradeId: id, capturedAt: `${DZIEN}T14:00:00Z` });
+    const dopisz = async (tresc: string) => {
+      const r = await wywolaj(import("@/app/api/v2/notes/[id]/additions/route"), "POST", `/notes/${strategia}/additions`, { token: rw.token, cialo: { bodyMd: tresc, origin: "ai", tradeId: id, quoteWordsId: slowa.id } }, PARAMS({ id: String(strategia) }));
+      expect(r.status, JSON.stringify(r.json)).toBeLessThan(300);
+      return r.json.id as number;
+    };
+    const dopisekPo = await dopisz(`Dopisek po wejsciu ${TOKEN}`);
+    // created_at jest niezmienne, wiec dopisek »sprzed wejscia« wstawiamy kopia wiersza z wczesniejszym czasem
+    const [{ id: dopisekPrzed }] = await sql`insert into note_additions (note_id, body_md, origin, trade_id, quote_words_id, created_at)
+      select note_id, ${`Dopisek sprzed wejscia ${TOKEN}`}, origin, trade_id, quote_words_id, ${`${DZIEN}T14:10:00Z`}::timestamptz from note_additions where id = ${dopisekPo} returning id`;
+    await stempel(strategia, `${DZIEN}T14:00:00Z`, `${DZIEN}T14:05:00Z`); // dopisek mogl odswiezyc updated_at
+    const dopiski = (await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${strategia}/additions`, PARAMS({ id: String(strategia) }))).json.additions.map((a: { id: number }) => a.id);
+    expect(dopiski).toEqual([dopisekPrzed]);
+    expect(dopiski).not.toContain(dopisekPo);
+
+    // po zamknieciu trade'a wszystko wraca
+    await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1 where id = ${id}`;
+    expect(await status(edytowana)).toBe(200);
+    expect(await status(po)).toBe(200);
+    const dopiskiPo = (await get(import("@/app/api/v2/notes/[id]/additions/route"), `/notes/${strategia}/additions`, PARAMS({ id: String(strategia) }))).json.additions.map((a: { id: number }) => a.id);
+    expect([...dopiskiPo].sort()).toEqual([dopisekPrzed, dopisekPo].sort());
+  });
+
   it("GET /trades/:id: zrzuty zrobione po wejsciu traca podpis, czas i stan wykresu; tresc korekty uzytkownika (summaryMd) jest ukryta", async () => {
     const { id } = await przygotuj();
     const [{ id: ocenaId }] = await sql`select id from trade_reviews where trade_id = ${id} and kind = 'ai'`;
