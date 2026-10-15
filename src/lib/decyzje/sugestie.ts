@@ -2,6 +2,7 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 
 import { utworzNotatke } from "@/lib/api-v2/notatki";
+import { wersjaSetupuNaChwile } from "@/lib/api-v2/wersje-setupu";
 import { zapisJakoUi, type Transakcja } from "@/lib/api-v2/zapis";
 import {
   aiSuggestions,
@@ -82,8 +83,18 @@ async function zastosuj(tx: Transakcja, s: Sugestia): Promise<{ ok: true; ref: R
     case "trade_setup": {
       const [tr] = await tx.select({ s: trades.setupId, v: trades.setupVersionId }).from(trades).where(eq(trades.id, t.id as number)).for("update").limit(1);
       if (!tr) return { ok: false, komunikat: `Trade #${t.id} nie istnieje (mógł zostać skasowany).` };
-      const [wersja] = await tx.select({ id: setupVersions.id }).from(setupVersions).where(and(eq(setupVersions.setupId, p.setupId as number), eq(setupVersions.status, "approved"))).limit(1);
-      await tx.update(trades).set({ setupId: p.setupId as number, setupVersionId: wersja?.id ?? null }).where(eq(trades.id, t.id as number));
+      // Wersja obowiazujaca w chwili WEJSCIA trade'a, nie w chwili zatwierdzenia (review 15.10.2026): nowsza wersja
+      // przyjeta miedzy wejsciem a zatwierdzeniem nie przejmuje trade'a. Wersja z payloadu (zapisana przy tworzeniu
+      // sugestii) liczy sie tylko, jesli nalezy do tego setupu.
+      const [wejscie] = await tx.select({ entryTime: trades.entryTime }).from(trades).where(eq(trades.id, t.id as number)).limit(1);
+      let wersjaId: number | null = null;
+      if (typeof p.setupVersionId === "number") {
+        const [zPayloadu] = await tx.select({ id: setupVersions.id }).from(setupVersions).where(and(eq(setupVersions.id, p.setupVersionId), eq(setupVersions.setupId, p.setupId as number))).limit(1);
+        wersjaId = zPayloadu?.id ?? null;
+      } else if (wejscie) {
+        wersjaId = await wersjaSetupuNaChwile(tx, p.setupId as number, wejscie.entryTime);
+      }
+      await tx.update(trades).set({ setupId: p.setupId as number, setupVersionId: wersjaId }).where(eq(trades.id, t.id as number));
       return { ok: true, ref: { previousSetupId: tr.s, previousSetupVersionId: tr.v } };
     }
     case "process_grade": {

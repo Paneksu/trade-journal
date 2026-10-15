@@ -71,12 +71,14 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     throw new Error("Oczekiwano bledu SQL, a zapytanie przeszlo");
   }
 
-  async function wgrajZrzut(tradeId: number, origin: string): Promise<{ id: number; sha256: string }> {
+  // Domyslnie zrzut jest z chwili PRZED wejsciem (14:30Z przy wejsciu 14:35Z): ocena »chart« nie moze miec zrzutow po wejsciu.
+  async function wgrajZrzut(tradeId: number, origin: string, capturedAt = `${DZIEN}T14:30:00+00:00`): Promise<{ id: number; sha256: string }> {
     const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: Math.floor(Math.random() * 255), g: 10, b: 20 } } }).png().toBuffer();
     const form = new FormData();
     form.append("shot", new File([new Uint8Array(png)], "wykres.png", { type: "image/png" }));
     form.append("interval", "5m");
     form.append("origin", origin);
+    form.append("capturedAt", capturedAt);
     const r = await wywolajMultipart(import("@/app/api/v2/trades/[id]/screenshots/route"), `/trades/${tradeId}/screenshots`, rw.token, form, PARAMS({ id: String(tradeId) }));
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     return { id: r.json.screenshots[0].id, sha256: r.json.screenshots[0].sha256 };
@@ -261,6 +263,20 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     importowy ??= await nowyToken(sql, ["read", "write", "propose", "import"]);
     return importowy;
   }
+  it("werdykt »chart« odrzuca zrzut zrobiony PO wejsciu (look_ahead); ta sama podstawa »history« go przyjmuje", async () => {
+    const id = await nowyOtwarty();
+    const poWejsciu = await wgrajZrzut(id, "tradingview", "2099-01-01T10:00:00+00:00");
+    const przedWejsciem = await wgrajZrzut(id, "fxreplay");
+    const zly = await ocena(id, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: przedWejsciem.sha256 }, { sha256: poWejsciu.sha256 }] } });
+    expect(zly.status, JSON.stringify(zly.json)).toBe(422);
+    expect(zly.json.code).toBe("look_ahead");
+    expect(zly.json.error).toContain(poWejsciu.sha256);
+    const dobry = await ocena(id, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: przedWejsciem.sha256 }] } });
+    expect(dobry.status, JSON.stringify(dobry.json)).toBe(201);
+    const historia = await ocena(id, { basis: "history", summaryMd: "Po fakcie.", evidence: { intervalMinutes: 5, candles: swiece("14:40"), screenshots: [{ sha256: poWejsciu.sha256 }] } });
+    expect(historia.status, JSON.stringify(historia.json)).toBe(201);
+  });
+
   it("korekta uzytkownika to NOWY wiersz user_override; werdykt AI zostaje; wymaga slow; kolejna korekta wskazuje werdykt AI", async () => {
     const id = await nowyOtwarty();
     const r = await ocena(id, {

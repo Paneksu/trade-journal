@@ -253,6 +253,36 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
     expect(dbBlad).not.toContain("foreign key");
   });
 
+  it("limit przy zastepowaniu liczy bez zrzutow z MIGAWKI stare: zrzut tego samego pochodzenia dopisany rownolegle (poza migawka) nadal sie liczy", async () => {
+    const { wgrajZalaczniki } = await import("@/lib/trades/screenshots-db");
+    const kont = await sql`insert into accounts (name, type) values (${unikat("KONTO-N1")}, 'live') returning id`;
+    const instr = await sql`select id from instruments limit 1`;
+    const tradeId = await wstawTrade(sql, { kontoId: kont[0].id, instrumentId: instr[0].id, dzien: DZIEN, status: "closed" });
+    try {
+      const dodaj = async (ile: number, origin: "manual" | "tradingview", ziarno: number, opcje = {}) => {
+        const ids: number[] = [];
+        const b = await Promise.all(Array.from({ length: ile }, async (_, i) => ({ file: plik(await png(ziarno + i), `n${ziarno + i}.png`, "image/png"), interval: null })));
+        const blad = await wgrajZalaczniki({ kind: "trade", id: tradeId }, b, origin, undefined, ids, opcje);
+        return { blad, ids };
+      };
+      const manualne = await dodaj(5, "manual", 300);
+      expect(manualne.blad).toBeNull();
+      const stare = await dodaj(2, "tradingview", 400);
+      expect(stare.blad).toBeNull();
+      const rownolegly = await dodaj(1, "tradingview", 500); // dopisany po migawce `stare`
+      expect(rownolegly.blad).toBeNull();
+      // 8 w bazie; zastepujemy TYLKO migawke (2 zrzuty): trzy nowe musza zmiescic sie w 8, ale zrzut rownolegly nadal sie liczy
+      const przekroczony = { wartosc: false };
+      const nowe = await dodaj(3, "tradingview", 600, { zastepowaneIds: stare.ids, przekroczonyLimit: przekroczony });
+      expect(nowe.blad, "trzeci nowy zrzut nie miesci sie, bo rownolegly liczy sie do limitu").toContain("Limit 8");
+      expect(przekroczony.wartosc).toBe(true);
+      expect(nowe.ids).toHaveLength(2);
+    } finally {
+      await sql`delete from trades where id = ${tradeId}`;
+      await sql`delete from accounts where id = ${kont[0].id}`;
+    }
+  });
+
   it("limit 8 zalacznikow na wlasciciela; nieznana notatka = 404; interwal spoza listy = 422; brak plikow = 400", async () => {
     const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: unikat("Pojęcie limit"), bodyMd: "" } });
     const noteId = nota.json.id as number;

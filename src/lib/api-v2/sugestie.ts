@@ -17,6 +17,7 @@ import { czyInterwal } from "@/lib/domain/interwaly";
 
 import type { SugestiaUtworzSchema, SugestieListaQuery } from "./contract/funkcje";
 import { KINDY_ZARZADZANE } from "./notatki";
+import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -105,7 +106,10 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
       if (s.retiredAt) return odrzuc(422, "setup_retired", `Setup »${s.slug}« jest wycofany i nie przyjmuje nowych przypisań.`);
       const [tr] = await tx.select({ setupId: trades.setupId }).from(trades).where(eq(trades.id, t.id)).limit(1);
       if (tr?.setupId === s.id) return odrzuc(409, "already_present", `Trade #${t.id} ma już przypisany setup »${s.slug}«.`);
-      return { ok: true, payload: { setupSlug: s.slug, setupId: s.id } };
+      // Wersja obowiazujaca w chwili wejscia trade'a (review 15.10.2026): zatwierdzenie dni pozniej jej nie zmieni.
+      const [wejscie] = await tx.select({ entryTime: trades.entryTime }).from(trades).where(eq(trades.id, t.id)).limit(1);
+      const setupVersionId = wejscie ? await wersjaSetupuNaChwile(tx, s.id, wejscie.entryTime) : null;
+      return { ok: true, payload: { setupSlug: s.slug, setupId: s.id, setupVersionId } };
     }
 
     if (d.kind === "process_grade") {

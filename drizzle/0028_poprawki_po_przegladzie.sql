@@ -51,3 +51,26 @@ CREATE TRIGGER "prop_rules_confirm_update" BEFORE UPDATE OF "confirmed_at" ON "p
   FOR EACH ROW EXECUTE FUNCTION public.tj_require_ui_actor('confirmed_at');--> statement-breakpoint
 CREATE TRIGGER "prop_rules_confirm_insert" BEFORE INSERT ON "prop_rules"
   FOR EACH ROW WHEN (NEW."confirmed_at" IS NOT NULL) EXECUTE FUNCTION public.tj_require_ui_actor('confirmed_at');
+--> statement-breakpoint
+
+-- 5) trade_plans.entry_time_at_attach: czas wejscia trade'a z CHWILI przypiecia planu (pierwszy zapis). Pozniejsza
+-- zmiana entry_time trade'a (np. ponowna synchronizacja) nie moze przeniesc go z »po planie« na »przed plan«
+-- ani odwrotnie. Strazniki planu dopuszczaja ustawienie tej kolumny razem z przypieciem trade'u.
+ALTER TABLE "trade_plans" ADD COLUMN "entry_time_at_attach" timestamptz;--> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.tj_plan_guard() RETURNS trigger
+  LANGUAGE plpgsql
+  AS $$
+BEGIN
+  IF OLD.trade_id IS NULL
+     AND NEW.trade_id IS NOT NULL
+     AND (to_jsonb(OLD) - 'trade_id' - 'entry_time_at_attach') = (to_jsonb(NEW) - 'trade_id' - 'entry_time_at_attach') THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'Plan #% jest zamrozony i nie wolno go zmienic (jedyny dozwolony UPDATE to przypiecie trade''u: trade_id z NULL na wartosc, bez zmiany reszty). Powod: plan jest dowodem decyzji sprzed wejscia. Naprawa: dopisz zmiane jako dopisek w trade_plan_addenda.', OLD.id
+    USING ERRCODE = 'TJ409', TABLE = TG_TABLE_NAME;
+END
+$$;--> statement-breakpoint
+-- Uzupelnienie istniejacych planow z przypietym trade'em (jednorazowo, z wylaczonym straznikiem planu).
+ALTER TABLE "trade_plans" DISABLE TRIGGER "trade_plans_guard";--> statement-breakpoint
+UPDATE "trade_plans" p SET "entry_time_at_attach" = t."entry_time" FROM "trades" t WHERE t."id" = p."trade_id";--> statement-breakpoint
+ALTER TABLE "trade_plans" ENABLE TRIGGER "trade_plans_guard";

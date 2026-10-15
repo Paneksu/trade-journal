@@ -462,7 +462,7 @@ describe("niepotwierdzone reguly konta: liczymy na ostrzejszej z dwoch, pole po 
     const potw = zasady({ ddType: "trailing_to_static", maxDdCents: 300_000, ddLockCents: 300_000, dailyLossCents: 150_000, profitTargetCents: 400_000, consistencyPct: 50, minDays: 5, maxContractsMini: 5, maxContractsMicro: 50 });
     const nowe = zasady({ ddType: "trailing_to_static", maxDdCents: 250_000, ddLockCents: 250_000, dailyLossCents: 200_000, profitTargetCents: 350_000, consistencyPct: 40, minDays: 3, maxContractsMini: 6, maxContractsMicro: null });
     const w = ostrzejszeZasady(potw, nowe).zasady;
-    expect(w).toMatchObject({ maxDdCents: 250_000, ddLockCents: 300_000, dailyLossCents: 150_000, profitTargetCents: 350_000, consistencyPct: 40, minDays: 5, maxContractsMini: 5, maxContractsMicro: 50 });
+    expect(w).toMatchObject({ maxDdCents: 250_000, ddLockCents: 300_000, dailyLossCents: 150_000, profitTargetCents: 400_000, consistencyPct: 40, minDays: 5, maxContractsMini: 5, maxContractsMicro: 50 });
   });
 
   it("typ DD: silniejszy wygrywa (intraday > eod > trailing_to_static > static), a `extra` idzie z nim", () => {

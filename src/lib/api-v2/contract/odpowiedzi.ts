@@ -185,6 +185,8 @@ export const DzienOdpowiedz = z.strictObject({
     })
     .nullable(),
   trades: z.array(z.strictObject({ id: calk, status: z.string(), direction: z.string() })),
+  /** true: dzien ma otwarty trade z werdyktem AI, wiec postSession i slowa napisane po wejsciu sa ukryte. */
+  resultHidden: z.boolean(),
   userWords: z.array(SlowaOdpowiedz),
   notes: z.array(z.strictObject({ id: calk, kind: z.string(), slug: z.string(), title: z.string(), rev: calk })),
 });

@@ -306,6 +306,48 @@ describe.skipIf(!MOZNA_NA_BAZIE)("moduł prop: presety, reguly konta, bufory i k
     expect(po.json.rulesNote).toBeNull();
   });
 
+  it("«Zawsze bezpieczniej dla mnie»: cel do zdobycia z WIEKSZEGO z dwoch, consistency z MNIEJSZEGO (niepotwierdzone reguly)", async () => {
+    const id = await kontoProp();
+    const stara = await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 300_000, profitTargetCents: 500_000, consistencyPct: 50 });
+    const nowa = await reguly(id, { validFrom: "2026-06-01", ddType: "static", maxDdCents: 300_000, profitTargetCents: 300_000, consistencyPct: 40 });
+    expect(stara.status).toBe(201);
+    expect(nowa.status).toBe(201);
+    const { potwierdzReguleKonta } = await import("@/lib/decyzje/prop");
+    expect((await potwierdzReguleKonta(stara.json.id)).ok).toBe(true);
+    const s = await status(id, "?day=2026-07-01");
+    zgodneZKontraktem("get", "/prop/accounts/{id}/status", s.json);
+    expect(s.json.rulesUsed.source).toBe("stricter_of_confirmed_and_unconfirmed");
+    expect(s.json.rulesUsed.profitTargetCents).toBe(500_000);
+    expect(s.json.rulesUsed.consistencyPct).toBe(40);
+  });
+
+  it("niepotwierdzona regula ze STARA data validFrom nie cofa historii konta (poczatek liczony z potwierdzonych i tej obowiazujacej)", async () => {
+    const id = await kontoProp();
+    const biezaca = await reguly(id, { validFrom: "2026-03-01", ddType: "static", maxDdCents: 300_000 });
+    expect(biezaca.status).toBe(201);
+    const { potwierdzReguleKonta } = await import("@/lib/decyzje/prop");
+    expect((await potwierdzReguleKonta(biezaca.json.id)).ok).toBe(true);
+    await wstawTrade(sql, { kontoId: id, instrumentId, dzien: "2026-02-02", status: "closed", r: -50_000 / 40000 });
+    const przed = await status(id, "?day=2026-04-01");
+    expect(przed.status).toBe(200);
+    // agent dopisuje niepotwierdzona regule sprzed trade'a: historia nie moze sie rozszerzyc
+    expect((await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 999_000 })).status).toBe(201);
+    const po = await status(id, "?day=2026-04-01");
+    expect(po.json.state.drawdownBufferCents).toBe(przed.json.state.drawdownBufferCents);
+    expect(po.json.state.balanceCents ?? po.json.state.equityCents ?? 0).toBe(przed.json.state.balanceCents ?? przed.json.state.equityCents ?? 0);
+  });
+
+  it("kolejka »Do decyzji«: tylko regula obowiazujaca dzis i nowsze, zastapione niepotwierdzone nie wchodza", async () => {
+    const id = await kontoProp();
+    const stara = await reguly(id, { validFrom: "2026-01-01", ddType: "static", maxDdCents: 200_000 });
+    const biezaca = await reguly(id, { validFrom: "2026-06-01", ddType: "static", maxDdCents: 300_000 });
+    const przyszla = await reguly(id, { validFrom: "2026-12-01", ddType: "static", maxDdCents: 250_000 });
+    const { regulyKontDoPotwierdzenia } = await import("@/lib/queries/decyzje");
+    const lista = (await regulyKontDoPotwierdzenia("2026-07-01")).filter((r) => r.accountId === id).map((r) => r.id);
+    expect(lista).toEqual(expect.arrayContaining([biezaca.json.id, przyszla.json.id]));
+    expect(lista).not.toContain(stara.json.id);
+  });
+
   it("potwierdzic reguly moze tylko UI: SQL z aktorem api:* dostaje TJ403, a wstawienie juz potwierdzonej reguly tez", async () => {
     const id = await kontoProp();
     const r = await reguly(id, { validFrom: "2026-02-01", ddType: "static", maxDdCents: 300_000 });

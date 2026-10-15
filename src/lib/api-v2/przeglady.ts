@@ -57,6 +57,7 @@ export async function metrykiTygodnia(tx: Db, weekStart: string) {
       planId: tradePlans.id,
       planFrozenAt: tradePlans.frozenAt,
       planStopLoss: tradePlans.stopLoss,
+      planWejscie: tradePlans.entryTimeAtAttach,
     })
     .from(trades)
     .leftJoin(backtestSessions, eq(trades.backtestSessionId, backtestSessions.id))
@@ -89,7 +90,8 @@ export async function metrykiTygodnia(tx: Db, weekStart: string) {
       id: w.id,
       tradingDay: w.tradingDay ?? weekStart,
       entryTime: w.entryTime,
-      momentDecyzji: w.entryTime,
+      // Czas wejscia z chwili przypiecia planu (0028): pozniejsza edycja entry_time nie przenosi trade'a »przed plan«.
+      momentDecyzji: w.planWejscie ?? w.entryTime,
       processGrade: w.processGrade,
       stopLoss: w.stopLoss === null ? null : Number(w.stopLoss),
       plan: w.planId !== null && w.planFrozenAt !== null && w.planStopLoss !== null ? { frozenAt: w.planFrozenAt, stopLoss: Number(w.planStopLoss) } : null,

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gt, isNull, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, ne, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 
 import {
@@ -18,6 +18,7 @@ import { computeTrade } from "@/lib/domain/calc";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 import { instrumentSpec } from "@/lib/queries/dictionaries";
 
+import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { PlanDopisekSchema, PlanUtworzSchema, PlanyListaQuery } from "./contract/funkcje";
 import { numerZestawu } from "./reguly";
 import type { KontekstApi, Transakcja } from "./with-api";
@@ -133,6 +134,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
     if (!s) return odrzuc(422, "unknown_reference", `pole sessionId: »${d.sessionId}« - nie ma takiej sesji.`);
   }
 
+  let wejscieTradu: Date | null = null;
   if (d.tradeId !== undefined) {
     const spr = await sprawdzTrade(tx, d.tradeId, {
       accountId: d.accountId,
@@ -141,6 +143,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
       day: d.day,
     });
     if (!spr.ok) return spr;
+    wejscieTradu = spr.entryTime;
   }
 
   // Idempotencja: ten sam plan wyslany ponownie (retry) to ten sam wiersz. Plan niezmienny nie ma
@@ -195,6 +198,7 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
       // Przez API plan zawsze "przepisalo AI ze slow uzytkownika"; origin `user` jest zarezerwowane dla UI.
       origin: "ai",
       createdByTokenId: api.token.id,
+      entryTimeAtAttach: wejscieTradu,
     })
     .returning();
 
@@ -204,9 +208,9 @@ export async function utworzPlan(tx: Transakcja, api: KontekstApi, d: z.output<t
 
 type WymaganiaTradu = { accountId: number; instrumentId: number; direction: "long" | "short"; day: string };
 
-async function sprawdzTrade(tx: Db, tradeId: number, w: WymaganiaTradu): Promise<{ ok: true } | Extract<WynikPlanu, { ok: false }>> {
+async function sprawdzTrade(tx: Db, tradeId: number, w: WymaganiaTradu): Promise<{ ok: true; entryTime: Date } | Extract<WynikPlanu, { ok: false }>> {
   const [t] = await tx
-    .select({ id: trades.id, accountId: trades.accountId, instrumentId: trades.instrumentId, direction: trades.direction, tradingDay: trades.tradingDay })
+    .select({ id: trades.id, accountId: trades.accountId, instrumentId: trades.instrumentId, direction: trades.direction, tradingDay: trades.tradingDay, entryTime: trades.entryTime })
     .from(trades)
     .where(eq(trades.id, tradeId))
     .limit(1);
@@ -221,7 +225,29 @@ async function sprawdzTrade(tx: Db, tradeId: number, w: WymaganiaTradu): Promise
   }
   const [juz] = await tx.select({ id: tradePlans.id }).from(tradePlans).where(eq(tradePlans.tradeId, tradeId)).limit(1);
   if (juz) return odrzuc(409, "plan_exists", `Trade #${tradeId} ma już zamrożony plan (#${juz.id}). Plan zapisuje się raz, a zmiany idą jako dopiski (POST /api/v2/trade-plans/${juz.id}/addenda).`, { existingPlanId: juz.id });
-  return { ok: true };
+  return { ok: true, entryTime: t.entryTime };
+}
+
+/**
+ * Teza planu liczy sie jako »moje slowa« (a wiec zatwierdzenie setupu), tylko gdy KAZDY warunek jest spelniony
+ * (audyt, 15.10.2026): rola plan.thesis, slowa o tym trade'cie albo bez trade'a, z dnia planu, zapisane
+ * (captured_at) nie pozniej niz teraz i niewykorzystane w innym planie. Inaczej AI mogloby podpiac cudzy
+ * lub stary tekst i tym samym obejsc kolejke potwierdzen.
+ */
+async function tezaToSlowaUzytkownika(tx: Transakcja, plan: Plan): Promise<boolean> {
+  if (plan.thesisWordsId === null) return false;
+  const [s] = await tx
+    .select({ role: userWords.role, tradeId: userWords.tradeId, day: userWords.day, capturedAt: userWords.capturedAt })
+    .from(userWords)
+    .where(eq(userWords.id, plan.thesisWordsId))
+    .limit(1);
+  if (!s) return false;
+  if (s.role !== "plan.thesis") return false;
+  if (s.tradeId !== null && s.tradeId !== plan.tradeId) return false;
+  if (s.day !== plan.day) return false;
+  if (s.capturedAt.getTime() > Date.now()) return false;
+  const [uzyte] = await tx.select({ id: tradePlans.id }).from(tradePlans).where(and(eq(tradePlans.thesisWordsId, plan.thesisWordsId), ne(tradePlans.id, plan.id))).limit(1);
+  return !uzyte;
 }
 
 /**
@@ -236,7 +262,11 @@ async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
   if (plan.tradeId === null) return;
   const [tr] = await tx.select({ entryTime: trades.entryTime, setupId: trades.setupId }).from(trades).where(eq(trades.id, plan.tradeId)).limit(1);
   if (!tr) return;
-  const zSlowUzytkownika = plan.thesisWordsId !== null && plan.frozenAt.getTime() <= tr.entryTime.getTime();
+  // Porownujemy z czasem wejscia zapamietanym przy PRZYPIECIU (pierwszy zapis), nie z biezacym entry_time:
+  // pozniejsza edycja wejscia nie przesuwa trade'a miedzy »przed planem« i »po planie« (audyt, 15.10.2026).
+  const wejscie = plan.entryTimeAtAttach ?? tr.entryTime;
+  const przedWejsciem = plan.frozenAt.getTime() <= wejscie.getTime();
+  const zSlowUzytkownika = przedWejsciem && (await tezaToSlowaUzytkownika(tx, plan));
 
   await tx
     .update(trades)
@@ -254,7 +284,8 @@ async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
   if (!zSlowUzytkownika && plan.setupId !== null && tr.setupId === null) {
     const [setup] = await tx.select({ slug: setups.slug }).from(setups).where(eq(setups.id, plan.setupId)).limit(1);
     if (!setup) return;
-    const payload = { setupSlug: setup.slug, setupId: plan.setupId };
+    // Wersja obowiazujaca w chwili wejscia trade'a, zapisana w sugestii: zatwierdzenie dni pozniej nie podmieni jej na nowsza.
+    const payload = { setupSlug: setup.slug, setupId: plan.setupId, setupVersionId: await wersjaSetupuNaChwile(tx, plan.setupId, wejscie) };
     const cel = { type: "trade", id: plan.tradeId };
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.suggestion:trade_setup:${plan.tradeId}`}, 0))`);
     const [juz] = await tx
@@ -267,7 +298,7 @@ async function przepiszNaTrade(tx: Transakcja, plan: Plan): Promise<void> {
         kind: "trade_setup",
         target: cel,
         payload,
-        claim: `Plan #${plan.id} wskazuje setup »${setup.slug}« dla trade'a #${plan.tradeId}, ale ${plan.thesisWordsId === null ? "plan nie ma tezy ze słów użytkownika" : "plan powstał po wejściu"}, więc przypisanie czeka na Twoje zatwierdzenie.`,
+        claim: `Plan #${plan.id} wskazuje setup »${setup.slug}« dla trade'a #${plan.tradeId}, ale ${plan.thesisWordsId === null ? "plan nie ma tezy ze słów użytkownika" : !przedWejsciem ? "plan powstał po wejściu" : "teza planu nie spełnia warunków »moich słów« (rola plan.thesis, ten trade lub brak, dzień planu, niewykorzystana w innym planie)"}, więc przypisanie czeka na Twoje zatwierdzenie.`,
         evidence: [{ type: "trade_plan", ref: plan.id, note: "przypisanie setupu z planu bez słów użytkownika przed wejściem" }],
         evidenceLevel: "inferred",
         n: null,
@@ -287,7 +318,7 @@ export async function przypnijPlan(tx: Transakcja, planId: number, tradeId: numb
   }
   const spr = await sprawdzTrade(tx, tradeId, { accountId: plan.accountId, instrumentId: plan.instrumentId, direction: plan.direction, day: plan.day });
   if (!spr.ok) return spr;
-  const [po] = await tx.update(tradePlans).set({ tradeId }).where(and(eq(tradePlans.id, planId), isNull(tradePlans.tradeId))).returning();
+  const [po] = await tx.update(tradePlans).set({ tradeId, entryTimeAtAttach: spr.entryTime }).where(and(eq(tradePlans.id, planId), isNull(tradePlans.tradeId))).returning();
   if (!po) return odrzuc(409, "plan_attached", `Plan #${planId} został przypięty równolegle. Odczytaj go ponownie.`);
   await przepiszNaTrade(tx, po);
   return { ok: true, plan: po, utworzony: false, ostrzezenia: [] };

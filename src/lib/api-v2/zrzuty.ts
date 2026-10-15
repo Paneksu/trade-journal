@@ -108,7 +108,7 @@ export async function zastapZrzuty(
     origin,
     zapis,
     undefined,
-    { requestId, zastepujeOrigin: origin === "manual" ? undefined : origin, przekroczonyLimit },
+    { requestId, zastepowaneIds: stare.map((s) => s.id), przekroczonyLimit },
   );
   if (bladZapisu) {
     // Czesc nowych plikow mogla juz wejsc; ponowienie zapytania zastapi je razem ze starymi.

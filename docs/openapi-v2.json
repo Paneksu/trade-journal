@@ -3199,6 +3199,32 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Powtorka tej samej korekty (ten sam werdykt, slowa i tresc): zwracany jest istniejacy wiersz.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Sukces",
             "content": {
@@ -3285,7 +3311,7 @@
             }
           },
           "422": {
-            "description": "Slowa nie istnieja albo werdykt nie jest werdyktem AI.",
+            "description": "Slowa nie istnieja, nie dotycza tego trade'a (ani jego dnia handlowego) albo werdykt nie jest werdyktem AI.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4304,6 +4330,9 @@
                         "additionalProperties": false
                       }
                     },
+                    "resultHidden": {
+                      "type": "boolean"
+                    },
                     "userWords": {
                       "type": "array",
                       "items": {
@@ -4484,6 +4513,7 @@
                     "scope",
                     "dayNote",
                     "trades",
+                    "resultHidden",
                     "userWords",
                     "notes"
                   ],
@@ -4548,6 +4578,32 @@
                     "id",
                     "date",
                     "created"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Utworzona nowa notatka dnia (200 przy zapisie do istniejacej).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
                   ],
                   "additionalProperties": false
                 }
@@ -6684,6 +6740,32 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Powtorka tego samego dopisku: zwracany jest istniejacy wiersz.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Sukces",
             "content": {
@@ -10832,6 +10914,32 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Powtorka tego samego dopisku (pole, wartosc, slowa): zwracany jest istniejacy wiersz.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Sukces",
             "content": {

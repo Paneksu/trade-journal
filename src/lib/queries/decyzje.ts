@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import { linkMentora } from "@/lib/api-v2/luki";
+import { dzienHandlowyTeraz } from "@/lib/api-v2/prop-konta";
 import { db } from "@/lib/db";
 import {
   aiSuggestions,
@@ -133,14 +134,23 @@ export type ReguldoPotwierdzenia = {
   preset: { firm: string; program: string; phase: string; readOn: string; needsVerification: boolean } | null;
 };
 
+/**
+ * Niepotwierdzona regula kolejki: tylko OBOWIAZUJACA dzis (najnowsza z valid_from <= dzis) i nowsza od niej.
+ * Reguly zastapione nowszymi nie wchodza do kolejki ani do licznika (review 15.10.2026): nikt ich nie liczy.
+ */
+function niepotwierdzonaAktualna(dzis: string) {
+  return sql`${propRules.confirmedAt} is null and ${propRules.validFrom} >= coalesce(
+    (select max(p2.valid_from) from prop_rules p2 where p2.account_id = ${propRules.accountId} and p2.valid_from <= ${dzis}::date), ${propRules.validFrom})`;
+}
+
 /** Reguly kont prop czekajace na potwierdzenie zgodnosci z regulaminem (najstarsze pierwsze). */
-export async function regulyKontDoPotwierdzenia(): Promise<ReguldoPotwierdzenia[]> {
+export async function regulyKontDoPotwierdzenia(dzis: string = dzienHandlowyTeraz()): Promise<ReguldoPotwierdzenia[]> {
   const wiersze = await db
     .select({ rule: propRules, accountName: accounts.name, firm: propFirmPresets.firm, program: propFirmPresets.program, phase: propFirmPresets.phase, readOn: propFirmPresets.readOn, needs: propFirmPresets.needsVerification })
     .from(propRules)
     .innerJoin(accounts, eq(propRules.accountId, accounts.id))
     .leftJoin(propFirmPresets, eq(propRules.presetId, propFirmPresets.id))
-    .where(sql`${propRules.confirmedAt} is null`)
+    .where(niepotwierdzonaAktualna(dzis))
     .orderBy(asc(propRules.createdAt), asc(propRules.id));
   return wiersze.map((w) => ({
     id: w.rule.id,
@@ -163,12 +173,14 @@ export async function sugestieDoDecyzji() {
   return { oczekujace, zatwierdzone };
 }
 
-export async function licznikiDoDecyzji(): Promise<{ decyzje: number; rozstrzygniecia: number }> {
+export async function licznikiDoDecyzji(dzis: string = dzienHandlowyTeraz()): Promise<{ decyzje: number; rozstrzygniecia: number }> {
+  const dzisiejszy = dzis;
   const [w] = await db.execute<{ decyzje: number; rozstrzygniecia: number }>(sql`
     select ((select count(*) from rule_versions where status = 'proposed')
           + (select count(*) from setup_versions where status = 'proposed')
           + (select count(*) from ai_suggestions where status = 'pending')
-          + (select count(*) from prop_rules where confirmed_at is null))::int as decyzje,
+          + (select count(*) from prop_rules where confirmed_at is null and valid_from >= coalesce(
+              (select max(p2.valid_from) from prop_rules p2 where p2.account_id = prop_rules.account_id and p2.valid_from <= ${dzisiejszy}::date), valid_from)))::int as decyzje,
            (select count(*) from strategy_gaps where kind = 'mentor_conflict' and status in ('open', 'asked'))::int as rozstrzygniecia`);
   return { decyzje: Number(w?.decyzje ?? 0), rozstrzygniecia: Number(w?.rozstrzygniecia ?? 0) };
 }

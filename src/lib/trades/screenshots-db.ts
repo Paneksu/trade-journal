@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, eq, notInArray, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { screenshots } from "@/lib/db/schema";
@@ -32,8 +32,8 @@ export type OriginZrzutu = "manual" | "tradingview" | "fxreplay";
 export type OpcjeWgrywania = {
   /** Identyfikator zapytania do logow (bez niego powstaje losowy identyfikator zdarzenia). */
   requestId?: string;
-  /** Zrzuty tego pochodzenia zaraz zostana zastapione, wiec nie liczą sie do limitu. */
-  zastepujeOrigin?: OriginZrzutu;
+  /** Id zrzutow z MIGAWKI `stare` (zaraz zastapionych): tylko one nie licza sie do limitu (audyt N1, 15.10.2026). */
+  zastepowaneIds?: number[];
   /** Ustawiane na true, gdy odmowa wynika z limitu (wolajacy zwraca 422, nie 500). */
   przekroczonyLimit?: { wartosc: boolean };
 };
@@ -85,9 +85,7 @@ export async function wgrajZalaczniki(
       const wstaw = async (tx: Pick<typeof db, "execute" | "select" | "insert">) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.shots:${owner.kind}:${owner.id}`}, 0))`);
         const wlasciciel = eq(kolumna(owner), owner.id);
-        const licza = opcje.zastepujeOrigin
-          ? and(wlasciciel, or(ne(screenshots.origin, opcje.zastepujeOrigin), wstawioneTuId.length ? inArray(screenshots.id, wstawioneTuId) : sql`false`))
-          : wlasciciel;
+        const licza = opcje.zastepowaneIds && opcje.zastepowaneIds.length > 0 ? and(wlasciciel, notInArray(screenshots.id, opcje.zastepowaneIds)) : wlasciciel;
         const [{ ile }] = await tx.select({ ile: sql<number>`count(*)::int` }).from(screenshots).where(licza);
         const limit = bladLimitu(ile, 1);
         if (limit) throw new LimitZalacznikow(`${limit} (maksimum ${MAX_ZRZUTOW} łącznie)`);

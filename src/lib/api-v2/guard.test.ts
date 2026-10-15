@@ -118,25 +118,67 @@ describe("straznik: moduly API v2 nie zmieniaja zatwierdzen", () => {
   });
 });
 
-describe("straznik: trasa API nie moze zapisac jako uzytkownik (audyt 6, 15.10.2026)", () => {
-  const trasy = wszystkiePliki(KORZEN).filter((p) => /\.(ts|tsx)$/.test(p));
-  const moduly = readdirSync(LIB)
-    .filter((n) => n.endsWith(".ts") && !n.endsWith(".test.ts") && n !== "zapis.ts")
-    .map((n) => path.join(LIB, n));
+describe("straznik: nic poza zapis.ts nie ustawia aktora transakcji, a trasy API nie dosiegaja zapisu jako uzytkownik (audyt 6 i N4, 15.10.2026)", () => {
+  const SRC = path.resolve(__dirname, "../..");
+  const API = path.join(SRC, "app/api"); // calosc: v2 i stare /api/ingest
+  const zrodla = wszystkiePliki(SRC).filter((p) => /\.(ts|tsx)$/.test(p) && !/\.test\.(ts|tsx)$/.test(p));
+  const rel = (p: string) => path.relative(SRC, p).replaceAll("\\", "/");
+  const wApi = (p: string) => p.startsWith(API + path.sep);
+  /** Zrodla, ktore wciagaja trasy albo sa przez nie wciagane: cala biblioteka poza modulami zatwierdzen. */
+  const wBibliotece = (p: string) => p.startsWith(path.join(SRC, "lib") + path.sep) && !/^lib\/(decyzje|actions)\//.test(rel(p));
+
+  /** Rozwiazuje specyfikator importu do sciezki w src (alias @/ i sciezki wzgledne); inne = null. */
+  function cel(zPliku: string, spec: string): string | null {
+    if (spec.startsWith("@/")) return path.join(SRC, spec.slice(2));
+    if (spec.startsWith(".")) return path.resolve(path.dirname(zPliku), spec);
+    return null;
+  }
+  const importy = (zrodlo: string) => [...zrodlo.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g)].map((m) => m[1]);
+  const zabronionyCel = (c: string) => {
+    const r = path.relative(SRC, c).replaceAll("\\", "/");
+    return /^lib\/(decyzje|actions)(\/|$)/.test(r);
+  };
 
   it("jest co sprawdzac", () => {
-    expect(trasy.length).toBeGreaterThan(30);
-    expect(moduly.length).toBeGreaterThan(10);
+    expect(zrodla.length).toBeGreaterThan(100);
+    expect(zrodla.filter(wApi).length).toBeGreaterThan(30);
+    expect(zrodla.filter(wBibliotece).length).toBeGreaterThan(50);
   });
 
-  it.each([...trasy, ...moduly].map((p) => [path.relative(path.resolve(__dirname, "../.."), p).replaceAll("\\", "/"), p]))(
-    "%s nie uzywa zapisJakoUi, aktora »ui« ani modulow decyzji i akcji uzytkownika",
-    (_n, plik) => {
-      const zrodlo = bezKomentarzy(readFileSync(plik, "utf8"));
-      expect(zrodlo).not.toMatch(/zapisJakoUi/);
-      expect(zrodlo).not.toMatch(/zapisZAktorem\(\s*["'`]ui["'`]/);
-      expect(zrodlo).not.toMatch(/from\s+["']@\/lib\/decyzje(\/|["'])/);
-      expect(zrodlo).not.toMatch(/from\s+["']@\/lib\/actions(\/|["'])/);
-    },
-  );
+  it("set_config i tj.actor wystepuja w kodzie (poza komentarzami) wylacznie w lib/api-v2/zapis.ts", () => {
+    const winni = zrodla
+      .filter((p) => rel(p) !== "lib/api-v2/zapis.ts")
+      .filter((p) => /set_config|tj\.actor/.test(bezKomentarzy(readFileSync(p, "utf8"))))
+      .map(rel);
+    expect(winni, "aktora transakcji ustawia tylko zapis.ts (zapisZAktorem / zapisJakoUi)").toEqual([]);
+  });
+
+  it("zapisJakoUi nie wystepuje poza lib/api-v2/zapis.ts i lib/decyzje", () => {
+    const winni = zrodla
+      .filter((p) => rel(p) !== "lib/api-v2/zapis.ts" && !rel(p).startsWith("lib/decyzje/"))
+      .filter((p) => /zapisJakoUi/.test(bezKomentarzy(readFileSync(p, "utf8"))))
+      .map(rel);
+    expect(winni).toEqual([]);
+  });
+
+  it("trasy API (cale src/app/api) i biblioteka poza decyzje i actions nie importuja lib/decyzje ani lib/actions, takze sciezka wzgledna", () => {
+    const winni: string[] = [];
+    for (const p of zrodla.filter((x) => wApi(x) || wBibliotece(x))) {
+      for (const spec of importy(bezKomentarzy(readFileSync(p, "utf8")))) {
+        const c = cel(p, spec);
+        if (c !== null && zabronionyCel(c)) winni.push(`${rel(p)} -> ${spec}`);
+      }
+    }
+    expect(winni).toEqual([]);
+  });
+
+  it("test straznika dziala: wykrywa import wzgledny i aliasowy oraz zapisJakoUi w probce", () => {
+    const probka = path.join(SRC, "lib/api-v2/probka.ts");
+    expect(zabronionyCel(cel(probka, "../decyzje/sugestie")!)).toBe(true);
+    expect(zabronionyCel(cel(probka, "../actions/decyzje")!)).toBe(true);
+    expect(zabronionyCel(cel(probka, "@/lib/decyzje/wersje")!)).toBe(true);
+    expect(zabronionyCel(cel(probka, "./sugestie")!)).toBe(false);
+    expect(zabronionyCel(cel(probka, "@/lib/queries/decyzje")!)).toBe(false);
+    expect(importy(`import x from "../decyzje/prop";\nconst y = await import("../../lib/actions/trades");`)).toEqual(["../decyzje/prop", "../../lib/actions/trades"]);
+  });
 });

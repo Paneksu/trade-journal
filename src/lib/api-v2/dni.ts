@@ -11,6 +11,7 @@ import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 import type { DzienQuery, DzienZapisSchema } from "./contract/v2";
 import type { Zapis } from "./zapis";
 import { zSlow } from "./slowa";
+import { sqlSlowaPoWejsciuUkrytego, ukryteTrady } from "./ukrycie-wyniku";
 
 /**
  * Dzien (plan: `days/:date`). Odczyt zbiera wszystko, co wisi na dniu; zapis
@@ -45,7 +46,15 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
     .orderBy(asc(trades.entryTime))
     .limit(200);
 
-  const slowa = await db.select().from(userWords).where(eq(userWords.day, data)).orderBy(asc(userWords.id)).limit(200);
+  // Slepa ocena: dzien z otwartym trade'em, ktory ma werdykt, nie oddaje review po sesji ani slow napisanych po wejsciu.
+  const ukryte = await ukryteTrady(db, tradowDnia.map((t) => t.id));
+  const dzienUkryty = ukryte.size > 0;
+  const slowa = await db
+    .select()
+    .from(userWords)
+    .where(and(eq(userWords.day, data), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`)}`))
+    .orderBy(asc(userWords.id))
+    .limit(200);
   const notatki = await db
     .select({ id: notes.id, kind: notes.kind, slug: notes.slug, title: notes.title, rev: notes.rev })
     .from(notes)
@@ -60,7 +69,7 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
       ? {
           id: notatkaDnia.id,
           preSession: notatkaDnia.preSession,
-          postSession: notatkaDnia.postSession,
+          postSession: dzienUkryty ? null : notatkaDnia.postSession,
           mood: notatkaDnia.mood,
           energy: notatkaDnia.energy,
           dayRating: notatkaDnia.dayRating,
@@ -73,6 +82,7 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
         }
       : null,
     trades: tradowDnia,
+    resultHidden: dzienUkryty,
     userWords: slowa.map(zSlow),
     notes: notatki,
   };

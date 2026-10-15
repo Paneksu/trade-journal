@@ -1582,6 +1582,8 @@ export const tradePlans = pgTable(
     origin: text().$type<"user" | "ai">().notNull(),
     createdByTokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
     frozenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    // Czas wejscia trade'a z chwili przypiecia planu (0028): pozniejsza zmiana entry_time nie przesuwa trade'a wzgledem planu.
+    entryTimeAtAttach: timestamp({ withTimezone: true }),
   },
   (t) => [
     check("trade_plans_direction", sql`${t.direction} in ('long', 'short')`),

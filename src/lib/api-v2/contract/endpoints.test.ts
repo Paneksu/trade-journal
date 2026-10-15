@@ -35,6 +35,29 @@ describe("kontrakt OpenAPI: docs/openapi-v2.json jest aktualny", () => {
   });
 });
 
+describe("kontrakt a kody statusu 2xx wpisane w pliki tras", () => {
+  it("kazdy kod 2xx, ktory trasa zwraca literalem, jest opisany w kontrakcie (status glowny albo bledy) przynajmniej jednej metody tej trasy", () => {
+    // Plik trasy moze obslugiwac kilka metod, a kod w pliku nie mowi, ktorej dotyczy; sprawdzamy sume metod pliku.
+    const dozwolone = new Map<string, Set<number>>();
+    for (const e of ENDPOINTS) {
+      const katalog = katalogTrasy(e.sciezka);
+      const zbior = dozwolone.get(katalog) ?? new Set<number>();
+      zbior.add(e.status ?? 200);
+      for (const k of Object.keys(e.bledy ?? {})) zbior.add(Number(k));
+      dozwolone.set(katalog, zbior);
+    }
+    const braki: string[] = [];
+    for (const [katalog, zbior] of dozwolone) {
+      const plik = path.join(TRASY, katalog, "route.ts");
+      const zrodlo = readFileSync(plik, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+      for (const m of zrodlo.matchAll(/\b(20[0-9])\b/g)) {
+        if (!zbior.has(Number(m[1]))) braki.push(`/${katalog}: trasa zwraca ${m[1]}, a kontrakt go nie opisuje`);
+      }
+    }
+    expect([...new Set(braki)]).toEqual([]);
+  });
+});
+
 describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
   function trasyZPlikow(): Map<string, string[]> {
     const wynik = new Map<string, string[]>();

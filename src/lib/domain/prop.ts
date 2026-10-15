@@ -592,8 +592,8 @@ const maxNonNull = (a: number | null, b: number | null): number | null => (a ===
 /**
  * Dopoki nowa regula konta nie jest potwierdzona w aplikacji (Slowa uzytkownika 15.10.2026: «Licz na
  * ostrzejszej»), bufory i ostrzezenia liczy sie na OSTRZEJSZEJ z dwoch: ostatniej potwierdzonej i nowej,
- * pole po polu. Ostrzejsze znaczy: mniejszy limit DD, mniejszy dzienny limit straty, mniejszy cel i
- * prog consistency (to ostrzejsza kontrola), mniej kontraktow, wiecej minimalnych dni, wyzsza blokada
+ * pole po polu. Ostrzejsze znaczy: mniejszy limit DD, mniejszy dzienny limit straty, wiekszy cel (do zdobycia) i mniejszy
+ * prog consistency (decyzja «Zawsze bezpieczniej dla mnie», Slowa uzytkownika 15.10.2026), mniej kontraktow, wiecej minimalnych dni, wyzsza blokada
  * (prog DD rosnie dluzej) i silniejszy typ DD. `extra` idzie razem z typem DD, bo opisuje jego podstawe.
  * Brak wartosci (`null`) po jednej stronie nie oslabia drugiej.
  */
@@ -607,7 +607,9 @@ export function ostrzejszeZasady(potwierdzone: ZasadyKonta, nowe: ZasadyKonta): 
       maxDdCents: Math.min(potwierdzone.maxDdCents, nowe.maxDdCents),
       ddLockCents: baza.ddType === "trailing_to_static" ? maxNonNull(potwierdzone.ddLockCents, nowe.ddLockCents) : (baza.ddLockCents ?? maxNonNull(potwierdzone.ddLockCents, nowe.ddLockCents)),
       dailyLossCents: minNonNull(potwierdzone.dailyLossCents, nowe.dailyLossCents),
-      profitTargetCents: minNonNull(potwierdzone.profitTargetCents, nowe.profitTargetCents),
+      // «Zawsze bezpieczniej dla mnie» (Slowa uzytkownika 15.10.2026): cel do osiagniecia liczy sie od WIEKSZEGO z dwoch
+      // (trader nie uzna celu za zdobyty za wczesnie, a brakCents nie jest zanizony); limit consistency od MNIEJSZEGO.
+      profitTargetCents: maxNonNull(potwierdzone.profitTargetCents, nowe.profitTargetCents),
       consistencyPct: minNonNull(potwierdzone.consistencyPct, nowe.consistencyPct),
       minDays: maxNonNull(potwierdzone.minDays, nowe.minDays),
       maxContractsMini: minNonNull(potwierdzone.maxContractsMini, nowe.maxContractsMini),

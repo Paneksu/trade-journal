@@ -78,7 +78,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
   describe("«Plan z moich slow = zatwierdzenie»", () => {
     it("plan z tezą ze slow uzytkownika zamrozony PRZED wejsciem: setup i jego wersja wchodza do trade'a od razu, bez kolejki", async () => {
       const id = await trade(PRZYSZLOSC);
-      const teza = await zapiszSlowa(rw.token, "Wchodzę po sweepie PDL, bo to płynność.", { day: PRZYSZLOSC });
+      const teza = await zapiszSlowa(rw.token, "Wchodzę po sweepie PDL, bo to płynność.", { day: PRZYSZLOSC, role: "plan.thesis" });
       const p = await utworzPlan(plan(PRZYSZLOSC, { thesisWordsId: teza.id, tradeId: id }));
       expect(p.status, JSON.stringify(p.json)).toBe(201);
       zgodneZKontraktem("post", "/trade-plans", p.json);
@@ -94,7 +94,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
       const sug = await sugestieSetupu(id);
       expect(sug).toHaveLength(1);
       expect(sug[0].status).toBe("pending");
-      expect(sug[0].payload).toEqual({ setupSlug: slug, setupId });
+      expect(sug[0].payload).toEqual({ setupSlug: slug, setupId, setupVersionId: wersjaId });
 
       // zamkniety trade z takim planem nie wchodzi do statystyk setupu przed zatwierdzeniem
       await sql`update trades set status = 'closed', exit_count = 1, closed_contracts = 1, exit_price = 20100, exit_time = now(), pnl = 100000, r_multiple = 2 where id = ${id}`;
@@ -115,7 +115,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
 
     it("plan z tezą, ale zamrozony PO wejsciu (trade z przeszlosci): tez idzie kolejka; ponowny przypisek nie dubluje sugestii", async () => {
       const id = await trade(PRZESZLOSC);
-      const teza = await zapiszSlowa(rw.token, "Teza napisana po fakcie.", { day: PRZESZLOSC });
+      const teza = await zapiszSlowa(rw.token, "Teza napisana po fakcie.", { day: PRZESZLOSC, role: "plan.thesis" });
       const p = await utworzPlan(plan(PRZESZLOSC, { thesisWordsId: teza.id, tradeId: id }));
       expect(p.status, JSON.stringify(p.json)).toBe(201);
       expect(await setupTradu(id)).toEqual({ setup_id: null, setup_version_id: null });
@@ -146,6 +146,106 @@ describe.skipIf(!MOZNA_NA_BAZIE)("poprawki po przegladzie: setup z planu, cofani
       await sql`update trades set setup_id = ${setupId} where id = ${id}`;
       expect((await cofnijSugestie(s.id)).ok).toBe(true); // gdy setup nadal jest ten z sugestii, cofniecie dziala
       expect((await setupTradu(id)).setup_id).toBeNull();
+    });
+  });
+
+  describe("warunki »moich slow« dla tezy planu (audyt, 15.10.2026)", () => {
+    const kolejka = async (id: number) => (await sugestieSetupu(id)).length;
+
+    it("zla rola, cudzy trade, zly dzien albo przyszle captured_at: przypisanie idzie do kolejki, nie do trade'a", async () => {
+      const przypadki: { opis: string; slowa: () => Promise<{ id: number }> }[] = [
+        { opis: "rola inna niz plan.thesis", slowa: async () => zapiszSlowa(rw.token, `Teza bez roli ${unikat("a")}`, { day: PRZYSZLOSC }) },
+        { opis: "slowa z innego dnia", slowa: async () => zapiszSlowa(rw.token, `Teza z innego dnia ${unikat("b")}`, { day: "2099-01-04", role: "plan.thesis" }) },
+        { opis: "slowa przypisane do cudzego trade'a", slowa: async () => zapiszSlowa(rw.token, `Teza cudza ${unikat("c")}`, { day: PRZYSZLOSC, role: "plan.thesis", tradeId: await trade(PRZYSZLOSC) }) },
+        { opis: "captured_at w przyszlosci", slowa: async () => zapiszSlowa(rw.token, `Teza z przyszlosci ${unikat("d")}`, { day: PRZYSZLOSC, role: "plan.thesis", capturedAt: new Date(Date.now() + 3_600_000).toISOString() }) },
+      ];
+      for (const p of przypadki) {
+        const id = await trade(PRZYSZLOSC);
+        const teza = await p.slowa();
+        const r = await utworzPlan(plan(PRZYSZLOSC, { thesisWordsId: teza.id, tradeId: id }));
+        expect(r.status, `${p.opis}: ${JSON.stringify(r.json)}`).toBe(201);
+        expect(await setupTradu(id), p.opis).toEqual({ setup_id: null, setup_version_id: null });
+        expect(await kolejka(id), p.opis).toBe(1);
+      }
+    });
+
+    it("te same slowa w drugim planie: pierwszy plan byl zatwierdzeniem, drugi idzie do kolejki", async () => {
+      const wspolne = await zapiszSlowa(rw.token, `Jedna teza dla dwoch planow ${unikat("e")}`, { day: PRZYSZLOSC, role: "plan.thesis" });
+      const a = await trade(PRZYSZLOSC);
+      expect((await utworzPlan(plan(PRZYSZLOSC, { thesisWordsId: wspolne.id, tradeId: a }))).status).toBe(201);
+      expect((await setupTradu(a)).setup_id).toBe(setupId);
+      const b = await trade(PRZYSZLOSC);
+      expect((await utworzPlan(plan(PRZYSZLOSC, { thesisWordsId: wspolne.id, tradeId: b }))).status).toBe(201);
+      expect(await setupTradu(b)).toEqual({ setup_id: null, setup_version_id: null });
+      expect(await kolejka(b)).toBe(1);
+    });
+  });
+
+  describe("zmiana entry_time po planie (audyt N3)", () => {
+    it("plan zapamietuje czas wejscia z przypiecia; pozniejsza zmiana entry_time nie zmienia zapamietanej wartosci ani decyzji", async () => {
+      const id = await trade(PRZESZLOSC); // plan powstaje PO wejsciu
+      const [{ wejscie }] = await sql`select entry_time as wejscie from trades where id = ${id}`;
+      const teza = await zapiszSlowa(rw.token, `Teza po fakcie ${unikat("f")}`, { day: PRZESZLOSC, role: "plan.thesis" });
+      const p = await utworzPlan(plan(PRZESZLOSC, { thesisWordsId: teza.id, tradeId: id }));
+      expect(p.status, JSON.stringify(p.json)).toBe(201);
+      expect((await sugestieSetupu(id)).length).toBe(1);
+      const [przed] = await sql`select entry_time_at_attach as t from trade_plans where id = ${p.json.plan.id}`;
+      expect(new Date(przed.t).getTime()).toBe(new Date(wejscie).getTime());
+
+      await sql`update trades set entry_time = now() + interval '30 days' where id = ${id}`;
+      const [po] = await sql`select entry_time_at_attach as t from trade_plans where id = ${p.json.plan.id}`;
+      expect(new Date(po.t).getTime()).toBe(new Date(wejscie).getTime());
+      const jeszcze = await wywolaj(import("@/app/api/v2/trade-plans/[id]/attach/route"), "POST", `/trade-plans/${p.json.plan.id}/attach`, { token: rw.token, cialo: { tradeId: id } }, PARAMS({ id: String(p.json.plan.id) }));
+      expect(jeszcze.status).toBeLessThan(300);
+      expect((await setupTradu(id)).setup_id).toBeNull();
+      // straznik planu nadal blokuje inne zmiany, takze tej kolumny
+      const e = await sql`update trade_plans set entry_time_at_attach = now() where id = ${p.json.plan.id}`.then(() => null, (x: { code?: string }) => x.code);
+      expect(e).toBe("TJ409");
+    });
+  });
+
+  describe("sugestia trade_setup niesie wersje z chwili wejscia (review, bloker)", () => {
+    it("wersja 2 przyjeta MIEDZY wejsciem a zatwierdzeniem: trade trafia do wersji 1", async () => {
+      const { przyjmijWersjeSetupu } = await import("@/lib/decyzje/wersje");
+      const { zatwierdzSugestie } = await import("@/lib/decyzje/sugestie");
+      const nowy = await wywolaj(import("@/app/api/v2/setups/route"), "POST", "/setups", {
+        token: rw.token,
+        cialo: { name: unikat("Setup wersje czasu"), bodyMd: "x", origin: "ai", counterargument: "Szum.", evidence: { n: 12 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S1", targetRule: "T1" },
+      });
+      expect(nowy.status, JSON.stringify(nowy.json)).toBe(201);
+      const slugN = nowy.json.slug as string;
+      const [{ id: sId }] = await sql`select id from setups where slug = ${slugN}`;
+      const [{ id: v1 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v1)).ok).toBe(true);
+      const prop = await wywolaj(import("@/app/api/v2/setups/[slug]/versions/route"), "POST", `/setups/${slugN}/versions`, { token: rw.token, cialo: { origin: "ai", counterargument: "Szum.", evidence: { n: 20 }, preconditions: [], entryChecklist: [{ id: "a", text: "A" }], stopRule: "S2" } }, PARAMS({ slug: slugN }));
+      expect(prop.status, JSON.stringify(prop.json)).toBe(201);
+      const [{ id: v2 }] = await sql`select id from setup_versions where setup_id = ${sId} and status = 'proposed'`;
+      expect((await przyjmijWersjeSetupu(v2)).ok).toBe(true);
+      const wersje = await sql`select id, decided_at, superseded_at from setup_versions where setup_id = ${sId} order by version`;
+      expect(wersje[0].superseded_at).not.toBeNull();
+      const t1 = new Date(wersje[0].decided_at).getTime();
+      const t2 = new Date(wersje[1].decided_at).getTime();
+      expect(t2).toBeGreaterThan(t1);
+      const polowa = new Date(Math.floor((t1 + t2) / 2)).toISOString();
+      const id = await trade(PRZYSZLOSC);
+      await sql`update trades set entry_time = ${polowa}::timestamptz where id = ${id}`;
+
+      const sug = await wywolaj(import("@/app/api/v2/ai-suggestions/route"), "POST", "/ai-suggestions", {
+        token: rw.token,
+        cialo: { kind: "trade_setup", target: { type: "trade", id }, payload: { setupSlug: slugN }, claim: "Wejscie pasuje do setupu.", evidence: [{ type: "trade", ref: id, note: "wejscie" }], evidenceLevel: "partial", n: 3 },
+      });
+      expect(sug.status, JSON.stringify(sug.json)).toBe(201);
+      const [{ payload }] = await sql`select payload from ai_suggestions where id = ${sug.json.suggestion.id}`;
+      expect(payload.setupVersionId).toBe(v1);
+      expect((await zatwierdzSugestie(sug.json.suggestion.id)).ok).toBe(true);
+      expect(await setupTradu(id)).toEqual({ setup_id: sId, setup_version_id: v1 });
+
+      // stara sugestia bez setupVersionId w payloadzie tez liczy wersje z chwili wejscia, nie dzisiejsza
+      const id2 = await trade(PRZYSZLOSC);
+      await sql`update trades set entry_time = ${polowa}::timestamptz where id = ${id2}`;
+      const [stara] = await sql`insert into ai_suggestions (kind, target, payload, claim, evidence, evidence_level, status) values ('trade_setup', ${sql.json({ type: "trade", id: id2 })}, ${sql.json({ setupSlug: slugN, setupId: sId })}, 'stara', ${sql.json([{ type: "trade", ref: id2, note: "x" }])}, 'inferred', 'pending') returning id`;
+      expect((await zatwierdzSugestie(stara.id)).ok).toBe(true);
+      expect((await setupTradu(id2)).setup_version_id).toBe(v1);
     });
   });
 

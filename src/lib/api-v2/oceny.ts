@@ -252,9 +252,20 @@ async function zapiszWerdyktNiezmienny(
   const sha = [...new Set(dowod.screenshots.map((s) => s.sha256))].sort();
   if (sha.length > 0) {
     const znalezione = await db
-      .select({ sha256: screenshots.sha256 })
+      .select({ sha256: screenshots.sha256, capturedAt: screenshots.capturedAt })
       .from(screenshots)
       .where(and(eq(screenshots.tradeId, trade.id), inArray(screenshots.sha256, sha)));
+    // Ocena »chart« nie moze opierac sie na zrzucie zrobionym PO wejsciu (audyt N3, 15.10.2026): pokazuje przyszlosc.
+    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt !== null && z.capturedAt.getTime() > trade.entryTime.getTime()) : [];
+    if (poWejsciu.length > 0) {
+      return {
+        ok: false,
+        status: 422,
+        kod: "look_ahead",
+        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (zrobiony ${z.capturedAt!.toISOString()})`).join(", ")} powstał po wejściu (${trade.entryTime.toISOString()}). Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
+        dodatkowe: { afterEntry: poWejsciu.map((z) => z.sha256) },
+      };
+    }
     const maja = new Set(znalezione.map((z) => z.sha256));
     const brak = sha.filter((s) => !maja.has(s));
     if (brak.length > 0) {

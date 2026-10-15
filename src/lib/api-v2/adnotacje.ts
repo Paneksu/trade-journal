@@ -8,6 +8,7 @@ import { sprawdzTekstBajtWBajt } from "@/lib/domain/notatki";
 import type { AdnotacjeListaQuery, AdnotacjeZapisSchema } from "./contract/funkcje";
 import { skrotTekstu } from "./skrot";
 import { zSlow } from "./slowa";
+import { sqlSlowaPoWejsciuUkrytego } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -194,7 +195,7 @@ export async function listaAdnotacji(tx: Db, f: z.output<typeof AdnotacjeListaQu
   if (f.sessionId) warunki.push(eq(chartAnnotations.backtestSessionId, f.sessionId));
   if (f.day) warunki.push(eq(chartAnnotations.day, f.day));
   const wiersze = await tx
-    .select({ a: chartAnnotations, w: userWords })
+    .select({ a: chartAnnotations, w: userWords, ukryte: sql<boolean>`coalesce(${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`)}, false)` })
     .from(chartAnnotations)
     .leftJoin(userWords, eq(chartAnnotations.wordsId, userWords.id))
     .where(and(...warunki))
@@ -203,7 +204,7 @@ export async function listaAdnotacji(tx: Db, f: z.output<typeof AdnotacjeListaQu
   const maWiecej = wiersze.length > f.limit;
   const strona = wiersze.slice(0, f.limit);
   return {
-    annotations: strona.map(({ a, w }) => ({
+    annotations: strona.map(({ a, w, ukryte }) => ({
       id: a.id,
       platform: a.platform,
       externalId: a.externalId,
@@ -217,7 +218,8 @@ export async function listaAdnotacji(tx: Db, f: z.output<typeof AdnotacjeListaQu
       timeFrom: a.timeFrom?.toISOString() ?? null,
       timeTo: a.timeTo?.toISOString() ?? null,
       capturedAt: a.capturedAt.toISOString(),
-      words: w ? zSlow(w) : null,
+      // Slowa dopisane po wejsciu trade'a z ukrytym wynikiem nie wychodza (slepa ocena); sam rysunek zostaje.
+      words: w && !ukryte ? zSlow(w) : null,
     })),
     nextAfter: maWiecej ? strona[strona.length - 1].a.id : null,
   };

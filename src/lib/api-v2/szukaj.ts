@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 
+import { sqlSlowaPoWejsciuUkrytego, sqlWynikUkryty } from "./ukrycie-wyniku";
+
 /**
  * Wyszukiwanie (model-danych 7, ADR-029): konfiguracja `simple` + `unaccent`
  * (przez IMMUTABLE `f_unaccent`) + `pg_trgm`. Nie `polish` - Postgres nie ma
@@ -91,8 +93,9 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
              jsonb_build_object('source', w.source, 'role', w.role, 'tradeId', w.trade_id, 'noteId', w.note_id,
                                 'backtestSessionId', w.backtest_session_id, 'day', w.day) as meta
         from user_words w
-       where w.search @@ ${zapytanie}
-          or lower(public.f_unaccent(w.text)) like ${wzorzecN} escape '\\'
+       where (w.search @@ ${zapytanie}
+          or lower(public.f_unaccent(w.text)) like ${wzorzecN} escape '\\')
+         and not ${sqlSlowaPoWejsciuUkrytego(sql`w.trade_id`, sql`w.day`, sql`w.captured_at`)}
        order by rank desc, w.id
        limit ${limit}`);
     for (const w of wiersze) wyniki.push({ type: "user_words", id: w.id, rank: Number(w.rank), title: w.title, snippet: w.snippet, meta: w.meta });
@@ -107,8 +110,9 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
              left(coalesce(t.note, t.mood_note, ''), 200) as snippet,
              jsonb_build_object('tradingDay', t.trading_day, 'direction', t.direction, 'status', t.status::text) as meta
         from trades t
-       where t.search @@ ${zapytanie}
-          or lower(public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))) like ${wzorzecN} escape '\\'
+       where (t.search @@ ${zapytanie}
+          or lower(public.f_unaccent(coalesce(t.note, '') || ' ' || coalesce(t.mood_note, ''))) like ${wzorzecN} escape '\\')
+         and not ${sqlWynikUkryty(sql`t.id`)}
        order by rank desc, t.id
        limit ${limit}`);
     for (const w of wiersze) wyniki.push({ type: "trade", id: w.id, rank: Number(w.rank), title: w.title, snippet: w.snippet, meta: w.meta });

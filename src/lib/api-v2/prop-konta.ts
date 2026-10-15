@@ -267,9 +267,12 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
   if (!obowiazujace) {
     return odrzuc(422, "no_rules", `Konto #${accountId} (${k.konto.name}) nie ma reguł prop obowiązujących w dniu ${dzien}. Przypnij preset: POST /api/v2/prop/accounts/${accountId}/rules (presety: GET /api/v2/prop/presets).`);
   }
-  const [{ od }] = await tx.select({ od: min(propRules.validFrom) }).from(propRules).where(eq(propRules.accountId, accountId));
+  // Poczatek historii liczymy z regul POTWIERDZONYCH i tej jednej obowiazujacej (nawet niepotwierdzonej): agent nie moze
+  // cofnac historii konta, dopisujac niepotwierdzona regule ze stara data validFrom.
+  const [{ od: odPotwierdzonych }] = await tx.select({ od: min(propRules.validFrom) }).from(propRules).where(and(eq(propRules.accountId, accountId), isNotNull(propRules.confirmedAt)));
+  const od = odPotwierdzonych !== null && odPotwierdzonych < obowiazujace.regula.validFrom ? odPotwierdzonych : obowiazujace.regula.validFrom;
   // Stan na dzien `dzien`: pozniejsze trade'y nie moga wplywac na status "z przeszlosci" (review P3).
-  const transakcje = await transakcjeKonta(tx, accountId, od ?? obowiazujace.regula.validFrom, dzien);
+  const transakcje = await transakcjeKonta(tx, accountId, od, dzien);
   const [wyplata] = await tx.select({ d: max(propLedger.occurredOn) }).from(propLedger).where(and(eq(propLedger.accountId, accountId), eq(propLedger.kind, "payout")));
 
   let ryzyko: number | null = null;
@@ -293,7 +296,7 @@ export async function statusKonta(tx: Db, accountId: number, q: z.output<typeof 
   }
 
   // Niepotwierdzone reguly (confirmed_at null): liczymy na OSTRZEJSZEJ z dwoch, ostatniej potwierdzonej i nowej,
-  // pole po polu (Slowa uzytkownika 15.10.2026: «Licz na ostrzejszej»). Potwierdza je uzytkownik w aplikacji.
+  // pole po polu (Slowa uzytkownika 15.10.2026: «Licz na ostrzejszej», doprecyzowane «Zawsze bezpieczniej dla mnie»: cel od WIEKSZEGO, consistency od MNIEJSZEGO). Potwierdza je uzytkownik w aplikacji.
   const rulesConfirmed = obowiazujace.regula.confirmedAt !== null;
   let zasady = naZasady(obowiazujace.regula);
   let zrodloZasad: StatusKontaWynik["rulesUsed"]["source"] = "confirmed";
