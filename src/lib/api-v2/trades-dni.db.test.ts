@@ -76,6 +76,49 @@ describe.skipIf(!MOZNA_NA_BAZIE)("trades, days, sessions, skips, reviews przez v
       expect(w).toMatchObject({ pnl: 40000, risk_amount: 20000, r: 2, status: "closed", dzien: DZIEN, source: "fxreplay", external_ref: `${REF}-1` });
     });
 
+    it("tagi z API ida do kolejki (Slowa uzytkownika 15.10.2026: «Tagi z API przez kolejke»): zero zapisow do trade_tags, synchronizacja nie kasuje tagow zatwierdzonych ani uzytkownika", async () => {
+      const NAZWA = `Tag kolejki ${znacznik}`;
+      const [kat] = await sql`select id from tag_categories where key = 'confluence'`;
+      const [tag] = await sql`insert into tags (category_id, name) values (${kat.id}, ${NAZWA}) returning id`;
+      const kolejka = async (id: number) => sql`select id, status, payload from ai_suggestions where kind = 'tag' and target = ${sql.json({ type: "trade", id })} order by id`;
+      try {
+        const body = (extra: Record<string, unknown> = {}) => trade(40, { tags: [{ category: "confluence", name: NAZWA, interval: "5m" }], ...extra });
+        const r1 = await (await wyslijTrady([body()])).json();
+        expect(r1.results[0].status, JSON.stringify(r1)).toBe("created");
+        const id = r1.results[0].id as number;
+        expect((await sql`select count(*)::int as n from trade_tags where trade_id = ${id}`)[0].n).toBe(0);
+        const k1 = await kolejka(id);
+        expect(k1).toHaveLength(1);
+        expect(k1[0]).toMatchObject({ status: "pending", payload: { tagId: tag.id, interval: "5m" } });
+
+        // zmiana trade'a przy tych samych tagach nie dubluje oczekujacej sugestii
+        const r2 = await (await wyslijTrady([body({ exits: [{ time: `${DZIEN}T14:55:00Z`, price: 20025 }] })], { mode: "update" })).json();
+        expect(r2.results[0].status, JSON.stringify(r2)).toBe("updated");
+        expect(await kolejka(id)).toHaveLength(1);
+
+        // po zatwierdzeniu w UI tag liczy sie jako origin = ai
+        const { zatwierdzSugestie } = await import("@/lib/decyzje/sugestie");
+        expect((await zatwierdzSugestie(k1[0].id)).ok).toBe(true);
+        const [zat] = await sql`select origin, interval from trade_tags where trade_id = ${id}`;
+        expect(zat).toEqual({ origin: "ai", interval: "5m" });
+        // tag uzytkownika na innym interwale
+        await sql`insert into trade_tags (trade_id, tag_id, interval, origin) values (${id}, ${tag.id}, '1h', 'user')`;
+
+        // synchronizacja BEZ tagow nie kasuje ani zatwierdzonego, ani uzytkownika; z tagiem juz zatwierdzonym nie tworzy sugestii
+        const r3 = await (await wyslijTrady([trade(40, { exits: [{ time: `${DZIEN}T14:58:00Z`, price: 20028 }] })], { mode: "update" })).json();
+        expect(r3.results[0].status, JSON.stringify(r3)).toBe("updated");
+        const r4 = await (await wyslijTrady([body({ exits: [{ time: `${DZIEN}T14:59:00Z`, price: 20029 }] })], { mode: "update" })).json();
+        expect(r4.results[0].status, JSON.stringify(r4)).toBe("updated");
+        const po = await sql`select origin, interval from trade_tags where trade_id = ${id} order by interval`;
+        expect(po).toEqual([{ origin: "user", interval: "1h" }, { origin: "ai", interval: "5m" }]);
+        expect((await kolejka(id)).filter((k) => k.status === "pending")).toHaveLength(0);
+      } finally {
+        await sql`delete from ai_suggestions where kind = 'tag' and payload->>'tagId' = ${String(tag.id)}`;
+        await sql`delete from trades where external_ref = ${`${REF}-40`}`;
+        await sql`delete from tags where id = ${tag.id}`;
+      }
+    });
+
     it("persistTrade z tx czyta instrument w TEJ SAMEJ transakcji (instrument jeszcze niezatwierdzony) i nic nie zostaje po rollbacku", async () => {
       const { persistTrade } = await import("@/lib/trades/persist");
       const { db } = await import("@/lib/db");

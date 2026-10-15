@@ -2521,7 +2521,7 @@
     "/trades/{id}/reviews": {
       "post": {
         "operationId": "postTradesIdReviews",
-        "summary": "Ocena AI trade'a z regulami; jedna na podstawe (chart | history). Bez evidence ponowne wyslanie podmienia ocene (ADR-028); z evidence (swiece OHLC + sha256 zrzutow) werdykt jest NIEZMIENNY z as_of i evidence_hash (ADR-033): ta sama tresc to 200, inna to 409.",
+        "summary": "Ocena AI trade'a z regulami; jedna na podstawe (chart | history). KAZDY werdykt jest NIEZMIENNY (Slowa uzytkownika 15.10.2026: «Niezmienny zawsze»): serwer stawia as_of i evidence_hash, takze bez evidence (swiece OHLC + sha256 zrzutow); ta sama tresc to 200, inna to 409, a poprawka to korekta user_override. Werdykty sprzed tej zmiany (bez as_of) zostaja czytelne.",
         "security": [
           {
             "bearer": []

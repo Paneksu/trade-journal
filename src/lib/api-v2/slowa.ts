@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, eq, gt, sql, type SQL } from "drizzle-orm";
 
-import { sqlSlowaPoWejsciuUkrytego } from "./ukrycie-wyniku";
+import { czySlowaUkryte, sqlSlowaPoWejsciuUkrytego } from "./ukrycie-wyniku";
 import type { z } from "zod";
 
 import { notes, userWords } from "@/lib/db/schema";
@@ -132,7 +132,7 @@ export async function listaSlow(
   f: z.output<typeof SlowaListaQuery>,
 ) {
   // Slowa napisane po wejsciu trade'a z ukrytym wynikiem nie wychodza z API (slepa ocena), takze w listach.
-  const warunki: SQL[] = [gt(userWords.id, f.after), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`)}`];
+  const warunki: SQL[] = [gt(userWords.id, f.after), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}`];
   if (f.tradeId) warunki.push(eq(userWords.tradeId, f.tradeId));
   if (f.noteId) warunki.push(eq(userWords.noteId, f.noteId));
   if (f.backtestSessionId) warunki.push(eq(userWords.backtestSessionId, f.backtestSessionId));
@@ -154,6 +154,8 @@ export async function ustawInterpretacje(
   id: number,
   d: z.output<typeof InterpretacjaSchema>,
 ): Promise<WynikInterpretacji> {
+  // Slepa ocena: PUT interpretacji ukrytych slow to 404 przed odczytem (409 oddawalby model i czas interpretacji).
+  if (await czySlowaUkryte(tx, id)) return { ok: false, status: 404, kod: "not_found", komunikat: `Słowa użytkownika #${id} nie istnieją.` };
   const [obecne] = await tx.select().from(userWords).where(eq(userWords.id, id)).for("update").limit(1);
   if (!obecne) return { ok: false, status: 404, kod: "not_found", komunikat: `Słowa użytkownika #${id} nie istnieją.` };
   if (obecne.aiInterpretation !== null) {

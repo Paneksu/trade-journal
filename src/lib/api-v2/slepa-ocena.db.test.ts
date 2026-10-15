@@ -106,7 +106,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     const adn = await get(import("@/app/api/v2/chart-annotations/route"), `/chart-annotations?tradeId=${id}`);
     const poAdn = adn.json.annotations.find((a: { externalId: string }) => a.externalId === `po-${znacznik}`);
     const przedAdn = adn.json.annotations.find((a: { externalId: string }) => a.externalId === `przed-${znacznik}`);
-    expect(poAdn.words).toBeNull();
+    expect(poAdn).toBeUndefined(); // rysunek po wejsciu (geometria) nie wychodzi wcale
     expect(przedAdn.words.text).toContain("Stop tu");
 
     const szukaj = await get(import("@/app/api/v2/search/route"), `/search?q=${TOKEN}`);
@@ -124,7 +124,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     const wTradzie = szczegoly.json.userWords.map((w: { id: number }) => w.id);
     expect(wTradzie).toContain(przed.id);
     expect(wTradzie).not.toContain(po.id);
-    expect(szczegoly.json.chartAnnotations.find((a: { externalId: string }) => a.externalId === `po-${znacznik}`).words).toBeNull();
+    expect(szczegoly.json.chartAnnotations.find((a: { externalId: string }) => a.externalId === `po-${znacznik}`)).toBeUndefined();
     expect(JSON.stringify(szczegoly.json)).not.toContain("wygralem dwa R");
     expect(JSON.stringify(szczegoly.json)).not.toContain("Cel osiagniety");
 
@@ -346,7 +346,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
     expect(t.json.resultHidden).toBe(true);
     const po = t.json.screenshots.find((s: { file: string }) => s.file.endsWith("po.webp"));
     const przed = t.json.screenshots.find((s: { file: string }) => s.file.endsWith("przed.webp"));
-    expect(po).toMatchObject({ caption: null, capturedAt: null, chartState: null });
+    expect(po).toBeUndefined(); // zrzut po wejsciu nie wychodzi wcale (ADR: na wykresie widac wynik)
     expect(przed.caption).toBe("Setup przed wejsciem");
     expect(przed.capturedAt).not.toBeNull();
     const korekta = t.json.reviews.find((r: { kind: string }) => r.kind === "user_override");

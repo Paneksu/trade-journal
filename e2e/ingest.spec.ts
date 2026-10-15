@@ -111,6 +111,7 @@ test.describe("API synchronizacji", () => {
   async function posprzataj(wszystkieE2e: boolean) {
     const wzorzec = wszystkieE2e ? "%e2e-%" : `%e2e-${RUN}%`;
     const idy = await sql`select id from trades where external_ref like ${wzorzec}`;
+    if (idy.length > 0) await sql`delete from ai_suggestions where kind = 'tag' and (target->>'id')::int = any(${idy.map((i) => i.id)})`;
     await sql`delete from trades where external_ref like ${wzorzec}`;
     await sql`delete from ingest_skips where external_ref like ${wzorzec}`;
     await sql`delete from backtest_sessions where external_ref like ${wzorzec}`;
@@ -311,8 +312,10 @@ test.describe("API synchronizacji", () => {
     expect(w.updated_at.getTime()).toBe(w.ingested_at!.getTime());
     expect(w.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(w.backtest_session_id).toBe(sesjaBacktestId);
-    const tagi = await sql`select tt.interval from trade_tags tt join tags t on t.id = tt.tag_id where tt.trade_id = ${id} order by tt.interval`;
-    expect(tagi.map((x) => x.interval)).toEqual(["1h", "5m"]);
+    // Tagi z API ida do kolejki zatwierdzen, nie do trade_tags (Slowa uzytkownika 15.10.2026: «Tagi z API przez kolejke»).
+    expect((await sql`select count(*)::int as n from trade_tags where trade_id = ${id}`)[0].n).toBe(0);
+    const kolejka = await sql`select payload->>'interval' as interval from ai_suggestions where kind = 'tag' and status = 'pending' and target = ${sql.json({ type: "trade", id })} order by 1`;
+    expect(kolejka.map((x) => x.interval)).toEqual(["1h", "5m"]);
     const [shot] = await sql`select readiness from trades where id = ${id}`;
     expect(shot.readiness).toBe(7);
 

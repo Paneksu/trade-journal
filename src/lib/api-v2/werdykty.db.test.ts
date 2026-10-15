@@ -71,9 +71,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     throw new Error("Oczekiwano bledu SQL, a zapytanie przeszlo");
   }
 
+  let kolorZrzutu = Math.floor(Math.random() * 100); // kolejne zrzuty roznia sie kolorem (kolizja sha256 w obrebie trade'a dawala flaky)
   // Domyslnie zrzut jest z chwili PRZED wejsciem (14:30Z przy wejsciu 14:35Z): ocena »chart« nie moze miec zrzutow po wejsciu.
   async function wgrajZrzut(tradeId: number, origin: string, capturedAt = `${DZIEN}T14:30:00+00:00`): Promise<{ id: number; sha256: string }> {
-    const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: Math.floor(Math.random() * 255), g: 10, b: 20 } } }).png().toBuffer();
+    const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: (kolorZrzutu += 7) % 250, g: 10, b: 20 } } }).png().toBuffer();
     const form = new FormData();
     form.append("shot", new File([new Uint8Array(png)], "wykres.png", { type: "image/png" }));
     form.append("interval", "5m");
@@ -409,26 +410,30 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(bezToken.status).toBe(401);
   });
 
-  it("stary tryb (bez evidence): ponowne wyslanie podmienia ocene, a dopiero evidence zamienia ja w niezmienna", async () => {
+  it("werdykt BEZ evidence tez jest niezmienny (Slowa uzytkownika 15.10.2026: «Niezmienny zawsze»): ta sama tresc 200, inna 409; stary werdykt bez as_of zostaje czytelny", async () => {
     const id = await nowyOtwarty();
     const pierwsza = await ocena(id, { basis: "chart", brainVerdict: "czekaj", summaryMd: "v1" });
-    expect(pierwsza.status).toBe(201);
-    expect(pierwsza.json.immutable).toBe(false);
+    expect(pierwsza.status, JSON.stringify(pierwsza.json)).toBe(201);
+    expect(pierwsza.json.immutable).toBe(true);
+    expect(pierwsza.json.asOf).not.toBeNull();
+    expect(pierwsza.json.evidenceHash).toMatch(/^[0-9a-f]{64}$/);
     zgodneZKontraktem("post", "/trades/{id}/reviews", pierwsza.json);
-    const druga = await ocena(id, { basis: "chart", brainVerdict: "wejdz", summaryMd: "v2" });
-    expect(druga.status).toBe(200);
-    expect(druga.json.created).toBe(false);
-    const [w] = await sql`select summary_md, as_of from trade_reviews where trade_id = ${id}`;
-    expect(w).toEqual({ summary_md: "v2", as_of: null });
+    const powtorka = await ocena(id, { basis: "chart", brainVerdict: "czekaj", summaryMd: "v1" });
+    expect(powtorka.status).toBe(200);
+    expect(powtorka.json.created).toBe(false);
+    const inna = await ocena(id, { basis: "chart", brainVerdict: "wejdz", summaryMd: "v2" });
+    expect(inna.status).toBe(409);
+    expect(inna.json.code).toBe("verdict_immutable");
+    const [w] = await sql`select summary_md, as_of is not null as datowany from trade_reviews where trade_id = ${id}`;
+    expect(w).toEqual({ summary_md: "v1", datowany: true });
+    // dopisanie dowodu to tez inna tresc: korekta idzie przez user_override
+    const zDowodem = await ocena(id, { basis: "chart", brainVerdict: "czekaj", summaryMd: "v1", evidence: { intervalMinutes: 5, candles: swiece() } });
+    expect(zDowodem.status).toBe(409);
 
-    const niezmienna = await ocena(id, { basis: "chart", brainVerdict: "wejdz", summaryMd: "v3", evidence: { intervalMinutes: 5, candles: swiece() } });
-    expect(niezmienna.status).toBe(201);
-    expect(niezmienna.json.immutable).toBe(true);
-    const [ile] = await sql`select count(*)::int as n from trade_reviews where trade_id = ${id}`;
-    expect(ile.n).toBe(1);
-    // po nadaniu as_of stary tryb tez nie podmieni (legacy POST trafia w niezmienny wiersz)
-    const stary = await ocena(id, { basis: "chart", brainVerdict: "odpusc", summaryMd: "v4" });
-    expect(stary.status).toBe(409);
-    expect(stary.json.code).toBe("verdict_immutable");
+    // werdykt sprzed zmiany (bez as_of) zostaje czytelny; powstaje tylko z SQL, bo API takich juz nie tworzy
+    const id2 = await nowyOtwarty();
+    await sql`insert into trade_reviews (trade_id, basis, kind, summary_md, brain_verdict) values (${id2}, 'chart', 'ai', 'stary', 'czekaj')`;
+    const t = await trade(id2);
+    expect(t.json.reviews[0]).toMatchObject({ summaryMd: "stary", immutable: false, asOf: null });
   });
 });

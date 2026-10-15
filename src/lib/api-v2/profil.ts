@@ -5,6 +5,7 @@ import type { z } from "zod";
 import { aiSuggestions, interpretationCorrections, profileTermSources, profileTerms, userWords } from "@/lib/db/schema";
 
 import type { KorektaInterpretacjiSchema } from "./contract/funkcje";
+import { ukryteSlowa } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -21,13 +22,16 @@ type Db = Transakcja | typeof import("@/lib/db").db;
 export async function odczytajProfil(tx: Db) {
   const terminy = await tx.select().from(profileTerms).where(inArray(profileTerms.status, ["confirmed", "proposed"])).orderBy(asc(profileTerms.id));
   const idsTerminow = terminy.map((t) => t.id);
-  const zrodla = idsTerminow.length
+  const zrodlaWszystkie = idsTerminow.length
     ? await tx
         .select({ termId: profileTermSources.termId, wordsId: userWords.id, text: userWords.text, tradeId: userWords.tradeId, noteId: userWords.noteId })
         .from(profileTermSources)
         .innerJoin(userWords, eq(profileTermSources.wordsId, userWords.id))
         .where(inArray(profileTermSources.termId, idsTerminow))
     : [];
+  // Slepa ocena: slowa ukryte (po wejsciu trade'a z ukrytym wynikiem, przypiete do ukrytej notatki) nie wychodza ze slownika.
+  const ukryteZrodla = await ukryteSlowa(tx, zrodlaWszystkie.map((z) => z.wordsId));
+  const zrodla = zrodlaWszystkie.filter((z) => !ukryteZrodla.has(z.wordsId));
 
   const korekty = await tx
     .select({
@@ -38,7 +42,9 @@ export async function odczytajProfil(tx: Db) {
     .innerJoin(userWords, eq(interpretationCorrections.wordsId, userWords.id))
     .orderBy(desc(interpretationCorrections.id))
     .limit(20);
-  const idsKorekt = korekty.map((k) => k.c.correctionWordsId);
+  const ukryteKorekty = await ukryteSlowa(tx, korekty.flatMap((k) => [k.c.wordsId, k.c.correctionWordsId]));
+  const widoczneKorekty = korekty.filter((k) => !ukryteKorekty.has(k.c.wordsId) && !ukryteKorekty.has(k.c.correctionWordsId));
+  const idsKorekt = widoczneKorekty.map((k) => k.c.correctionWordsId);
   const slowaKorekt = idsKorekt.length
     ? new Map((await tx.select({ id: userWords.id, text: userWords.text }).from(userWords).where(inArray(userWords.id, idsKorekt))).map((s) => [s.id, s.text]))
     : new Map<number, string>();
@@ -76,7 +82,7 @@ export async function odczytajProfil(tx: Db) {
       decidedAt: t.decidedAt?.toISOString() ?? null,
       sources: zrodla.filter((z) => z.termId === t.id).map((z) => ({ wordsId: z.wordsId, text: z.text, tradeId: z.tradeId, noteId: z.noteId })),
     })),
-    corrections: korekty.map(({ c, przed }) => ({
+    corrections: widoczneKorekty.map(({ c, przed }) => ({
       id: c.id,
       wordsId: c.wordsId,
       words: przed,

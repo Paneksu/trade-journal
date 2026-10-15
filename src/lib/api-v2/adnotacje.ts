@@ -8,7 +8,7 @@ import { sprawdzTekstBajtWBajt } from "@/lib/domain/notatki";
 import type { AdnotacjeListaQuery, AdnotacjeZapisSchema } from "./contract/funkcje";
 import { skrotTekstu } from "./skrot";
 import { zSlow } from "./slowa";
-import { sqlSlowaPoWejsciuUkrytego } from "./ukrycie-wyniku";
+import { sqlSlowaPoWejsciuUkrytego, sqlSlowaUkryte } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -190,12 +190,13 @@ export async function zapiszAdnotacje(tx: Transakcja, api: KontekstApi, b: Wejsc
 }
 
 export async function listaAdnotacji(tx: Db, f: z.output<typeof AdnotacjeListaQuery>) {
-  const warunki: SQL[] = [gt(chartAnnotations.id, f.after)];
+  // Slepa ocena: rysunki (geometria: ceny i czasy) narysowane po wejsciu trade'a z ukrytym wynikiem nie wychodza wcale.
+  const warunki: SQL[] = [gt(chartAnnotations.id, f.after), sql`not ${sqlSlowaUkryte({ tradeId: sql`${chartAnnotations.tradeId}`, day: sql`${chartAnnotations.day}`, capturedAt: sql`${chartAnnotations.capturedAt}`, noteId: sql`null` })}`];
   if (f.tradeId) warunki.push(eq(chartAnnotations.tradeId, f.tradeId));
   if (f.sessionId) warunki.push(eq(chartAnnotations.backtestSessionId, f.sessionId));
   if (f.day) warunki.push(eq(chartAnnotations.day, f.day));
   const wiersze = await tx
-    .select({ a: chartAnnotations, w: userWords, ukryte: sql<boolean>`coalesce(${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`)}, false)` })
+    .select({ a: chartAnnotations, w: userWords, ukryte: sql<boolean>`coalesce(${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}, false)` })
     .from(chartAnnotations)
     .leftJoin(userWords, eq(chartAnnotations.wordsId, userWords.id))
     .where(and(...warunki))

@@ -294,7 +294,7 @@ async function przetworzPozycje(
       externalRef: t.externalRef,
       sourceSnapshot: { v: 1, hash: skrot, payload: JSON.parse(JSON.stringify(bezSnapshotu)), snapshot: snapshot ?? null },
     },
-    { dryRun, tx },
+    { dryRun, tx, tagiPrzezKolejke: true },
   ));
   if (!wynikZapisu.ok) {
     return {

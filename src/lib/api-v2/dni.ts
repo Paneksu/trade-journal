@@ -11,7 +11,7 @@ import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 import type { DzienQuery, DzienZapisSchema } from "./contract/v2";
 import type { Zapis } from "./zapis";
 import { zSlow } from "./slowa";
-import { sqlNotatkaPoWejsciuUkrytego, sqlSlowaPoWejsciuUkrytego, ukryteTrady } from "./ukrycie-wyniku";
+import { sqlNotatkaUkryta, sqlSlowaPoWejsciuUkrytego, ukryteTrady } from "./ukrycie-wyniku";
 
 /**
  * Dzien (plan: `days/:date`). Odczyt zbiera wszystko, co wisi na dniu; zapis
@@ -52,13 +52,13 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
   const slowa = await db
     .select()
     .from(userWords)
-    .where(and(eq(userWords.day, data), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`)}`))
+    .where(and(eq(userWords.day, data), sql`not ${sqlSlowaPoWejsciuUkrytego(sql`${userWords.tradeId}`, sql`${userWords.day}`, sql`${userWords.capturedAt}`, sql`${userWords.noteId}`)}`))
     .orderBy(asc(userWords.id))
     .limit(200);
   const notatki = await db
     .select({ id: notes.id, kind: notes.kind, slug: notes.slug, title: notes.title, rev: notes.rev })
     .from(notes)
-    .where(and(eq(notes.day, data), isNull(notes.archivedAt), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
+    .where(and(eq(notes.day, data), isNull(notes.archivedAt), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`))
     .orderBy(asc(notes.id))
     .limit(200);
 
@@ -70,9 +70,10 @@ export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>
           id: notatkaDnia.id,
           preSession: notatkaDnia.preSession,
           postSession: dzienUkryty ? null : notatkaDnia.postSession,
-          mood: notatkaDnia.mood,
+          // Ocena i nastroj dnia pisane po sesji moga zdradzac wynik (Slowa uzytkownika 15.10.2026: «Ukryj tez notatki dnia po wejsciu»).
+          mood: dzienUkryty ? null : notatkaDnia.mood,
           energy: notatkaDnia.energy,
-          dayRating: notatkaDnia.dayRating,
+          dayRating: dzienUkryty ? null : notatkaDnia.dayRating,
           noTrade: notatkaDnia.noTrade,
           noTradeReason: notatkaDnia.noTradeReason,
           bias: notatkaDnia.bias,

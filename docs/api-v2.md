@@ -118,7 +118,7 @@ Kontrakt i schematy odpowiedzi: `docs/openapi-v2.json`. Tabele: `docs/v2/model-d
 |---|---|---|
 | `GET /me` | read | kim jest token: zakresy, aktor (bez sekretu) |
 | `GET /trades/:id` | read | trade ze zrzutami, ocenami, planem, słowami; `resultHidden`, gdy trade otwarty ma werdykt |
-| `POST /trades/:id/reviews` | write | z `evidence` (świece + sha256 zrzutów): werdykt NIEZMIENNY z `as_of`; bez `evidence` stara podmiana (ADR-028) |
+| `POST /trades/:id/reviews` | write | każdy werdykt NIEZMIENNY z `as_of` (także bez `evidence`; z `evidence` = świece + sha256 zrzutów); powtórka tej samej treści 200, inna 409, poprawka = `user_override` |
 | `PATCH`/`PUT /trades/:id/reviews/:rid` | write | zawsze `409`; korekta to `POST .../override` (`user_override`) |
 | `POST /trades/:id/screenshots` | write | `origin=manual` dopisuje, `tradingview`/`fxreplay` zastępują swoje poprzednie wydanie; `capturedAt`, `chartState` |
 | `POST /notes/:id/attachments`, `POST /days/:date/attachments` | write | PNG/JPG/WebP/HEIC → WebP + miniatura |

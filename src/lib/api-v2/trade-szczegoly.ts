@@ -23,7 +23,7 @@ import { zrodloDanych } from "@/lib/domain/zrodla";
 
 import { planTradu } from "./plany";
 import { zSlow } from "./slowa";
-import { czyWynikUkryty, sqlNotatkaPoWejsciuUkrytego, wejscieTradu } from "./ukrycie-wyniku";
+import { czyWynikUkryty, sqlNotatkaUkryta, sqlPoWejsciu, sqlSlowaUkryte, ukryteSlowa } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -59,7 +59,8 @@ export async function szczegolyTradu(tx: Db, id: number) {
 
   const [oceny, zrzuty, tagi, slowa, adnotacje, powiazania] = await Promise.all([
     tx.select().from(tradeReviews).where(eq(tradeReviews.tradeId, id)).orderBy(asc(tradeReviews.basis), asc(tradeReviews.id)),
-    tx.select().from(screenshots).where(eq(screenshots.tradeId, id)).orderBy(asc(screenshots.sortOrder), asc(screenshots.id)),
+    // Zrzuty zrobione po wejsciu (albo bez czasu) trade'a z ukrytym wynikiem NIE wychodza wcale: na wykresie widac wynik.
+    tx.select().from(screenshots).where(and(eq(screenshots.tradeId, id), sql`not ${sqlPoWejsciu(sql`${screenshots.tradeId}`, sql`${screenshots.capturedAt}`)}`)).orderBy(asc(screenshots.sortOrder), asc(screenshots.id)),
     tx
       .select({ assignmentId: tradeTags.id, tagId: tags.id, name: tags.name, category: tagCategories.key, interval: tradeTags.interval, origin: tradeTags.origin })
       .from(tradeTags)
@@ -67,13 +68,14 @@ export async function szczegolyTradu(tx: Db, id: number) {
       .innerJoin(tagCategories, eq(tags.categoryId, tagCategories.id))
       .where(eq(tradeTags.tradeId, id))
       .orderBy(asc(tradeTags.id)),
-    tx.select().from(userWords).where(eq(userWords.tradeId, id)).orderBy(asc(userWords.id)),
-    tx.select().from(chartAnnotations).where(eq(chartAnnotations.tradeId, id)).orderBy(asc(chartAnnotations.id)),
+    tx.select().from(userWords).where(and(eq(userWords.tradeId, id), sql`not ${sqlSlowaUkryte({ tradeId: sql`${userWords.tradeId}`, day: sql`${userWords.day}`, capturedAt: sql`${userWords.capturedAt}`, noteId: sql`${userWords.noteId}` })}`)).orderBy(asc(userWords.id)),
+    // Rysunki (geometria: ceny i czasy) narysowane po wejsciu nie wychodza wcale; rysunki sprzed wejscia zostaja.
+    tx.select().from(chartAnnotations).where(and(eq(chartAnnotations.tradeId, id), sql`not ${sqlSlowaUkryte({ tradeId: sql`${chartAnnotations.tradeId}`, day: sql`${chartAnnotations.day}`, capturedAt: sql`${chartAnnotations.capturedAt}`, noteId: sql`null` })}`)).orderBy(asc(chartAnnotations.id)),
     tx
       .select({ id: tradeNoteLinks.id, noteId: tradeNoteLinks.noteId, role: tradeNoteLinks.role, origin: tradeNoteLinks.origin, title: notes.title, kind: notes.kind, slug: notes.slug })
       .from(tradeNoteLinks)
       .innerJoin(notes, eq(tradeNoteLinks.noteId, notes.id))
-      .where(and(eq(tradeNoteLinks.tradeId, id), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
+      .where(and(eq(tradeNoteLinks.tradeId, id), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`))
       .orderBy(asc(tradeNoteLinks.id)),
   ]);
 
@@ -89,12 +91,11 @@ export async function szczegolyTradu(tx: Db, id: number) {
   const dzienOceny = tr.tradingDay ?? tr.entryTime.toISOString().slice(0, 10);
 
   // Co powstalo PO wejsciu, moze zdradzic wynik: przy ukryciu wychodzi tylko to, co z chwili przed wejsciem.
-  const wejscie = (await wejscieTradu(tx, id)) ?? tr.entryTime;
-  const poWejsciu = (t: Date | null) => t === null || t.getTime() > wejscie.getTime();
   const wyjscia = ukryj ? [] : await tx.select().from(tradeExits).where(eq(tradeExits.tradeId, id)).orderBy(asc(tradeExits.sortOrder), asc(tradeExits.id));
   const plan = await planTradu(tx, id);
 
   const slowaAdnotacji = adnotacje.map((a) => a.wordsId).filter((x): x is number => x !== null);
+  const ukryteSlowaAdnotacji = await ukryteSlowa(tx, slowaAdnotacji);
   const tekstyAdnotacji = slowaAdnotacji.length
     ? new Map((await tx.select().from(userWords).where(inArray(userWords.id, slowaAdnotacji))).map((s) => [s.id, s]))
     : new Map<number, typeof userWords.$inferSelect>();
@@ -137,7 +138,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
     },
     resultHidden: ukryj,
     resultHiddenReason: ukryj ? "Trade nie jest zamknięty, a ma werdykt AI wydany przed wynikiem. Wynik pokaże się po zamknięciu." : null,
-    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations.words(po wejsciu)", "screenshots.caption/capturedAt/chartState(po wejsciu)", "links(notatki po wejsciu)"] : [],
+    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations(po wejsciu)", "screenshots(po wejsciu)", "links(notatki po wejsciu)", "plan.addenda/thesis(po wejsciu)"] : [],
     hiddenReviews: ukryteOceny,
     result: ukryj
       ? null
@@ -159,7 +160,6 @@ export async function szczegolyTradu(tx: Db, id: number) {
         },
     plan,
     screenshots: zrzuty.map((z) => {
-      const schowaj = ukryj && poWejsciu(z.capturedAt);
       return {
         id: z.id,
         file: z.file,
@@ -167,9 +167,9 @@ export async function szczegolyTradu(tx: Db, id: number) {
         interval: z.interval,
         origin: z.origin,
         sha256: z.sha256,
-        capturedAt: schowaj ? null : (z.capturedAt?.toISOString() ?? null),
-        chartState: schowaj ? null : (z.chartState ?? null),
-        caption: schowaj ? null : z.caption,
+        capturedAt: z.capturedAt?.toISOString() ?? null,
+        chartState: z.chartState ?? null,
+        caption: z.caption,
         width: z.width,
         height: z.height,
       };
@@ -209,7 +209,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
         })),
       };
     }),
-    userWords: (ukryj ? slowa.filter((s) => !poWejsciu(s.capturedAt)) : slowa).map(zSlow),
+    userWords: slowa.map(zSlow),
     chartAnnotations: adnotacje.map((a) => ({
       id: a.id,
       platform: a.platform,
@@ -221,7 +221,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
       timeFrom: a.timeFrom?.toISOString() ?? null,
       timeTo: a.timeTo?.toISOString() ?? null,
       capturedAt: a.capturedAt.toISOString(),
-      words: a.wordsId === null ? null : (() => { const s = tekstyAdnotacji.get(a.wordsId); return s && !(ukryj && poWejsciu(s.capturedAt)) ? zSlow(s) : null; })(),
+      words: a.wordsId === null ? null : (() => { const s = tekstyAdnotacji.get(a.wordsId); return s && !ukryteSlowaAdnotacji.has(s.id) ? zSlow(s) : null; })(),
     })),
     links: powiazania,
   };

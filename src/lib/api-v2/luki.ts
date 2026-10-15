@@ -7,6 +7,7 @@ import { mentorClaims, mentorSources, notes, setups, strategyGaps, trades, userW
 import type { LukaUtworzSchema, LukiListaQuery } from "./contract/funkcje";
 import { skrotTekstu } from "./skrot";
 import { zSlow } from "./slowa";
+import { ukryteSlowa } from "./ukrycie-wyniku";
 import type { KontekstApi, Transakcja } from "./with-api";
 
 /**
@@ -133,7 +134,9 @@ export async function listaLuk(tx: Db, f: z.output<typeof LukiListaQuery>) {
         .where(inArray(mentorClaims.id, idsClaim))
     : [];
   const idsSlow = strona.map((l) => l.answerWordsId).filter((x): x is number => x !== null);
-  const slowa = idsSlow.length ? new Map((await tx.select().from(userWords).where(inArray(userWords.id, idsSlow))).map((s) => [s.id, s])) : new Map<number, typeof userWords.$inferSelect>();
+  // Slepa ocena: odpowiedz (slowa) ukryta po wejsciu trade'a z ukrytym wynikiem nie wychodzi z listy luk.
+  const ukryteOdp = await ukryteSlowa(tx, idsSlow);
+  const slowa = idsSlow.length ? new Map((await tx.select().from(userWords).where(inArray(userWords.id, idsSlow))).filter((s) => !ukryteOdp.has(s.id)).map((s) => [s.id, s])) : new Map<number, typeof userWords.$inferSelect>();
   const slugi = strona.map((l) => l.setupId).filter((x): x is number => x !== null);
   const setupy = slugi.length ? new Map((await tx.select({ id: setups.id, slug: setups.slug, name: setups.name }).from(setups).where(inArray(setups.id, slugi))).map((s) => [s.id, s])) : new Map<number, { id: number; slug: string; name: string }>();
 

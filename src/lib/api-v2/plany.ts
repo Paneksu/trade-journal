@@ -18,7 +18,7 @@ import { computeTrade } from "@/lib/domain/calc";
 import { mapujSymbol } from "@/lib/domain/tradingview";
 import { instrumentSpec } from "@/lib/queries/dictionaries";
 
-import { czyWynikUkryty, wejscieTradu } from "./ukrycie-wyniku";
+import { czyWynikUkryty, ukryteSlowa, wejscieTradu } from "./ukrycie-wyniku";
 import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { PlanDopisekSchema, PlanUtworzSchema, PlanyListaQuery } from "./contract/funkcje";
 import { numerZestawu } from "./reguly";
@@ -379,7 +379,9 @@ export async function szczegolyPlanu(tx: Db, planId: number) {
         .from(userWords)
         .where(sql`${userWords.id} in (${sql.join(idsSlow.map((i) => sql`${i}`), sql`, `)})`)
     : [];
-  const slowaPoId = new Map(slowa.map((s) => [s.id, s]));
+  // Slowa ukryte (po wejsciu trade'a z ukrytym wynikiem) nie wychodza takze jako teza, uniewaznienie i slowa dopiskow.
+  const ukryte = await ukryteSlowa(tx, idsSlow);
+  const slowaPoId = new Map(slowa.filter((s) => !ukryte.has(s.id)).map((s) => [s.id, s]));
   const [setup] = p.setupId ? await tx.select({ slug: setups.slug, name: setups.name }).from(setups).where(eq(setups.id, p.setupId)).limit(1) : [];
   const [wersja] = p.setupVersionId ? await tx.select({ version: setupVersions.version }).from(setupVersions).where(eq(setupVersions.id, p.setupVersionId)).limit(1) : [];
   return {

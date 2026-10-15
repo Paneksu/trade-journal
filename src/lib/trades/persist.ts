@@ -1,8 +1,8 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { instruments, tradeExits, tradeTags, trades } from "@/lib/db/schema";
+import { aiSuggestions, instruments, tags, tradeExits, tradeTags, trades } from "@/lib/db/schema";
 import { computeTrade, type ExitInput } from "@/lib/domain/calc";
 import { czyPowod, normalizujKierunek } from "@/lib/domain/kierunek";
 import { wynikTrade } from "@/lib/domain/outcome";
@@ -52,6 +52,12 @@ export type PersistOpcje = {
    * idzie w niej zamiast we wlasnej; formularz UI jej nie podaje.
    */
   tx?: PersistTx;
+  /**
+   * Tagi z API (v2 i ingest v1) NIE ida do `trade_tags`: trafiaja do kolejki `ai_suggestions` (rodzaj `tag`) i licza sie dopiero
+   * po zatwierdzeniu w UI (Slowa uzytkownika 15.10.2026: «Tagi z API przez kolejke»). Synchronizacja niczego nie kasuje:
+   * ani tagow zatwierdzonych (origin ai), ani tagow uzytkownika. Formularz UI tej opcji nie podaje i zapisuje z origin = user.
+   */
+  tagiPrzezKolejke?: boolean;
 };
 
 export async function persistTrade(
@@ -260,12 +266,41 @@ export async function persistTrade(
       sid = created.id;
     }
 
-    if (przypisania !== undefined) {
+    if (przypisania !== undefined && opcje.tagiPrzezKolejke) {
+      for (const p of przypisania) {
+        const [juz] = await tx
+          .select({ id: tradeTags.id })
+          .from(tradeTags)
+          .where(and(eq(tradeTags.tradeId, sid), eq(tradeTags.tagId, p.tagId), sql`${tradeTags.interval} is not distinct from ${p.interval ?? null}`))
+          .limit(1);
+        if (juz) continue;
+        const cel = { type: "trade", id: sid };
+        const payload = { tagId: p.tagId, interval: p.interval ?? null };
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`tj.suggestion:tag:${sid}:${p.tagId}:${p.interval ?? ""}`}, 0))`);
+        const [oczekuje] = await tx
+          .select({ id: aiSuggestions.id })
+          .from(aiSuggestions)
+          .where(and(eq(aiSuggestions.kind, "tag"), eq(aiSuggestions.status, "pending"), sql`${aiSuggestions.target} = ${JSON.stringify(cel)}::jsonb`, sql`${aiSuggestions.payload} = ${JSON.stringify(payload)}::jsonb`))
+          .limit(1);
+        if (oczekuje) continue;
+        const [tag] = await tx.select({ name: tags.name }).from(tags).where(eq(tags.id, p.tagId)).limit(1);
+        await tx.insert(aiSuggestions).values({
+          kind: "tag",
+          target: cel,
+          payload,
+          claim: `Synchronizacja z API przypisuje tag »${tag?.name ?? p.tagId}«${p.interval ? ` (${p.interval})` : ""} do trade'a #${sid}; tag czeka na Twoje zatwierdzenie.`,
+          evidence: [{ type: "trade", ref: sid, note: "tag z synchronizacji API" }],
+          evidenceLevel: "inferred",
+          n: null,
+          status: "pending",
+        });
+      }
+    } else if (przypisania !== undefined) {
       await tx.delete(tradeTags).where(eq(tradeTags.tradeId, sid));
       if (przypisania.length > 0) {
         await tx
           .insert(tradeTags)
-          .values(przypisania.map((p) => ({ tradeId: sid, tagId: p.tagId, interval: p.interval })))
+          .values(przypisania.map((p) => ({ tradeId: sid, tagId: p.tagId, interval: p.interval, origin: "user" as const })))
           .onConflictDoNothing();
       }
     }

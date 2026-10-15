@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 
-import { sqlNotatkaPoWejsciuUkrytego, sqlSlowaPoWejsciuUkrytego, sqlWynikUkryty } from "./ukrycie-wyniku";
+import { sqlNotatkaUkryta, sqlSlowaPoWejsciuUkrytego, sqlWynikUkryty } from "./ukrycie-wyniku";
 
 /**
  * Wyszukiwanie (model-danych 7, ADR-029): konfiguracja `simple` + `unaccent`
@@ -75,7 +75,7 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
              jsonb_build_object('kind', n.kind, 'slug', n.slug, 'rev', n.rev, 'archived', n.archived_at is not null) as meta
         from notes n
        where n.archived_at is null
-         and not ${sqlNotatkaPoWejsciuUkrytego(sql`n.trade_id`, sql`n.created_at`, sql`n.updated_at`)}
+         and not ${sqlNotatkaUkryta(sql`n.trade_id`, sql`n.created_at`, sql`n.updated_at`, sql`n.day`)}
          and (n.search @@ ${zapytanie}
               or lower(public.f_unaccent(n.title)) % ${qn}
               or lower(public.f_unaccent(n.title)) like ${wzorzecN} escape '\\'
@@ -96,7 +96,7 @@ export async function szukaj(q: string, typy: TypWyniku[], limit: number): Promi
         from user_words w
        where (w.search @@ ${zapytanie}
           or lower(public.f_unaccent(w.text)) like ${wzorzecN} escape '\\')
-         and not ${sqlSlowaPoWejsciuUkrytego(sql`w.trade_id`, sql`w.day`, sql`w.captured_at`)}
+         and not ${sqlSlowaPoWejsciuUkrytego(sql`w.trade_id`, sql`w.day`, sql`w.captured_at`, sql`w.note_id`)}
        order by rank desc, w.id
        limit ${limit}`);
     for (const w of wiersze) wyniki.push({ type: "user_words", id: w.id, rank: Number(w.rank), title: w.title, snippet: w.snippet, meta: w.meta });

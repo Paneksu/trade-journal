@@ -7,7 +7,7 @@ import { slugZNumerem, slugZTytulu, wyciagnijLinki } from "@/lib/domain/notatki"
 import { originEfektywny } from "@/lib/domain/reguly";
 
 import type { NotatkaUtworzSchema, NotatkaZmienSchema, NotatkiListaQuery } from "./contract/v2";
-import { czyNotatkaUkryta, sqlNotatkaPoWejsciuUkrytego } from "./ukrycie-wyniku";
+import { czyNotatkaUkryta, sqlNotatkaUkryta } from "./ukrycie-wyniku";
 import type { Transakcja } from "./with-api";
 
 /**
@@ -201,6 +201,10 @@ export async function zmienNotatke(
   ifMatch: number,
   d: z.output<typeof NotatkaZmienSchema>,
 ): Promise<WynikNotatki> {
+  // Slepa ocena: PATCH ukrytej notatki to 404 PRZED jakimkolwiek odczytem (takze przed 409 z `current`, ktory oddawalby tresc).
+  if (await czyNotatkaUkryta(tx, id)) {
+    return { ok: false, status: 404, kod: "not_found", komunikat: `Notatka #${id} nie istnieje.` };
+  }
   const [obecnyRodzaj] = await tx.select({ kind: notes.kind }).from(notes).where(eq(notes.id, id)).limit(1);
   if (obecnyRodzaj && odeslanieDlaKindu(obecnyRodzaj.kind) && (d.title !== undefined || d.bodyMd !== undefined || d.meta !== undefined || d.archived !== undefined)) {
     const o = odeslanieDlaKindu(obecnyRodzaj.kind)!;
@@ -279,7 +283,7 @@ export async function listaNotatek(tx: Transakcja | typeof import("@/lib/db").db
   if (f.externalRef) warunki.push(eq(notes.externalRef, f.externalRef));
   if (f.day) warunki.push(eq(notes.day, f.day));
   if (f.tradeId) warunki.push(eq(notes.tradeId, f.tradeId));
-  warunki.push(sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`); // slepa ocena (tylko notatki po wejsciu)
+  warunki.push(sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`); // slepa ocena (tylko notatki po wejsciu)
   if (!f.includeArchived) warunki.push(isNull(notes.archivedAt));
 
   const wiersze = await tx
@@ -315,7 +319,7 @@ export async function szczegolyNotatki(tx: Transakcja | typeof import("@/lib/db"
   const [n] = await tx.select().from(notes).where(eq(notes.id, id)).limit(1);
   if (!n) return null;
   // Slepa ocena: notatka przypieta do trade'a z ukrytym wynikiem, utworzona lub zmieniana po wejsciu, nie wychodzi z API.
-  if (n.tradeId !== null && (await czyNotatkaUkryta(tx, id))) return null;
+  if (await czyNotatkaUkryta(tx, id)) return null;
   const wychodzace = await tx
     .select({ target: noteLinks.target, toNoteId: noteLinks.toNoteId })
     .from(noteLinks)
@@ -323,13 +327,13 @@ export async function szczegolyNotatki(tx: Transakcja | typeof import("@/lib/db"
     .orderBy(asc(noteLinks.id));
   const celeIds = wychodzace.map((l) => l.toNoteId).filter((x): x is number => x !== null);
   const cele = celeIds.length
-    ? await tx.select({ id: notes.id, slug: notes.slug, title: notes.title }).from(notes).where(and(inArray(notes.id, celeIds), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
+    ? await tx.select({ id: notes.id, slug: notes.slug, title: notes.title }).from(notes).where(and(inArray(notes.id, celeIds), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`))
     : [];
   const przychodzace = await tx
     .select({ id: notes.id, slug: notes.slug, title: notes.title, target: noteLinks.target })
     .from(noteLinks)
     .innerJoin(notes, eq(noteLinks.fromNoteId, notes.id))
-    .where(and(eq(noteLinks.toNoteId, id), sql`not ${sqlNotatkaPoWejsciuUkrytego(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`)}`))
+    .where(and(eq(noteLinks.toNoteId, id), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`))
     .orderBy(asc(notes.id));
   return {
     ...zNotatki(n),

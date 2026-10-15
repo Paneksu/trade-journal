@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { db } from "@/lib/db";
@@ -10,16 +10,16 @@ import { moglZnacDzien } from "@/lib/domain/lookahead";
 import type { KorektaWerdyktuSchema } from "./contract/funkcje";
 import type { OcenaSchema } from "./contract/schemas";
 import { skrotTekstu } from "./skrot";
+import { wejscieTradu } from "./ukrycie-wyniku";
 import type { Zapis } from "./zapis";
 import type { Transakcja } from "./with-api";
 
 /**
  * Ocena trade'a przez AI. Dwa tryby:
  *
- * 1. STARY (ADR-028): bez pola `evidence`. Jedna ocena na podstawe (`chart` albo
- *    `history`); ponowne wyslanie podmienia ocene, a zdanie uzytkownika o regule zostaje,
- *    jesli werdykt AI sie nie zmienil.
- * 2. WERDYKT NIEZMIENNY (ADR-033, MUST 2): z polem `evidence` (swiece OHLC + sha256 zrzutow).
+Od 15.10.2026 (Slowa uzytkownika: «Niezmienny zawsze») KAZDY werdykt jest niezmienny, takze bez pola `evidence`
+ * (dawny tryb ADR-028 z podmiana oceny zostal usuniety; werdykty sprzed zmiany, bez as_of, zostaja czytelne).
+ * WERDYKT NIEZMIENNY (ADR-033, MUST 2): z polem `evidence` (swiece OHLC + sha256 zrzutow) albo bez niego (pusty manifest).
  *    Serwer stawia `as_of` (czas zegarowy wydania), liczy `evidence_hash` z kanonicznego JSON-a
  *    dowodow i zapisuje zestaw regul. Od tej chwili baza nie pozwala zmienic werdyktu
  *    (trigger, TJ409): ponowne wyslanie tej SAMEJ tresci to to samo (200), innej to 409, a
@@ -67,94 +67,8 @@ export async function zapiszOcene(
       komunikat: `Trade #${tradeId} nie istnieje (mógł zostać skasowany w aplikacji). Sprawdź id w odpowiedzi POST /api/ingest/trades albo w GET /api/ingest/trades.`,
     };
   }
-  if (o.evidence !== undefined) return zapiszWerdyktNiezmienny(trade, o, zapis, tokenId);
-
-  return zapis(async (tx) => {
-    const wartosci = {
-      setupType: o.setupType ?? null,
-      summaryMd: o.summaryMd ?? null,
-      lesson: o.lesson ?? null,
-      brainVerdict: o.brainVerdict ?? null,
-      brainPlan: o.brainPlan ?? null,
-      brainVersion: o.brainVersion ?? null,
-      evidenceCutoff: o.evidenceCutoff ?? null,
-      model: o.model ?? null,
-    };
-
-    // `xmax = 0` odroznia swiezo wstawiony wiersz od zaktualizowanego w upsercie. Unikat jest
-    // czesciowy (tylko werdykty AI, nie korekty uzytkownika), wiec ON CONFLICT powtarza jego warunek.
-    // Werdykt z `as_of` jest niezmienny: setWhere nie dopuszcza jego podmiany (patrz nizej).
-    const [wiersz] = await tx
-      .insert(tradeReviews)
-      .values({ tradeId, basis: o.basis, ...wartosci, createdByTokenId: tokenId })
-      .onConflictDoUpdate({
-        target: [tradeReviews.tradeId, tradeReviews.basis],
-        targetWhere: sql`${tradeReviews.kind} = 'ai'`,
-        set: { ...wartosci, createdAt: sql`now()` },
-        setWhere: sql`${tradeReviews.asOf} is null`,
-      })
-      .returning({ id: tradeReviews.id, utworzony: sql<boolean>`(xmax = 0)` });
-
-    if (!wiersz) {
-      return {
-        ok: false as const,
-        status: 409 as const,
-        kod: "verdict_immutable",
-        komunikat: `Trade #${tradeId} ma już niezmienny werdykt AI »${o.basis}« (z as_of). Werdyktu z dowodem nie podmienia się: jeśli się z nim nie zgadzasz, zapisz korektę użytkownika (POST /api/v2/trades/${tradeId}/reviews/<id>/override). Starą ocenę bez dowodu można podmienić tylko do chwili, gdy dostanie as_of.`,
-      };
-    }
-
-    const ids = o.ruleChecks.map((r) => r.ruleId);
-    // Reguly, ktorych nowa ocena juz nie zawiera, znikaja razem ze zdaniem uzytkownika.
-    if (ids.length === 0) {
-      await tx.delete(tradeRuleChecks).where(eq(tradeRuleChecks.reviewId, wiersz.id));
-    } else {
-      await tx
-        .delete(tradeRuleChecks)
-        .where(sql`${tradeRuleChecks.reviewId} = ${wiersz.id} and ${notInArray(tradeRuleChecks.ruleId, ids)}`);
-    }
-
-    let zachowane = 0;
-    for (const r of o.ruleChecks) {
-      const [poprzedni] = await tx
-        .select({ verdict: tradeRuleChecks.verdict, userVerdict: tradeRuleChecks.userVerdict })
-        .from(tradeRuleChecks)
-        .where(sql`${tradeRuleChecks.reviewId} = ${wiersz.id} and ${tradeRuleChecks.ruleId} = ${r.ruleId}`)
-        .limit(1);
-      const userVerdict = poprzedni && poprzedni.verdict === r.verdict ? poprzedni.userVerdict : null;
-      if (userVerdict) zachowane += 1;
-
-      await tx
-        .insert(tradeRuleChecks)
-        .values({
-          reviewId: wiersz.id,
-          ruleId: r.ruleId,
-          ruleText: r.ruleText,
-          verdict: r.verdict,
-          evidence: r.evidence ?? null,
-          userVerdict,
-        })
-        .onConflictDoUpdate({
-          target: [tradeRuleChecks.reviewId, tradeRuleChecks.ruleId],
-          set: { ruleText: r.ruleText, verdict: r.verdict, evidence: r.evidence ?? null, userVerdict },
-        });
-    }
-
-    return {
-      ok: true as const,
-      reviewId: wiersz.id,
-      created: wiersz.utworzony,
-      ruleChecks: o.ruleChecks.length,
-      userVerdictsKept: zachowane,
-      immutable: false,
-      asOf: null,
-      evidenceHash: null,
-      evidenceCutoff: o.evidenceCutoff?.toISOString() ?? null,
-      rulesetVersion: null,
-      unknownRules: [],
-      lookAhead: null,
-    };
-  });
+  // Kazdy werdykt AI jest niezmienny, takze bez `evidence` (Slowa uzytkownika 15.10.2026: «Niezmienny zawsze»).
+  return zapiszWerdyktNiezmienny(trade, o, zapis, tokenId);
 }
 
 /* --- Werdykt niezmienny ---------------------------------------------------------------------- */
@@ -215,32 +129,37 @@ async function zapiszWerdyktNiezmienny(
   zapis: Zapis,
   tokenId: number | null,
 ): Promise<WynikOceny> {
-  const dowod = o.evidence!;
+  // Bez `evidence` werdykt tez jest niezmienny (as_of + skrot pustego manifestu); nie ma wtedy swiec ani zrzutow do sprawdzenia,
+  // wiec kontrola look-ahead dotyczy tylko tego, co przyslano (evidenceCutoff).
+  const dowod = o.evidence ?? { candles: [], screenshots: [] as { sha256: string }[], intervalMinutes: undefined as number | undefined };
   const swiece = [...dowod.candles].sort((a, b) => a.t.getTime() - b.t.getTime());
-  const najpozniejsza = swiece[swiece.length - 1].t;
+  const najpozniejsza = swiece.length > 0 ? swiece[swiece.length - 1].t : null;
 
+  // Wejscie = najwczesniejsze znane (least z czasem przypiecia planu), jak w calej slepej ocenie (review 15.10.2026, B4):
+  // pozniejsza edycja entry_time nie moze poluzowac kontroli look-ahead.
+  const wejscie = (await wejscieTradu(db, trade.id)) ?? trade.entryTime;
   // "Zero zagladania": ocena z wykresu na moment decyzji nie moze widziec swiecy pozniejszych niz wejscie.
   // Swieca (`t` = czas otwarcia) musi sie skonczyc najpozniej w chwili wejscia: t + interwal <= entryTime.
   const interwalMs = (dowod.intervalMinutes ?? 0) * 60_000;
-  const koniecNajpozniejszej = najpozniejsza.getTime() + interwalMs;
-  if (o.basis === "chart" && koniecNajpozniejszej > trade.entryTime.getTime()) {
+  const koniecNajpozniejszej = najpozniejsza === null ? 0 : najpozniejsza.getTime() + interwalMs;
+  if (najpozniejsza !== null && o.basis === "chart" && koniecNajpozniejszej > wejscie.getTime()) {
     return {
       ok: false,
       status: 422,
       kod: "look_ahead",
-      komunikat: `pole evidence.candles: świeca otwarta ${najpozniejsza.toISOString()} (${dowod.intervalMinutes ?? 0} min) kończy się ${new Date(koniecNajpozniejszej).toISOString()}, a wejście było ${trade.entryTime.toISOString()}. Ocena »chart« ma powstać na moment decyzji i nie wolno jej widzieć przyszłości (świeca musi się skończyć najpóźniej w chwili wejścia); ocenę po fakcie wyślij z basis = history.`,
+      komunikat: `pole evidence.candles: świeca otwarta ${najpozniejsza.toISOString()} (${dowod.intervalMinutes ?? 0} min) kończy się ${new Date(koniecNajpozniejszej).toISOString()}, a wejście było ${wejscie.toISOString()}. Ocena »chart« ma powstać na moment decyzji i nie wolno jej widzieć przyszłości (świeca musi się skończyć najpóźniej w chwili wejścia); ocenę po fakcie wyślij z basis = history.`,
     };
   }
-  if (o.basis === "chart" && o.evidenceCutoff && o.evidenceCutoff.getTime() > trade.entryTime.getTime()) {
+  if (o.basis === "chart" && o.evidenceCutoff && o.evidenceCutoff.getTime() > wejscie.getTime()) {
     return {
       ok: false,
       status: 422,
       kod: "look_ahead",
-      komunikat: `pole evidenceCutoff: ${o.evidenceCutoff.toISOString()} jest późniejsze niż wejście (${trade.entryTime.toISOString()}). Przy ocenie »chart« odcięcie danych nie może wybiegać poza moment decyzji.`,
+      komunikat: `pole evidenceCutoff: ${o.evidenceCutoff.toISOString()} jest późniejsze niż wejście (${wejscie.toISOString()}). Przy ocenie »chart« odcięcie danych nie może wybiegać poza moment decyzji.`,
     };
   }
   const odciecie = o.evidenceCutoff ?? najpozniejsza;
-  if (najpozniejsza.getTime() > odciecie.getTime()) {
+  if (najpozniejsza !== null && odciecie !== null && najpozniejsza.getTime() > odciecie.getTime()) {
     return {
       ok: false,
       status: 422,
@@ -256,13 +175,13 @@ async function zapiszWerdyktNiezmienny(
       .from(screenshots)
       .where(and(eq(screenshots.tradeId, trade.id), inArray(screenshots.sha256, sha)));
     // Ocena »chart« nie moze opierac sie na zrzucie zrobionym PO wejsciu (audyt N3, 15.10.2026): pokazuje przyszlosc.
-    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt === null || z.capturedAt.getTime() > trade.entryTime.getTime()) : [];
+    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt === null || z.capturedAt.getTime() > wejscie.getTime()) : [];
     if (poWejsciu.length > 0) {
       return {
         ok: false,
         status: 422,
         kod: "look_ahead",
-        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (${z.capturedAt === null ? "bez znacznika czasu zrobienia" : `zrobiony ${z.capturedAt.toISOString()}`})`).join(", ")} nie ma dowodu, że powstał przed wejściem (${trade.entryTime.toISOString()}): jest zrobiony po wejściu albo bez znacznika czasu. Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
+        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (${z.capturedAt === null ? "bez znacznika czasu zrobienia" : `zrobiony ${z.capturedAt.toISOString()}`})`).join(", ")} nie ma dowodu, że powstał przed wejściem (${wejscie.toISOString()}): jest zrobiony po wejściu albo bez znacznika czasu. Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
         dodatkowe: { afterEntry: poWejsciu.map((z) => z.sha256) },
       };
     }
@@ -337,7 +256,7 @@ async function zapiszWerdyktNiezmienny(
       immutable: true,
       asOf: asOf?.toISOString() ?? null,
       evidenceHash,
-      evidenceCutoff: odciecie.toISOString(),
+      evidenceCutoff: odciecie?.toISOString() ?? null,
       rulesetVersion: zestaw,
       unknownRules: nieznane,
       lookAhead: modelOdp,
