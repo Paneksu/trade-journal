@@ -17,6 +17,7 @@ import {
   przypiszKontoUi,
   ustawKontaDniaUi,
   utworzTradeZBrokeraUi,
+  zaktualizujKwoteUi,
   zapiszImport,
   type PodgladHistorii,
   type WynikOperacji,
@@ -166,6 +167,14 @@ export async function pominTradeBrokeraAkcja(brokerTradeId: number, przywroc = f
   await requireSession();
   if (!idPoprawne(brokerTradeId)) return { error: "Brak identyfikatora trade'a brokera." };
   const w = await pominTradeBrokeraUi(brokerTradeId, przywroc);
+  if (w.ok) odswiez();
+  return wynikOperacji(w);
+}
+
+export async function zaktualizujKwoteAkcja(brokerTradeId: number): Promise<OperacjaState> {
+  await requireSession();
+  if (!idPoprawne(brokerTradeId)) return { error: "Brak identyfikatora trade'a brokera." };
+  const w = await zaktualizujKwoteUi(brokerTradeId);
   if (w.ok) odswiez();
   return wynikOperacji(w);
 }

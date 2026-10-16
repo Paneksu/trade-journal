@@ -2,10 +2,10 @@
 
 import { useState, useTransition } from "react";
 
-import { dopasujPonownieAkcja, dopasujRecznieAkcja, pominTradeBrokeraAkcja, przypiszKontoAkcja, utworzTradeZBrokeraAkcja } from "@/lib/actions/broker";
+import { dopasujPonownieAkcja, dopasujRecznieAkcja, pominTradeBrokeraAkcja, przypiszKontoAkcja, utworzTradeZBrokeraAkcja, zaktualizujKwoteAkcja } from "@/lib/actions/broker";
 import { cx } from "@/lib/classes";
 import { pnlClass } from "@/lib/format";
-import type { DoDecyzjiWiersz, ImportWiersz, KontoPolaczone } from "@/lib/queries/broker";
+import type { DoDecyzjiWiersz, ImportWiersz, KontoPolaczone, NettoZmienioneWiersz } from "@/lib/queries/broker";
 
 import { czas, klasaPrzycisku, kwota, nazwaFormatu, POLE_KLASA, Zywy, type KontoDziennika } from "./wspolne";
 
@@ -83,7 +83,37 @@ function Wiersz({ w, strefa }: { w: DoDecyzjiWiersz; strefa: string }) {
   );
 }
 
-export function DoDecyzjiLista({ wiersze, odrzucone, strefa }: { wiersze: DoDecyzjiWiersz[]; odrzucone: ImportWiersz[]; strefa: string }) {
+function WierszNetto({ w, strefa }: { w: NettoZmienioneWiersz; strefa: string }) {
+  const [trwa, start] = useTransition();
+  const [info, setInfo] = useState<{ tekst: string; blad: boolean } | null>(null);
+  return (
+    <li className="border-b border-line py-3" data-testid={`broker-netto-zmienione-${w.brokerTradeId}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-karta text-text">
+          Rachunek zmienił netto trade&apos;a #{w.tradeId}: <span className="num">{kwota(w.bylo)}</span> → <span className="num">{kwota(w.jest)}</span>
+          <span className="text-muted"> · {w.contract} {w.direction} · {czas(w.entryTime, strefa)}</span>
+        </p>
+        <button
+          type="button"
+          data-testid={`broker-netto-zaktualizuj-${w.brokerTradeId}`}
+          className={klasaPrzycisku(false)}
+          disabled={trwa}
+          onClick={() =>
+            start(async () => {
+              const r = await zaktualizujKwoteAkcja(w.brokerTradeId);
+              setInfo(r.error ? { tekst: r.error, blad: true } : { tekst: r.komunikat ?? "Gotowe.", blad: false });
+            })
+          }
+        >
+          Zaktualizuj kwotę
+        </button>
+      </div>
+      <Zywy blad={info?.blad}>{info?.tekst}</Zywy>
+    </li>
+  );
+}
+
+export function DoDecyzjiLista({ wiersze, odrzucone, strefa, nettoZmienione = [] }: { wiersze: DoDecyzjiWiersz[]; odrzucone: ImportWiersz[]; strefa: string; nettoZmienione?: NettoZmienioneWiersz[] }) {
   const [trwa, start] = useTransition();
   const [info, setInfo] = useState<{ tekst: string; blad: boolean } | null>(null);
   return (
@@ -114,6 +144,17 @@ export function DoDecyzjiLista({ wiersze, odrzucone, strefa }: { wiersze: DoDecy
             <Wiersz key={w.brokerTradeId} w={w} strefa={strefa} />
           ))}
         </ul>
+      )}
+      {nettoZmienione.length > 0 && (
+        <div className="space-y-2" data-testid="broker-netto-zmienione">
+          <h3 className="text-karta text-text">Rachunek zmienił netto</h3>
+          <p className="text-meta text-muted">Dopasowania ręczne, z sugestii i utworzone z rachunku zmieniasz tylko Ty. Automat ich nie rusza.</p>
+          <ul>
+            {nettoZmienione.map((w) => (
+              <WierszNetto key={w.brokerTradeId} w={w} strefa={strefa} />
+            ))}
+          </ul>
+        </div>
       )}
       {odrzucone.length > 0 && (
         <div className="space-y-2" data-testid="broker-odrzucone">

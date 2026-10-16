@@ -1,9 +1,9 @@
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { czyWynikUkryty } from "@/lib/api-v2/ukrycie-wyniku";
 import { przebiegDopasowania } from "@/lib/brokerzy/dopasowania";
-import { ukryteTradyBrokera } from "@/lib/brokerzy/odczyt";
+import { ukryteTradyBrokera, warunekUkryty } from "@/lib/brokerzy/odczyt";
 import { brokerSkonfigurowany } from "@/lib/brokerzy/klucz";
 import { db } from "@/lib/db";
 import {
@@ -119,7 +119,21 @@ export async function kontaPolaczone(): Promise<KontoPolaczone[]> {
        where i.status = 'committed'
          and (exists (select 1 from broker_fills f where f.import_id = i.id and f.broker_account_id = ${ba.id})
               or exists (select 1 from broker_cash_events e where e.import_id = i.id and e.broker_account_id = ${ba.id}))`);
-    const [f] = await db.select({ n: sql<number>`count(*)::int`, ostatni: sql<Date | string | null>`max(${brokerFills.filledAt})` }).from(brokerFills).where(eq(brokerFills.brokerAccountId, ba.id));
+    // Slepa ocena (tak samo jak w statusBrokera): czas ostatniego wypelnienia i liczniki tylko z trade'ow brokera bez ukrytego wyniku,
+    // a wypelnienia liczymy bez tych, ktore naleza do trade'ow ukrytych.
+    const [f] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(brokerFills)
+      .where(
+        and(
+          eq(brokerFills.brokerAccountId, ba.id),
+          or(isNull(brokerFills.brokerTradeId), inArray(brokerFills.brokerTradeId, db.select({ id: brokerTrades.id }).from(brokerTrades).where(sql`not ${warunekUkryty}`))),
+        ),
+      );
+    const [ost] = await db
+      .select({ at: sql<Date | string | null>`max(coalesce(${brokerTrades.exitTime}, ${brokerTrades.entryTime}))` })
+      .from(brokerTrades)
+      .where(and(eq(brokerTrades.brokerAccountId, ba.id), sql`not ${warunekUkryty}`));
     const [t] = await db
       .select({
         razem: sql<number>`count(*)::int`,
@@ -127,7 +141,7 @@ export async function kontaPolaczone(): Promise<KontoPolaczone[]> {
         czeka: sql<number>`count(*) filter (where ${brokerTrades.matchState} in ('unmatched', 'ambiguous') and ${brokerTrades.status} = 'closed')::int`,
       })
       .from(brokerTrades)
-      .where(eq(brokerTrades.brokerAccountId, ba.id));
+      .where(and(eq(brokerTrades.brokerAccountId, ba.id), sql`not ${warunekUkryty}`));
     wynik.push({
       brokerAccountId: ba.id,
       platform: ba.platform,
@@ -137,7 +151,7 @@ export async function kontaPolaczone(): Promise<KontoPolaczone[]> {
       category: typ ? kategoriaKonta({ type: typ, propPhase: faza }) : null,
       tz: ba.tz,
       lastImportAt: imp?.at ? new Date(imp.at).toISOString() : null,
-      lastFillAt: f.ostatni ? new Date(f.ostatni).toISOString() : null,
+      lastFillAt: ost.at ? new Date(ost.at).toISOString() : null,
       fills: f.n,
       tradesTotal: t.razem,
       tradesMatched: t.dopasowane,
@@ -272,7 +286,8 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
     .from(brokerTrades)
     .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
     .leftJoin(accounts, eq(brokerAccounts.accountId, accounts.id))
-    .where(and(eq(brokerTrades.status, "closed"), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), isNull(brokerTrades.tradeId)))
+    // slepa ocena: trade'y brokera z ukrytym wynikiem nie ida do listy (samo ich pojawienie sie zdradzaloby zamkniecie)
+    .where(and(eq(brokerTrades.status, "closed"), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), isNull(brokerTrades.tradeId), sql`not ${warunekUkryty}`))
     .orderBy(desc(brokerTrades.entryTime))
     .limit(limit);
   if (wiersze.length === 0) return [];
@@ -315,6 +330,49 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
       }),
     };
   });
+}
+
+export type NettoZmienioneWiersz = {
+  brokerTradeId: number;
+  tradeId: number;
+  contract: string;
+  direction: "long" | "short";
+  entryTime: string;
+  matchKind: "auto" | "user" | "ai_accepted" | "created";
+  /** Kwota w dzienniku teraz i netto z rachunku po ostatnim imporcie (centy). */
+  bylo: number | null;
+  jest: number;
+};
+
+/**
+ * »Rachunek zmienil netto trade'a«: dopasowany trade, w ktorym kwota w dzienniku rozni sie od netto z rachunku (np. po Cash History).
+ * Automat zmienia kwote tylko dla dopasowan »auto«; dla recznych, z sugestii i utworzonych decyduje uzytkownik (ADR-034, pkt 3).
+ */
+export async function nettoZmienione(limit = 50): Promise<NettoZmienioneWiersz[]> {
+  const wiersze = await db
+    .select({ bt: brokerTrades, kwota: trades.brokerAmount })
+    .from(brokerTrades)
+    .innerJoin(trades, eq(brokerTrades.tradeId, trades.id))
+    .where(
+      and(
+        eq(brokerTrades.matchState, "matched"),
+        sql`${brokerTrades.netCents} is not null`,
+        sql`${trades.brokerAmount} is distinct from ${brokerTrades.netCents}`,
+        sql`not ${warunekUkryty}`,
+      ),
+    )
+    .orderBy(desc(brokerTrades.updatedAt))
+    .limit(limit);
+  return wiersze.map(({ bt, kwota }) => ({
+    brokerTradeId: bt.id,
+    tradeId: bt.tradeId as number,
+    contract: bt.contract,
+    direction: bt.direction,
+    entryTime: bt.entryTime.toISOString(),
+    matchKind: bt.matchKind as NettoZmienioneWiersz["matchKind"],
+    bylo: kwota,
+    jest: bt.netCents as number,
+  }));
 }
 
 /** Odrzucone pliki z automatu (ostatnie 30 dni): do pokazania w »Do decyzji« z powodem. */

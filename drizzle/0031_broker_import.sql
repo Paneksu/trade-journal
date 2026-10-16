@@ -256,7 +256,14 @@ BEGIN
   v_token := public.tj_broker_token_importu();
   IF v_token IS NOT NULL THEN
     IF TG_OP = 'INSERT' THEN
-      RETURN NEW;
+      -- powiazanie wiersza z importem token moze wstawic tylko dla importu, ktory sam zalozyl
+      IF TG_TABLE_NAME = 'broker_import_rows' THEN
+        IF EXISTS (SELECT 1 FROM broker_imports bi WHERE bi.id = NEW.import_id AND bi.created_by_token_id = v_token) THEN
+          RETURN NEW;
+        END IF;
+      ELSE
+        RETURN NEW;
+      END IF;
     ELSIF TG_OP = 'DELETE' THEN
       IF TG_TABLE_NAME = 'broker_trades' THEN
         RETURN OLD;

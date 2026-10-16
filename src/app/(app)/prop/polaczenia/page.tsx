@@ -21,6 +21,7 @@ import {
   kontaPolaczone,
   kontaZeStawkami,
   listaFirmIPlatform,
+  nettoZmienione,
   odrzuconePliki,
   ostatnieImporty,
   stanAutomatu,
@@ -51,12 +52,13 @@ const SEKCJE = [
 export default async function PolaczeniaPage() {
   const ustawienia = await requireSession();
   const strefa = ustawienia.timezone ?? "Europe/Warsaw";
-  const [firmy, polaczone, importy, uzgodnione, decyzje, odrzucone, oplaty, stawki, klasy, automat, konta, propy, presety, dzis] = await Promise.all([
+  const [firmy, polaczone, importy, uzgodnione, decyzje, netto, odrzucone, oplaty, stawki, klasy, automat, konta, propy, presety, dzis] = await Promise.all([
     listaFirmIPlatform(),
     kontaPolaczone(),
     ostatnieImporty(20),
     uzgodnioneZRachunku(30),
     doDecyzji(100),
+    nettoZmienione(),
     odrzuconePliki(),
     stanOplat(),
     kontaZeStawkami(),
@@ -116,7 +118,7 @@ export default async function PolaczeniaPage() {
         </Karta>
 
         <Karta id="do-decyzji" tytul={`Do decyzji (${decyzje.length})`}>
-          <DoDecyzjiLista wiersze={decyzje} odrzucone={odrzucone} strefa={strefa} />
+          <DoDecyzjiLista wiersze={decyzje} odrzucone={odrzucone} strefa={strefa} nettoZmienione={netto} />
         </Karta>
 
         <Karta id="uzgodnione" tytul="Uzgodnione z rachunku">

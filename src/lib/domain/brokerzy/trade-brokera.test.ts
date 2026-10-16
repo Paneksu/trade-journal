@@ -201,6 +201,13 @@ describe("wynik trade'a brokera: brutto, oplaty, netto", () => {
     expect(w).toMatchObject({ grossCents: -45_000, grossSource: "broker", feesCents: 900, feeSource: "broker", netCents: -45_900, grossComputedCents: -45_000 });
   });
 
+  it("brutto z pliku rozjechane z cenami (para w innej sekundzie): nie podajemy go jako »z rachunku«, brutto idzie z cen (recenzja W1)", () => {
+    const f = [fill("5", "sell", 9, 30785.5, "2026-10-13T14:03:12Z"), fill("14", "buy", 9, 30810.5, "2026-10-13T14:04:41Z")];
+    const [trade] = grupujWypelnienia(f);
+    const w = wynikTraduBrokera({ trade, instrument: MNQ, stawkaRtCenty: 100, oplatyZPliku: new Map(), bruttoZPliku: { centy: -22_500, bezPary: 0, niejednoznaczne: 0 } });
+    expect(w).toMatchObject({ grossCents: -45_000, grossSource: "computed", netCents: -45_900 });
+  });
+
   it("sam plik Orders (bez Cash History): brutto z cen, oplaty ze stawki", () => {
     const f = [fill("5", "sell", 9, 30785.5, "2026-10-13T14:03:12Z"), fill("14", "buy", 9, 30810.5, "2026-10-13T14:04:41Z")];
     const [trade] = grupujWypelnienia(f);

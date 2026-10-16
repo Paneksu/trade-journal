@@ -33,6 +33,9 @@ export type WynikTraduBrokera = {
   grossComputedCents: number | null;
 };
 
+/** Dopuszczalna roznica brutto z pliku i z cen (poslizg zaokraglen cen wypelnien): 1,00 USD + 1% wyniku. */
+const TOLERANCJA_BRUTTO_CENTY = 100;
+
 export function wynikTraduBrokera(w: WejscieWyniku): WynikTraduBrokera {
   const t = w.trade;
   if (t.status !== "closed") {
@@ -59,7 +62,14 @@ export function wynikTraduBrokera(w: WejscieWyniku): WynikTraduBrokera {
 
   let grossCents: number | null = null;
   let grossSource: "broker" | "computed" | null = null;
-  if (w.bruttoZPliku && w.bruttoZPliku.centy !== null) {
+  // Kontrola krzyzowa (recenzja W1): Trade Paired z pliku musi zgadzac sie z brutto z cen wypelnien. Duze rozjazdy (np. zlecenie rozlozone
+  // na kilka sekund, wiec część par w innej sekundzie) oznaczają blad dopasowania wierszy, wiec nie podajemy go jako »z rachunku«.
+  const zgodne =
+    !w.bruttoZPliku ||
+    w.bruttoZPliku.centy === null ||
+    grossComputedCents === null ||
+    Math.abs(w.bruttoZPliku.centy - grossComputedCents) <= TOLERANCJA_BRUTTO_CENTY + Math.abs(grossComputedCents) * 0.01;
+  if (w.bruttoZPliku && w.bruttoZPliku.centy !== null && zgodne) {
     grossCents = w.bruttoZPliku.centy;
     grossSource = "broker";
   } else if (grossComputedCents !== null) {

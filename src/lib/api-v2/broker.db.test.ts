@@ -599,6 +599,78 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
     });
   });
 
+  /* ------------------------------------------------------------ decyzje uzytkownika kontra automat (recenzja i audyt, 17.10.2026) */
+  describe("automat nie uchyla decyzji uzytkownika", () => {
+    const wczesniejPlik = () =>
+      ORDERS.trimEnd() + String.fromCharCode(10) + wierszOrders({ id: "698000000777", strona: "Buy", cena: "20090", ilosc: 1, czas: "10/14/2026 14:00:00", konto: KONTO_PLIKU });
+
+    it("odznaczenie dopasowania 1:1 na podgladzie jest trwale: kolejny plik z automatu go nie stosuje (K1)", async () => {
+      const a = await tradeA();
+      const { podgladImportu, zapiszImport } = await import("@/lib/decyzje/broker");
+      const bajty = new TextEncoder().encode(ORDERS);
+      const podglad = await podgladImportu({ bajty, strefa: null });
+      expect(podglad.ok, JSON.stringify(podglad)).toBe(true);
+      if (!podglad.ok) return;
+      const poz = podglad.pozycje.find((p) => p.kandydaci.length === 1 && p.kandydaci[0] === a);
+      expect(poz, "podglad nie pokazal kandydata A").toBeTruthy();
+      const w = await zapiszImport({ bajty, strefa: null, odznaczone: [poz!.externalRef] });
+      expect(w.ok, JSON.stringify(w)).toBe(true);
+      expect((await sql`select match_state, trade_id from broker_trades where external_ref = ${poz!.externalRef}`)[0]).toEqual({ match_state: "skipped", trade_id: null });
+      expect((await wiersz(a)).broker_amount).toBeNull();
+
+      const dalszy = ORDERS.trimEnd() + String.fromCharCode(10) + wierszOrders({ id: "698000000778", strona: "Buy", cena: "20500", ilosc: 1, czas: "10/14/2026 19:00:00", konto: KONTO_PLIKU });
+      const r = await inbox(dalszy);
+      expect(r.status, JSON.stringify(r.json)).toBe(201);
+      expect((await sql`select match_state, trade_id from broker_trades where external_ref = ${poz!.externalRef}`)[0]).toEqual({ match_state: "skipped", trade_id: null });
+      expect((await wiersz(a)).broker_amount).toBeNull();
+    });
+
+    it("pominiety (cofniety) trade brokera: plik, ktory zmienilby jego klucz, to would_alter_matched, a nie ciche przywrocenie", async () => {
+      const a = await tradeA();
+      await inbox(ORDERS);
+      const [bt] = await sql`select id from broker_trades where trade_id = ${a}`;
+      const { cofnijDopasowanieUi } = await import("@/lib/decyzje/broker");
+      expect((await cofnijDopasowanieUi(bt.id)).ok).toBe(true);
+      const przed = (await sql`select count(*)::int as n from broker_fills`)[0].n;
+      const r = await inbox(wczesniejPlik());
+      expect(r.status, JSON.stringify(r.json)).toBe(422);
+      expect(JSON.stringify(r.json)).toContain("would_alter_matched");
+      expect((await sql`select count(*)::int as n from broker_fills`)[0].n).toBe(przed);
+      expect((await sql`select match_state from broker_trades where id = ${bt.id}`)[0].match_state).toBe("skipped");
+    });
+
+    it("dopasowanie reczne: Cash History nie zmienia kwoty w dzienniku, trade pojawia sie jako »rachunek zmienil netto«, a »Zaktualizuj kwote« ja zmienia", async () => {
+      await sql`update accounts set fee_rt_micro_cents = 50 where id = ${kontoId}`; // stawka nizsza niz w Cash History (1,00 USD), wiec netto sie zmieni
+      try {
+        const a = await tradeA();
+        await inbox(ORDERS);
+        const [bt] = await sql`select id from broker_trades where trade_id = ${a}`;
+        const { cofnijDopasowanieUi, dopasujRecznieUi, zaktualizujKwoteUi } = await import("@/lib/decyzje/broker");
+        expect((await cofnijDopasowanieUi(bt.id)).ok).toBe(true);
+        expect((await dopasujRecznieUi(bt.id, a)).ok).toBe(true);
+        const [przed] = await sql`select broker_amount::int as k from trades where id = ${a}`;
+        expect((await sql`select match_kind from broker_trades where id = ${bt.id}`)[0].match_kind).toBe("user");
+
+        const r = await inbox(CASH);
+        expect(r.status, JSON.stringify(r.json)).toBe(201);
+        const [po] = await sql`select broker_amount::int as k from trades where id = ${a}`;
+        expect(po.k, "automat nie moze zmienic kwoty recznego dopasowania").toBe(przed.k);
+        const [netto] = await sql`select net_cents::int as n from broker_trades where id = ${bt.id}`;
+        expect(netto.n).not.toBe(przed.k);
+
+        const { nettoZmienione } = await import("@/lib/queries/broker");
+        const lista = await nettoZmienione();
+        expect(lista.find((w) => w.brokerTradeId === bt.id)).toMatchObject({ tradeId: a, bylo: przed.k, jest: netto.n });
+
+        expect((await zaktualizujKwoteUi(bt.id)).ok).toBe(true);
+        expect((await sql`select broker_amount::int as k from trades where id = ${a}`)[0].k).toBe(netto.n);
+        expect((await nettoZmienione()).find((w) => w.brokerTradeId === bt.id)).toBeUndefined();
+      } finally {
+        await sql`update accounts set fee_rt_micro_cents = 100 where id = ${kontoId}`;
+      }
+    });
+  });
+
   /* ------------------------------------------------------------ slepa ocena */
 
   describe("slepa ocena obejmuje dane brokera (ukrycie-wyniku.ts)", () => {
@@ -636,6 +708,16 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       expect(po.json.trades.some((t: { netCents: number | null }) => t.netCents === 7050)).toBe(true);
     });
 
+    it("ekran Polaczen nie zdradza zamkniecia: lista »Do decyzji«, liczniki konta i czas ostatniego wypelnienia pomijaja ukryte trade'y brokera", async () => {
+      await tradeOtwartyZWerdyktem(`${DZIEN}T13:20:00Z`);
+      await inbox(ORDERS);
+      await inbox(CASH);
+      const { kontaPolaczone, doDecyzji } = await import("@/lib/queries/broker");
+      expect(await doDecyzji()).toEqual([]);
+      const k = (await kontaPolaczone()).find((x) => x.brokerAccountId === brokerAccountId);
+      expect(k).toMatchObject({ tradesTotal: 0, tradesMatched: 0, tradesPending: 0, lastFillAt: null, fills: 0 });
+    });
+
     it("interfejs tez zakrywa wynik: podglad importu, »Do decyzji« i dane przy trade'zie nie pokazuja liczb trade'u z ukrytym wynikiem", async () => {
       const x = await tradeOtwartyZWerdyktem(`${DZIEN}T13:20:00Z`);
       const { podgladImportu } = await import("@/lib/decyzje/broker");
@@ -653,18 +735,15 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       await inbox(ORDERS);
       await inbox(CASH);
       const { doDecyzji, daneRachunkuTradu } = await import("@/lib/queries/broker");
-      const lista = await doDecyzji();
-      expect(lista.length).toBeGreaterThan(0);
-      for (const w of lista) {
-        expect(w.wynikUkryty).toBe(true);
-        expect([w.netCents, w.exitTime, w.feeSource]).toEqual([null, null, null]);
-      }
+      // ukryte trade'y brokera w ogole nie ida do »Do decyzji« (samo pojawienie sie zdradzaloby zamkniecie)
+      expect(await doDecyzji()).toEqual([]);
       const dane = await daneRachunkuTradu(x);
       expect(dane).toMatchObject({ wynikUkryty: true, pnl: null, pnlEstimate: null, fees: null, brokerAmount: null, roznicaCenty: null });
 
       // po zamknieciu trade'a z werdyktem liczby wracaja
       await sql`update trades set status = 'closed', exit_time = ${`${DZIEN}T13:25:00Z`}, exit_price = 20105, exit_count = 1 where id = ${x}`;
       const odslonieta = await doDecyzji();
+      expect(odslonieta.length).toBeGreaterThan(0);
       expect(odslonieta.every((w) => !w.wynikUkryty)).toBe(true);
     });
 

@@ -3,7 +3,7 @@ import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
 import { zapiszKontaDnia } from "@/lib/api-v2/konta-dnia";
 import { zapisJakoUi } from "@/lib/api-v2/zapis";
-import { odepnijDopasowanie, przebiegDopasowania, zastosujDopasowanie } from "@/lib/brokerzy/dopasowania";
+import { odepnijDopasowanie, odswiezKwoteDopasowania, przebiegDopasowania, zastosujDopasowanie } from "@/lib/brokerzy/dopasowania";
 import {
   BladImportu,
   cofnijImport,
@@ -117,6 +117,17 @@ export async function pominTradeBrokeraUi(brokerTradeId: number, przywroc = fals
     if (bt.tradeId !== null) return blad(`Trade brokera #${brokerTradeId} jest dopasowany; najpierw go odepnij (Cofnij).`);
     await tx.update(brokerTrades).set({ matchState: przywroc ? "unmatched" : "skipped", updatedAt: new Date() }).where(eq(brokerTrades.id, brokerTradeId));
     return { ok: true, komunikat: przywroc ? "Wrócił do decyzji." : "Pominięty. Nie będzie dopasowywany automatycznie." };
+  });
+}
+
+/** »Zaktualizuj kwote«: rachunek zmienil netto dopasowanego trade'a (np. Cash History), a automat nie rusza recznych dopasowan. */
+export async function zaktualizujKwoteUi(brokerTradeId: number): Promise<WynikOperacji> {
+  return zapisJakoUi(async (tx) => {
+    const [bt] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, brokerTradeId)).for("update").limit(1);
+    if (!bt) return blad(`Trade brokera #${brokerTradeId} nie istnieje. Odśwież listę.`);
+    if (bt.tradeId === null) return blad(`Trade brokera #${brokerTradeId} nie jest dopasowany, więc nie ma czego aktualizować.`);
+    await odswiezKwoteDopasowania(tx, bt);
+    return { ok: true, komunikat: "Kwota w dzienniku zgadza się z rachunkiem." };
   });
 }
 

@@ -2207,6 +2207,21 @@ if (!TEST_URL) {
           await aktor(tx, `api:${dobry}`);
           return tx`DELETE FROM broker_imports WHERE id = ${imp}`;
         }, "wymaga aktora");
+        // powiazanie wiersza z importem token wstawi tylko dla importu, ktory sam zalozyl (audyt: zacieśnienie triggera)
+        await trigger("broker_import_rows", "broker_import_rows_zapis", "TJ403", async (tx) => {
+          const cudzy = await importTokenu(tx, null);
+          const konto = await kontoBrokera(tx);
+          const [f] = await wstawFill(tx, konto, cudzy, null);
+          await aktor(tx, `api:${dobry}`);
+          return tx`INSERT INTO broker_import_rows (import_id, kind, row_id) VALUES (${cudzy}, 'fill', ${f.id})`;
+        }, "wymaga aktora");
+        await wycofywalna(async (tx) => {
+          const wlasny = await importTokenu(tx, dobry);
+          const konto = await kontoBrokera(tx);
+          const [f] = await wstawFill(tx, konto, wlasny, null);
+          await aktor(tx, `api:${dobry}`);
+          await tx`INSERT INTO broker_import_rows (import_id, kind, row_id) VALUES (${wlasny}, 'fill', ${f.id})`;
+        });
         // agent nie skasuje i nie zmieni danych brokera
         await trigger("broker_fills", "broker_fills_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`DELETE FROM broker_fills WHERE id = ${c.fill}`));
         await trigger("broker_trades", "broker_trades_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`UPDATE broker_trades SET match_state = 'skipped' WHERE id = ${c.bt}`));

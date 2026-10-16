@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, or, sql } from "drizzle-orm";
 
 import type { Transakcja } from "@/lib/api-v2/zapis";
 import { brokerAccounts, brokerTrades, trades } from "@/lib/db/schema";
@@ -143,10 +143,14 @@ export async function odepnijDopasowanie(
 
 /** Kwota netto trade'a brokera zmienila sie (np. doszla Cash History z oplatami): odswiezamy ja w dopasowanym trade'zie. */
 export async function odswiezKwoteDopasowania(tx: Transakcja, bt: WierszTradu): Promise<void> {
-  if (bt.tradeId === null || bt.netCents === null || bt.matchKind === "created") return;
+  if (bt.tradeId === null) return;
   const [t] = await tx.select({ kwota: trades.brokerAmount }).from(trades).where(eq(trades.id, bt.tradeId)).limit(1);
-  if (!t || t.kwota === bt.netCents) return;
-  const w = await wpiszKwote(tx, bt.tradeId, bt.netCents);
+  if (!t) return;
+  // Netto zniklo (np. cofnieto Cash History, a stawki nie ma): wraca kwota sprzed dopasowania, nie zostaje liczba z cofnietego pliku.
+  const cel = bt.netCents ?? (bt.matchKind === "created" ? null : (bt.prevBrokerAmountCents ?? null));
+  if (bt.netCents === null && bt.matchKind === "created") return;
+  if (t.kwota === cel) return;
+  const w = await wpiszKwote(tx, bt.tradeId, cel);
   // Zmiana kwoty dopasowanego trade'a ma byc WIDOCZNA na liscie »Uzgodnione z rachunku« (było -> jest, z »Cofnij«), takze dla starego dopasowania.
   if (w.ok) await tx.update(brokerTrades).set({ matchedAt: new Date(), updatedAt: new Date() }).where(eq(brokerTrades.id, bt.id));
 }
@@ -194,6 +198,16 @@ export async function przebiegDopasowania(
   }
   const minCzas = new Date(najwczesniej - (OKNO_DOPASOWANIA_S + 1) * 1000);
   const maxCzas = new Date(najpozniej + (OKNO_DOPASOWANIA_S + 1) * 1000);
+  // Trade'y dziennika ladujemy tylko z okolic trade'ow brokera (±1 dzien, zlaczone w przedzialy), nie z calego zakresu miedzy
+  // najstarszym a najnowszym niedopasowanym (audyt: koszt rosl z historia). Przy duzej liczbie przedzialow wracamy do jednego.
+  const DZIEN = 86_400_000;
+  const przedzialy: [number, number][] = [];
+  for (const t of wiersze.map((w) => w.bt.entryTime.getTime()).sort((a, b) => a - b)) {
+    const ost = przedzialy[przedzialy.length - 1];
+    if (ost && t - DZIEN <= ost[1]) ost[1] = t + DZIEN;
+    else przedzialy.push([t - DZIEN, t + DZIEN]);
+  }
+  const waskie = przedzialy.length <= 200 ? przedzialy : [[minCzas.getTime(), maxCzas.getTime()] as [number, number]];
   const dziennik = await tx
     .select({ id: trades.id, accountId: trades.accountId, instrumentId: trades.instrumentId, direction: trades.direction, entryTime: trades.entryTime, contracts: trades.contracts })
     .from(trades)
@@ -202,8 +216,7 @@ export async function przebiegDopasowania(
         inArray(trades.accountId, konta),
         isNull(trades.backtestSessionId),
         eq(trades.status, "closed"),
-        gte(trades.entryTime, minCzas),
-        lte(trades.entryTime, maxCzas),
+        or(...waskie.map(([od, doo]) => and(gte(trades.entryTime, new Date(od)), lte(trades.entryTime, new Date(doo))))),
         sql`not exists (select 1 from broker_trades bx where bx.trade_id = ${trades.id})`,
       ),
     );
@@ -220,10 +233,18 @@ export async function przebiegDopasowania(
   );
 
   const przebieg: PrzebiegDopasowania = { zastosowane: [], niejednoznaczne: 0, bez: 0, bledy: [], dopasowania: wynik };
+  const poId = new Map(wiersze.map((w) => [w.bt.id, w.bt]));
   for (const d of wynik) {
-    const bt = wiersze.find((w) => w.bt.id === d.brokerTradeId)!.bt;
+    const bt = poId.get(d.brokerTradeId)!;
     if (d.stan === "jeden_do_jednego" && d.tradeId !== null) {
-      if (o.tylkoUstal || o.odznaczone?.has(bt.externalRef)) continue;
+      if (o.tylkoUstal) continue;
+      if (o.odznaczone?.has(bt.externalRef)) {
+        // Decyzja sesji glownej (autoryzacja uzytkownika z 17.10.2026), ADR-034 odstepstwo 13.
+        // Odznaczenie na podgladzie to decyzja uzytkownika: trade brokera zostaje »pominiety«, wiec kolejny plik z automatu ani
+        // »Dopasuj ponownie« go nie dopasuje (tak samo jak po »Cofnij«; recenzja K1). Wraca do decyzji przyciskiem w »Do decyzji«.
+        await tx.update(brokerTrades).set({ matchState: "skipped", updatedAt: new Date() }).where(eq(brokerTrades.id, bt.id));
+        continue;
+      }
       const w = await zastosujDopasowanie(tx, bt, d.tradeId, o.rodzaj);
       if (w.ok) przebieg.zastosowane.push(w.wynik);
       else przebieg.bledy.push({ brokerTradeId: bt.id, komunikat: w.komunikat });

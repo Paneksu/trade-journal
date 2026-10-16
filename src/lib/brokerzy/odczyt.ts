@@ -95,7 +95,7 @@ function dto(w: Wiersz, konto: KontoDlaAI | null) {
 
 export type TradeBrokeraDto = ReturnType<typeof dto>;
 
-const warunekUkryty = sqlBrokerUkryty({
+export const warunekUkryty = sqlBrokerUkryty({
   tradeId: sql`${brokerTrades.tradeId}`,
   brokerAccountId: sql`${brokerTrades.brokerAccountId}`,
   tradingDay: sql`${brokerTrades.tradingDay}`,

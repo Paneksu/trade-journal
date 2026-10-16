@@ -23,7 +23,7 @@ import type { PlatformaBrokera } from "@/lib/db/schema";
 import { persistTrade } from "@/lib/trades/persist";
 import type { TradeDraft } from "@/lib/domain/trade-draft";
 
-import { ukryteTradyBrokera } from "./odczyt";
+import { ukryteTradyBrokera, warunekUkryty } from "./odczyt";
 import { przebiegDopasowania, type ZastosowaneDopasowanie } from "./dopasowania";
 import { skrotKonta, sha256Hex } from "./klucz";
 import {
@@ -198,6 +198,9 @@ async function zapiszOdrzucenie(
 }
 
 export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Promise<WynikImportu> {
+  // Jeden import naraz (Orders i Cash History z dwoch kart albo z automatu): kazdy przelicza okno z danych, ktore widzi, wiec bez
+  // blokady drugi nie zobaczylby wypelnien pierwszego i trade zostalby bez oplat z pliku (recenzja W2).
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('tj.broker.import', 0))`);
   const teraz = o.teraz ?? new Date();
   const sha = sha256Hex(o.bajty);
   if (o.oczekiwanySha && o.oczekiwanySha.toLowerCase() !== sha) {
@@ -273,7 +276,7 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
   if (p.czasBezStrefy) {
     ostrzezenia.push({
       code: "strefa_zalozona",
-      message: `Plik nie podaje strefy czasowej. Czasy odczytano jako czas w strefie ${strefa} (${o.strefa ? "wybranej przy wgrywaniu" : "z ustawień konta lub użytkownika"}). Jeśli godziny wejść się nie zgadzają z dziennikiem, zmień strefę i wgraj plik ponownie.`,
+      message: `Plik nie podaje strefy czasowej. Czasy odczytano jako czas w strefie ${strefa} (${o.strefa ? "wybranej przy wgrywaniu" : "z ustawień konta lub użytkownika"}). Jeśli godziny wejść się nie zgadzają z dziennikiem, najpierw cofnij ten import w Połączeniach, potem wgraj plik z inną strefą (ten sam plik albo te same zlecenia nie zapiszą się drugi raz ze zmienionymi czasami).`,
     });
   }
 
@@ -350,6 +353,10 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
       }
       konteksty.set(raw, { id: ba.id, platforma, krotki: skrot.krotki, kontoDziennikaId: ba.accountId });
       kontaWPliku.push({ hmac: skrot.hmac, ostatnie4: skrot.ostatnie4, brokerAccountId: ba.id, kontoDziennikaId: ba.accountId, nowe });
+      // Strefa wybrana jawnie w UI zostaje przy koncie: automat czyta potem czasy tak samo (recenzja W3).
+      if (o.pochodzenie === "ui" && o.strefa !== null && ba.tz !== strefa) {
+        await tx.update(brokerAccounts).set({ tz: strefa }).where(eq(brokerAccounts.id, ba.id));
+      }
     }
   
     // --- wypelnienia i zdarzenia ---
@@ -475,7 +482,7 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
     if (przesuniecie) {
       ostrzezenia.push({
         code: "strefa_podejrzana",
-        message: `Po przesunięciu czasów w pliku o ${przesuniecie.godziny > 0 ? "+" : ""}${przesuniecie.godziny} h dopasowałoby się ${przesuniecie.dopasowan} trade'ów dziennika 1:1 (bez przesunięcia: ${przesuniecie.bazowo}). Plik nie podaje strefy, więc to możliwa pomyłka: wgraj plik ponownie z inną strefą. Niczego nie przesunięto.`,
+        message: `Po przesunięciu czasów w pliku o ${przesuniecie.godziny > 0 ? "+" : ""}${przesuniecie.godziny} h dopasowałoby się ${przesuniecie.dopasowan} trade'ów dziennika 1:1 (bez przesunięcia: ${przesuniecie.bazowo}). Plik nie podaje strefy, więc to możliwa pomyłka: cofnij ten import w Połączeniach i wgraj plik z inną strefą. Niczego nie przesunięto.`,
       });
     }
   
@@ -534,9 +541,12 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
           eq(brokerTrades.status, "closed"),
           inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]),
           isNull(brokerTrades.tradeId),
+          // slepa ocena: trade z ukrytym wynikiem nie moze zdradzic zamkniecia licznikiem
+          sql`not ${warunekUkryty}`,
         ),
       );
-    const otwarte = finalne.filter((t) => t.status === "open").length;
+    // ukryte pozycje pokazujemy jako otwarte (tak samo jak w liscie pozycji), wiec tak je tez liczymy
+    const otwarte = finalne.filter((t) => t.status === "open" || ukryte.has(t.id)).length;
     await tx
       .update(brokerImports)
       .set({
@@ -711,6 +721,7 @@ export type WynikCofniecia =
  * (pliki z innych importow), zeby trade'y brokera zgadzaly sie z pozostalymi wypelnieniami.
  */
 export async function cofnijImport(tx: Transakcja, importId: number): Promise<WynikCofniecia> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended('tj.broker.import', 0))`);
   const [imp] = await tx.select().from(brokerImports).where(eq(brokerImports.id, importId)).for("update").limit(1);
   if (!imp) return { ok: false, status: 404, komunikat: `Import #${importId} nie istnieje.` };
   if (imp.status !== "committed") {
@@ -763,7 +774,8 @@ export async function cofnijImport(tx: Transakcja, importId: number): Promise<Wy
       konta.set(g.kontoId, k);
     }
     const start = await poczatekOkna(tx, k.id, g.kontrakt, g.czas);
-    await przeliczOkno(tx, k, g.kontrakt, start, null);
+    const skutek = await przeliczOkno(tx, k, g.kontrakt, start, null);
+    uwagi.push(...skutek.uwagi);
   }
   const po = await licz();
   const odpiete = Math.max(0, przed.powiazane - po.powiazane);

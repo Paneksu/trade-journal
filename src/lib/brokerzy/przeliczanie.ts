@@ -176,6 +176,8 @@ export type SkutekOkna = {
   /** Trade'y brokera po przeliczeniu (nowe i istniejace) z flaga, czy sa nowe w tym przebiegu. */
   trade: { wiersz: WierszTraduBrokera; domena: TradeZGrupowania; nowy: boolean; zmieniony: boolean }[];
   usuniete: number;
+  /** Uwagi z odpinania dopasowan (np. kwota zmieniona po dopasowaniu, wiec nie przywrocona): do pokazania uzytkownikowi. */
+  uwagi: string[];
 };
 
 const rowne = (a: number | null, b: number | null): boolean => a === b;
@@ -209,7 +211,7 @@ export async function przeliczOkno(
     .from(brokerTrades)
     .where(and(eq(brokerTrades.brokerAccountId, konto.id), eq(brokerTrades.contract, kontrakt), gte(brokerTrades.entryTime, start)));
   const poRef = new Map(istniejace.map((t) => [t.externalRef, t]));
-  const wynik: SkutekOkna = { trade: [], usuniete: 0 };
+  const wynik: SkutekOkna = { trade: [], usuniete: 0, uwagi: [] };
   const widziane = new Set<string>();
   const fillePoId = new Map(dom.wierszeFill.map((w) => [w.externalRef.slice(prefiksWypelnien(konto).length), w]));
 
@@ -242,7 +244,8 @@ export async function przeliczOkno(
     let wiersz: WierszTraduBrokera;
     let zmieniony = false;
     if (stary) {
-      zmieniony =
+      // zmiana STRUKTURY trade'a (kierunek, ilosc, czasy, ceny, status) vs zmiana samych liczb finansowych (brutto, oplaty, netto)
+      const strukturalna =
         stary.instrumentId !== wartosci.instrumentId ||
         stary.direction !== wartosci.direction ||
         Number(stary.maxQty) !== t.maxIlosc ||
@@ -250,13 +253,22 @@ export async function przeliczOkno(
         (stary.exitTime?.getTime() ?? null) !== (t.czasWyjscia?.getTime() ?? null) ||
         Number(stary.avgEntryPrice) !== t.sredniaCenaWejscia ||
         (stary.avgExitPrice === null ? null : Number(stary.avgExitPrice)) !== t.sredniaCenaWyjscia ||
-        stary.status !== t.status ||
+        stary.status !== t.status;
+      zmieniony =
+        strukturalna ||
         !rowne(stary.grossCents, w.grossCents) ||
         stary.grossSource !== w.grossSource ||
         !rowne(stary.feesCents, w.feesCents) ||
         stary.feeSource !== w.feeSource ||
         !rowne(stary.netCents, w.netCents) ||
         stary.tradingDay !== wartosci.tradingDay;
+      // Automat nie przebudowuje trade'a dopasowanego recznie, z sugestii AI ani utworzonego z danych brokera: to decyzje uzytkownika.
+      // Decyzja sesji glownej (autoryzacja uzytkownika z 17.10.2026), ADR-034 odstepstwo 13.
+      if (opcje.ochronaDopasowan && strukturalna && stary.tradeId !== null && stary.matchKind !== "auto") {
+        throw new BladAutomatu(
+          `Ten plik zmieniłby trade brokera ${stary.externalRef} (${stary.contract}, wejście ${stary.entryTime.toISOString()}) dopasowany do trade'a #${stary.tradeId} dziennika ręcznie albo z sugestii (rodzaj: ${stary.matchKind}). Automat takich plików nie stosuje. Zaimportuj plik ręcznie w aplikacji (Prop → Połączenia) i sprawdź podgląd.`,
+        );
+      }
       if (zmieniony) {
         const [zapisany] = await tx
           .update(brokerTrades)
@@ -280,12 +292,17 @@ export async function przeliczOkno(
   // 3) trade'y, ktorych po przeliczeniu nie ma (np. po cofnieciu importu): odpinamy od dziennika i kasujemy
   for (const stary of istniejace) {
     if (widziane.has(stary.externalRef)) continue;
-    if (opcje.ochronaDopasowan && stary.tradeId !== null) {
+    // Pominiety (»Cofnij« albo »Pomin«) liczy sie jak dopasowany: odrzucenie przez uzytkownika nie moze wrocic automatem.
+    // Decyzja sesji glownej (autoryzacja uzytkownika z 17.10.2026), ADR-034 odstepstwo 13.
+    if (opcje.ochronaDopasowan && (stary.tradeId !== null || stary.matchState === "skipped")) {
       throw new BladAutomatu(
         `Ten plik zmieniłby trade brokera ${stary.externalRef} (${stary.contract}, wejście ${stary.entryTime.toISOString()}), który jest już dopasowany do trade'a #${stary.tradeId} dziennika: nowe wypełnienia zmieniają podział historii kontraktu na trade'y. Automat takich plików nie stosuje. Zaimportuj plik ręcznie w aplikacji (Prop → Połączenia) i sprawdź podgląd.`,
       );
     }
-    if (stary.tradeId !== null) await odepnijDopasowanie(tx, stary, { nowyStan: "unmatched", przywrocKwote: true });
+    if (stary.tradeId !== null) {
+      const o = await odepnijDopasowanie(tx, stary, { nowyStan: "unmatched", przywrocKwote: true });
+      if (o.uwaga) wynik.uwagi.push(o.uwaga);
+    }
     await tx.delete(brokerTrades).where(eq(brokerTrades.id, stary.id));
     wynik.usuniete += 1;
   }

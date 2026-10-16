@@ -30,6 +30,7 @@ test.describe("Dane z rachunku: import, ukrycie wyniku, automat 1:1", () => {
   let kontoId = 0;
   let mnqId = 0;
   const tokenyDoSprzatania: number[] = [];
+  let tokenBrokera = "";
 
   /** Sprzatanie jako uzytkownik (aktor ui): baza nie pozwala usuwac danych brokera nikomu innemu. */
   async function sprzatnijDaneBrokera() {
@@ -147,6 +148,7 @@ test.describe("Dane z rachunku: import, ukrycie wyniku, automat 1:1", () => {
       values (${`e2e-broker-${RUN}`}, ${prefix}, ${createHash("sha256").update(token, "utf8").digest("hex")}, ${["import_broker"]}, 'ui', ${new Date(Date.now() + 86_400_000)})
       returning id`;
     tokenyDoSprzatania.push(t.id);
+    tokenBrokera = token;
     const api = await pwRequest.newContext({ baseURL: BASE, extraHTTPHeaders: { authorization: `Bearer ${token}` } });
     const wyslij = () =>
       api.post("/api/v2/broker/inbox", {
@@ -199,6 +201,49 @@ test.describe("Dane z rachunku: import, ukrycie wyniku, automat 1:1", () => {
       }
     }
     expect(wycieki).toEqual([]);
+  });
+
+  test("ukrycie wyniku: niedopasowane trade'y brokera nie zdradzaja netto ani zamkniecia na Polaczeniach i Dzis (HTML i RSC)", async ({ page }) => {
+    test.setTimeout(120_000);
+    await sprzatnijDaneBrokera();
+    await sql`delete from trade_reviews where trade_id in (select id from trades where account_id = ${kontoId})`;
+    await sql`delete from trades where account_id = ${kontoId}`;
+    // trade otwarty z werdyktem AI wydanym przed wynikiem, wejscie przed wypelnieniami z pliku: jego wynik jest ukryty
+    const [t] = await sql`
+      insert into trades (account_id, instrument_id, direction, status, entry_time, entry_price, contracts, trading_day, market_session, exit_count, closed_contracts, source)
+      values (${kontoId}, ${mnqId}, 'long', 'open', ${`${DZIEN}T13:20:00Z`}, 20100, 3, ${DZIEN}, 'rth', 0, 0, 'form') returning id`;
+    await sql`
+      insert into trade_reviews (trade_id, setup_type, summary_md, basis, brain_verdict, model, kind, as_of, evidence_hash, evidence_cutoff)
+      values (${t.id}, 'FVG po sweepie', 'Uzasadnienie', 'chart', 'wejdz', 'claude-opus-4', 'ai',
+              ${`${DZIEN}T13:15:00Z`}, ${createHash("sha256").update(`${RUN}-ukryty`).digest("hex")}, ${`${DZIEN}T13:15:00Z`})`;
+    const api = await pwRequest.newContext({ baseURL: BASE, extraHTTPHeaders: { authorization: `Bearer ${tokenBrokera}` } });
+    for (const tresc of [ORDERS]) {
+      const r = await api.post("/api/v2/broker/inbox", {
+        headers: { "content-type": "text/csv", "x-file-sha256": createHash("sha256").update(tresc, "utf8").digest("hex") },
+        data: Buffer.from(tresc, "utf8"),
+      });
+      expect(r.status(), await r.text()).toBe(201);
+    }
+    await api.dispose();
+    // dowod z bazy: sa zamkniete trade'y brokera z netto, ale zadnego nie widac w interfejsie
+    const [{ n }] = await sql`select count(*)::int as n from broker_trades where status = 'closed' and net_cents is not null`;
+    expect(n).toBeGreaterThan(0);
+    const netto = (await sql`select net_cents::int as c from broker_trades where status = 'closed' and net_cents is not null`).map((w) => Math.abs(w.c as number));
+    const zakazane = [...new Set(netto.flatMap((c) => [String(c), (c / 100).toFixed(2).replace(".", ","), (c / 100).toFixed(2)]))];
+    const wycieki: string[] = [];
+    for (const adres of ["/prop/polaczenia", "/", "/prop"]) {
+      for (const naglowki of [{}, { RSC: "1" }] as Record<string, string>[]) {
+        const odp = await page.request.get(adres, { headers: naglowki });
+        expect(odp.status(), `${adres} ${JSON.stringify(naglowki)}`).toBe(200);
+        const tresc = await odp.text();
+        for (const z of zakazane) if (tresc.includes(z)) wycieki.push(`${adres} ${"RSC" in naglowki ? "RSC" : "HTML"}: „${z}”`);
+        // ani czas wyjscia (15:34 w strefie uzytkownika), ani liczba pozycji zamknietych w liczniku konta
+        if (adres === "/prop/polaczenia" && /15:34/.test(tresc)) wycieki.push(`${adres}: czas wyjścia 15:34`);
+      }
+    }
+    expect(wycieki).toEqual([]);
+    await page.goto("/prop/polaczenia");
+    await expect(page.getByTestId("broker-do-decyzji-puste")).toBeVisible();
   });
 
   test("telefon 375 px: Polaczenia, Dzis i ustawienia kont bez poziomego przewijania", async ({ page }) => {
