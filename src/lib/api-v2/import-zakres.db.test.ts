@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { wyczyscLimiter } from "./limiter";
-import { MOZNA_NA_BAZIE, nowyToken, polacz, sha256Hex, sprzatnijPoTokenach, unikalnyIp, zadanie, zapewnijPodstawy, type Par, type Sql } from "./test/db-pomocnik";
+import { MOZNA_NA_BAZIE, nowyToken, polacz, sha256Hex, sprzatnijPoTokenach, unikalnyIp, wlaczDwaFaDlaTestu, zadanie, zapewnijPodstawy, type Par, type Sql } from "./test/db-pomocnik";
 
 vi.mock("server-only", () => ({}));
 
@@ -22,14 +22,19 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zakres import (baza lokalna)", () => {
   const DOWOD = { video: "yt1", t: 10, quote: "cytat" };
   const utworzoneUI: number[] = [];
 
+  let przywrocDwaFa: () => Promise<void>;
+
   beforeAll(async () => {
     sql = polacz();
     await zapewnijPodstawy(sql);
+    // device/start jest zamkniete do wlaczenia 2FA (ADR-030, 17.10.2026).
+    przywrocDwaFa = await wlaczDwaFaDlaTestu(sql);
     write = await nowyToken(sql, ["read", "write"]);
     propose = await nowyToken(sql, ["read", "write", "propose"]);
     imp = await nowyToken(sql, ["read", "write", "propose", "import"]);
   });
   afterAll(async () => {
+    await przywrocDwaFa();
     await sprzatnijPoTokenach(sql, [write.id, propose.id, imp.id, ...utworzoneUI]);
     await sql.end();
   });
