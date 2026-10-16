@@ -87,7 +87,7 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
     // Zbieramy wszystkie wycieki naraz, żeby czerwony przebieg pokazał pełną listę, a nie tylko pierwszy.
     const wycieki: string[] = [];
     for (const adres of adresy) {
-      for (const naglowki of [{}, { RSC: "1" }]) {
+      for (const naglowki of [{}, { RSC: "1" }] as Record<string, string>[]) {
         const odp = await page.request.get(adres, { headers: naglowki });
         expect(odp.status(), `${adres} ${JSON.stringify(naglowki)}`).toBe(200);
         const tresc = await odp.text();
