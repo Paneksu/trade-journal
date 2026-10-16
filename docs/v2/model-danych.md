@@ -802,6 +802,163 @@ CREATE TABLE strategy_gaps (
 -- 'asked' ustawia API (rytual po sesji zadaje pytanie, po jednym)
 ```
 
+### 5.10 Dane brokera, wynik netto i konto dnia (0030 do 0032, ADR-034)
+
+**Status:** dopisane 16.10.2026 po akceptacji ADR-034 przez użytkownika («OK, czyli możemy zastosować tę twoją
+rekomendowaną opcję. Czyli po prostu przed stworzeniem notatki muszę kliknąć „Eksport”.»). Numeracja wg journala
+gałęzi `feat/ui-v2` (ostatnia wdrożona: `0029`), a nie wg starszej tabeli w sekcji 9.
+
+**Wynik netto (0030).** Słowa użytkownika (16.10.2026): «wynik ma być po prostu prawdziwy». Zmienia ADR-010.
+
+```sql
+ALTER TABLE trades ADD COLUMN fees bigint NULL;           -- centy; stawka x zamkniete kontrakty; NULL = historia sprzed 0030
+ALTER TABLE trades ADD COLUMN pnl_estimate bigint NULL;   -- wynik z cen trade'a minus fees (liczy computeTrade, zapisuje persistTrade)
+-- pnl = broker_amount (netto) albo pnl_estimate; "wyliczony" vs "z rachunku" = broker_amount IS NULL (bez kolumny)
+ALTER TABLE trades ADD CONSTRAINT trades_fees CHECK (fees IS NULL OR fees >= 0);
+
+ALTER TABLE instruments ADD COLUMN size_class text NULL CHECK (size_class IN ('mini','micro'));
+-- wypelnienie w migracji: symbole M-prefiksowe z seeda (MES, MNQ, MYM, M2K, MGC...) = micro, reszta = mini
+
+ALTER TABLE prop_firm_presets ADD COLUMN fee_rt_mini_cents bigint NULL CHECK (fee_rt_mini_cents IS NULL OR fee_rt_mini_cents >= 0);
+ALTER TABLE prop_firm_presets ADD COLUMN fee_rt_micro_cents bigint NULL CHECK (fee_rt_micro_cents IS NULL OR fee_rt_micro_cents >= 0);
+ALTER TABLE prop_firm_presets ADD COLUMN fee_source_url text NULL CHECK (fee_source_url IS NULL OR fee_source_url ~ '^https://');
+-- te same trzy kolumny w prop_rules (kopia presetu, edytowalna) i dwie stawki w accounts (konta inne niz prop)
+-- "rt" = round turn: prowizja + gielda + NFA za kontrakt w obie strony
+
+CREATE TABLE day_accounts (               -- aktywne konta dnia (rytual przed sesja)
+  day date NOT NULL,
+  account_id integer NOT NULL REFERENCES accounts ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, account_id)
+);
+```
+
+Stawka obowiązująca: reguła prop z dnia trade'a (`prop_rules.valid_from <= dzień`), dla konta nie-prop stawka konta.
+`computeTrade` dostaje `feeRtCents` (NULL = brak stawki → `fees` 0 i flaga „bez opłat”); `riskAmount` bez zmian
+(odległość do SL). Historia nie jest przeliczana w migracji: przycisk „Przelicz historię z opłatami” w UI
+(z podglądem) przelicza przez `persistTrade` trade'y bez `broker_amount`. Ostrzeżenie „część historii bez opłat”
+liczone z `fees IS NULL`.
+
+**Dane brokera (0031; dane firm w 0032).**
+
+```sql
+CREATE TABLE prop_firm_platforms (
+  id serial PK,
+  firm text NOT NULL, platform text NOT NULL,
+  methods text[] NOT NULL CHECK (methods <@ ARRAY['export_file','oauth_tradovate']),
+  export_hint text NULL,                  -- skad pobrac plik ("Trades -> Export")
+  source_url text NOT NULL CHECK (source_url ~ '^https://'),
+  read_on date NOT NULL, needs_verification boolean NOT NULL DEFAULT true,
+  notes text NULL,
+  UNIQUE (firm, platform, read_on)
+);
+
+CREATE TABLE broker_accounts (            -- konto u brokera <-> konto dziennika, 1:1
+  id serial PK,
+  account_id integer NOT NULL UNIQUE REFERENCES accounts ON DELETE CASCADE,
+  platform text NOT NULL CHECK (platform IN ('tradovate','tradingview','topstepx','rithmic','ninjatrader','generic')),
+  method text NOT NULL CHECK (method IN ('export_file','oauth_tradovate')),
+  firm text NULL,
+  external_account_hmac text NOT NULL CHECK (external_account_hmac ~ '^[0-9a-f]{64}$'),  -- HMAC-SHA256, klucz BROKER_ID_HMAC_KEY
+  label_last4 text NULL CHECK (label_last4 IS NULL OR length(label_last4) <= 4),
+  tz text NULL,                           -- strefa czasow bez przesuniecia w plikach tego konta (automat)
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (method <> 'oauth_tradovate' OR platform = 'tradovate'),
+  UNIQUE (platform, external_account_hmac)
+);
+-- trigger: INSERT/UPDATE tylko przy tj.actor = 'ui'
+
+CREATE TABLE broker_imports (
+  id serial PK,
+  origin text NOT NULL CHECK (origin IN ('ui','tj_watch','oauth')),
+  format text NOT NULL,                   -- lista w lib/domain (rosnie bez migracji, ADR-013)
+  file_sha256 text NULL CHECK (file_sha256 IS NULL OR file_sha256 ~ '^[0-9a-f]{64}$'),  -- NULL dla oauth
+  file_bytes integer NULL,
+  tz text NOT NULL,
+  rows_total integer NOT NULL, rows_skipped integer NOT NULL,
+  fills_new integer NOT NULL, fills_duplicate integer NOT NULL,
+  trades_matched integer NOT NULL, trades_created integer NOT NULL, pending_decisions integer NOT NULL,
+  status text NOT NULL DEFAULT 'committed' CHECK (status IN ('committed','reverted')),
+  created_by_token_id integer NULL REFERENCES api_tokens ON DELETE NO ACTION,
+  created_at timestamptz NOT NULL DEFAULT now(), reverted_at timestamptz NULL,
+  CHECK ((status = 'reverted') = (reverted_at IS NOT NULL)),
+  CHECK ((origin = 'oauth') = (file_sha256 IS NULL))
+);
+-- indeks: (file_sha256)
+-- trigger: INSERT tylko przy tj.actor = 'ui' albo 'api:<id>' tokenu, ktorego scopes = {import_broker}
+
+CREATE TABLE broker_trades (
+  id serial PK,
+  broker_account_id integer NOT NULL REFERENCES broker_accounts ON DELETE CASCADE,
+  import_id integer NULL REFERENCES broker_imports ON DELETE CASCADE,
+  external_ref text NOT NULL UNIQUE,      -- 'brk:<platforma>:<skrot konta>:<id pierwszego fill wejscia>'
+  contract text NOT NULL,
+  instrument_id integer NULL REFERENCES instruments ON DELETE RESTRICT,
+  direction text NOT NULL CHECK (direction IN ('long','short')),
+  max_qty numeric(14,4) NOT NULL CHECK (max_qty > 0),
+  entry_time timestamptz NOT NULL, exit_time timestamptz NULL,
+  avg_entry_price numeric(18,8) NOT NULL, avg_exit_price numeric(18,8) NULL,
+  status text NOT NULL CHECK (status IN ('open','closed')),
+  gross_cents bigint NULL,                -- z pliku albo z cen fills (computeTrade)
+  gross_source text NULL CHECK (gross_source IN ('broker','computed')),
+  fees_cents bigint NULL CHECK (fees_cents IS NULL OR fees_cents >= 0),
+  fee_source text NULL CHECK (fee_source IN ('broker','rate')),
+  net_cents bigint NULL,                  -- gross - fees; idzie jako brokerAmount przez persistTrade
+  trading_day date NULL,                  -- jak trades.trading_day (ADR-022)
+  trade_id integer NULL REFERENCES trades ON DELETE SET NULL,
+  match_kind text NULL CHECK (match_kind IN ('auto','user','ai_accepted','created')),
+  match_state text NOT NULL DEFAULT 'unmatched' CHECK (match_state IN ('unmatched','ambiguous','matched','skipped')),
+  matched_at timestamptz NULL,
+  prev_broker_amount_cents bigint NULL,   -- do cofniecia dopasowania i importu
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK ((trade_id IS NULL) = (match_kind IS NULL)),
+  CHECK ((match_state = 'matched') = (trade_id IS NOT NULL)),
+  CHECK ((status = 'closed') = (exit_time IS NOT NULL)),
+  CHECK ((gross_cents IS NULL) = (gross_source IS NULL)),
+  CHECK ((fees_cents IS NULL) = (fee_source IS NULL))
+);
+-- UNIQUE (trade_id) WHERE trade_id IS NOT NULL
+-- indeksy: (broker_account_id, entry_time); (trading_day); (match_state) WHERE match_state IN ('unmatched','ambiguous')
+
+CREATE TABLE broker_fills (
+  id serial PK,
+  broker_account_id integer NOT NULL REFERENCES broker_accounts ON DELETE CASCADE,
+  import_id integer NULL REFERENCES broker_imports ON DELETE CASCADE,
+  external_ref text NOT NULL UNIQUE,      -- '<platforma>:<skrot konta>:<id_zrodla>'
+  broker_trade_id integer NULL REFERENCES broker_trades ON DELETE SET NULL,
+  contract text NOT NULL,
+  side text NOT NULL CHECK (side IN ('buy','sell')),
+  qty numeric(14,4) NOT NULL CHECK (qty > 0),
+  price numeric(18,8) NOT NULL CHECK (price > 0),
+  filled_at timestamptz NOT NULL,
+  fee_cents bigint NULL,                  -- gdy plik podaje oplate per fill
+  broker_pnl_cents bigint NULL,           -- P&L pary z pliku, przy fillu wyjscia (brutto)
+  order_ref text NULL,
+  raw jsonb NOT NULL,                     -- sparsowany wiersz BEZ numeru konta
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+-- indeksy: (broker_account_id, filled_at), (broker_trade_id)
+```
+
+Zmiany istniejących ograniczeń w 0031 (`DROP CONSTRAINT` + `ADD` w tej samej migracji; stare wiersze je spełniają):
+- `api_tokens.scopes`: dochodzi `'import_broker'`, wyłącznie samodzielnie:
+  `scopes <@ ARRAY['read','write','propose','import','import_broker'] AND (NOT 'import_broker' = ANY(scopes) OR scopes = ARRAY['import_broker'])`;
+  `device_codes` bez zmian (logowanie kodem urządzenia nie da `import_broker`).
+- `trades_source`: `('form','tradingview','fxreplay','broker')`; `external_ref` z prefiksem `brk:`; skasowanie trade'a
+  z `source = 'broker'` zostawia nagrobek w `ingest_skips` jak dotąd.
+- `ai_suggestions.kind`: + `'broker_match'`, `'broker_trade'`.
+- `auth_events.kind`: + `'broker_import'`, `'broker_import_reverted'`, `'broker_account_mapped'`,
+  `'broker_match_reverted'`; w etapie B + `'broker_connect'`, `'broker_disconnect'`, `'broker_token_refresh_fail'`.
+
+Ślepa ocena: `ukrycie-wyniku.ts` dostaje `sqlBrokerUkryty` (dopasowany do trade'a z ukrytym wynikiem albo niedopasowany
+z tego samego konta i dnia, z wejściem po najwcześniejszym wejściu takiego trade'a). `pnl_estimate` trade'a z ukrytym
+wynikiem jest ukryte jak `pnl`.
+
+**Etap B (szkic, migracja dopiero przy budowie workera):** `broker_connections` (`broker_account_id` UNIQUE, `status`
+`pending`/`active`/`revoked`/`error`, `refresh_token_enc`, `platform_account_id_enc`, `token_expires_at`,
+`authorized_at`, `last_sync_at`, `sync_requested_at`, `revoked_at`), `broker_connection_events` (`tj_forbid_update`:
+czas, metoda, ścieżka, status, ms), `broker_fills.expires_at` (retencja 24 h do odpowiedzi Tradovate).
+
 ---
 
 ## 6. Co jest niezmienne i czym to wymusza baza
@@ -912,6 +1069,9 @@ reguł i setupów użytych w werdyktach nie da się skasować.
 | `0025_przeglad_tygodnia.sql` | 2b | `weekly_reviews` | 0018 |
 | `0026_profil_wykres.sql` | 2b (potrzebne fazie 3) | `chart_annotations`, `profile_terms`, `profile_term_sources`, `interpretation_corrections` | 0018 |
 | `0027_mentor_luki.sql` | 2b (przed fazą 4b) | `mentor_sources`, `mentor_claims`, `note_additions.mentor_claim_id`, `strategy_gaps` | 0020 |
+| `0030_wynik_netto.sql` | ADR-034, etap A | `trades.fees`, `trades.pnl_estimate`, `instruments.size_class`, stawki opłat w presetach, regułach i kontach, `day_accounts` (numeracja wg journala `feat/ui-v2`) | 0029 |
+| `0031_broker_import.sql` | ADR-034, etap A | tabele brokera z sekcji 5.10, zakres `import_broker`, rozszerzone CHECK-i | 0030 |
+| `0032_firmy_platformy.sql` | ADR-034, etap A | tylko dane: `prop_firm_platforms` | 0031 |
 
 Każde wydanie: kopia bazy w Coolify przed scaleniem (STOP z planu), migracje sprawdzone oboma
 migratorami na świeżej bazie lokalnej (`127.0.0.1:55433`), test „migracje od zera vs `schema.ts`”.
@@ -945,7 +1105,8 @@ Po instalacji lokalnie (nie na produkcji): `SELECT public.f_unaccent('Zarządzan
   kolumny statusu reguły i fazy hipotezy (wyliczane), flagi look-ahead (wyliczana);
 - kolumny `data_source` — źródło danych jest wyliczane (Słowa użytkownika, 14.10.2026: «Wyliczane»; sekcja 5.3);
 - „okna importu” zatwierdzeń — import reguł tworzy wyłącznie propozycje (Słowa użytkownika, 14.10.2026: «Jako propozycje, zatwierdzam ponownie»);
-- jednej liczby „edge score”, serii, gamifikacji, auto-sync brokerów (plan, „Nie robimy”);
+- jednej liczby „edge score”, serii, gamifikacji (plan, „Nie robimy”); auto-sync brokerów tylko za flagą OAuth
+  z ADR-034, a eksport pliku z automatem łącznika jest (sekcja 5.10);
 - tabeli sesji logowania (sesja zostaje bezstanowa, ADR-005); sudo i drugi krok to ciasteczka;
 - połączenia `strategies` (stara tabela, ADR-020) z `setups` — `strategies` zostaje przy sesjach
   backtestu bez zmian; ewentualne `backtest_sessions.setup_id` to SHOULD na później.
