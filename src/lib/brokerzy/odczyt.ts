@@ -112,7 +112,7 @@ async function wczytaj(tx: Db, warunki: SQL[], limit: number): Promise<Wiersz[]>
       kPlat: brokerAccounts.platform,
       kLast4: brokerAccounts.labelLast4,
       symbol: instruments.symbol,
-      liczbaFills: sql<number>`(select count(*)::int from broker_fills bf where bf.broker_trade_id = ${brokerTrades.id})`,
+      liczbaFills: sql<number>`(select count(*)::int from broker_fills bf where bf.broker_trade_id = broker_trades.id)`,
     })
     .from(brokerTrades)
     .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
@@ -280,7 +280,7 @@ export async function statusBrokera(tx: Db, dzien?: string) {
       const [d] = await tx
         .select({
           n: sql<number>`count(*)::int`,
-          bez: sql<number>`count(*) filter (where not exists (select 1 from broker_trades bx where bx.trade_id = ${trades.id}))::int`,
+          bez: sql<number>`count(*) filter (where not exists (select 1 from broker_trades bx where bx.trade_id = trades.id))::int`,
           ostatni: sql<Date | string | null>`max(coalesce(${trades.exitTime}, ${trades.entryTime}))`,
         })
         .from(trades)

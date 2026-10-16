@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 
 import type { Transakcja } from "@/lib/api-v2/zapis";
 import {
@@ -645,7 +645,8 @@ async function podejrzeniePrzesuniecia(tx: Transakcja, kontaBrokera: number[]) {
         inArray(trades.accountId, [...new Set(wiersze.map((w) => w.konto as number))]),
         isNull(trades.backtestSessionId),
         eq(trades.status, "closed"),
-        sql`${trades.entryTime} between ${minCzas} and ${maxCzas}`,
+        gte(trades.entryTime, minCzas),
+        lte(trades.entryTime, maxCzas),
         sql`not exists (select 1 from broker_trades bx where bx.trade_id = ${trades.id})`,
       ),
     );
@@ -732,7 +733,7 @@ export async function domenaTraduBrokera(tx: Transakcja, bt: WierszTraduBrokera)
   const [poprzedni] = await tx
     .select({ entryTime: brokerTrades.entryTime })
     .from(brokerTrades)
-    .where(and(eq(brokerTrades.brokerAccountId, bt.brokerAccountId), eq(brokerTrades.contract, bt.contract), sql`${brokerTrades.entryTime} < ${bt.entryTime}`, sql`${brokerTrades.exitTime} >= ${bt.entryTime}`))
+    .where(and(eq(brokerTrades.brokerAccountId, bt.brokerAccountId), eq(brokerTrades.contract, bt.contract), lt(brokerTrades.entryTime, bt.entryTime), gte(brokerTrades.exitTime, bt.entryTime)))
     .orderBy(asc(brokerTrades.entryTime))
     .limit(1);
   const dom = await wczytajDomene(tx, konto, bt.contract, poprzedni?.entryTime ?? bt.entryTime);
