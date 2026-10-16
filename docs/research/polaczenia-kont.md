@@ -293,6 +293,100 @@ Jeśli OAuth odpada (brak zatwierdzenia, brak potwierdzenia zakresu), funkcja �
 
 **Akcja pozyskania (zasada sesji planistycznej):** nie dotyczy, to research techniczny dziennika tradingowego, nie biznesu Szymona.
 
+---
+
+## Uzupełnienie: automat bez OAuth (16.10.2026)
+
+Zlecenie: czy da się zbudować stałe połączenie tylko do odczytu bez Tradovate API/OAuth, gdyby OAuth nie wyszedł. Słowa użytkownika: «zależy mi na tym, żeby w końcu było jedno połączenie, z którego dałoby się stale korzystać»; «czy da się zrobić to całe połączenie bez tradeovate, jeśli z tradeovate by nie wyszło?»; wcześniej: tylko odczyt, bez haseł, «jak najbardziej bezpieczne», oraz «Nie, tylko z potwierdzonym read-only».
+
+Poziomy dowodów jak wyżej. Dodatkowo **PRZETESTOWANE** oznacza tu: sprawdziłem na komputerze Szymona (tylko nazwy plików i katalogów; zawartości baz i magazynów sesji celowo nie otwierałem) albo przeczytałem stronę w całości. Strony `support.tradovate.com` i `vendor-support.ninjatrader.com` nie dają się odczytać automatycznie (SPA, błąd CSS), a część `apextraderfunding.com` zwraca 403, więc ich treść znam z cytatów w wynikach wyszukiwania: to CZĘŚCIOWE.
+
+### U.1 Odpowiedź w trzech zdaniach
+
+1. **Tak, da się bez Tradovate API/OAuth**, na trzy sposoby (poczta, odczyt panelu TradingView, pośrednik-dziennik), ale **żaden nie spełnia naraz trzech warunków**: (a) działa sam co dzień, (b) na pewno widzi konta prop (eval i funded), (c) „tylko do odczytu” jest wymuszone przez platformę. Warunku (c) nie spełnia nic w tym raporcie, także OAuth.
+2. **Da się za to mieć read-only „z konstrukcji”, czyli bez żadnego kanału do brokera:** wiadomości i pliki, które przychodzą do nas same (poczta, eksport do pliku). Nie ma tam czego zablokować, bo nie ma drogi do konta. To jest mocniejsze od „my tylko czytamy” i najlepiej pasuje do Twojego «tylko z potwierdzonym read-only».
+3. **Jedno stałe połączenie da się zbudować inaczej niż „jeden kabel”:** jeden **wlot** w dzienniku (ten sam import i podgląd z ADR-034), do którego mogą wpadać różne źródła (plik, poczta, odczyt panelu, OAuth). Źródło można wymienić bez przebudowy i bez ponownego „łączenia”. To odpowiedź na «w końcu jedno połączenie».
+
+### U.2 Wyciągi i alerty e-mail (pytanie 1)
+
+| Źródło | Co wysyła | Format i zawartość | Konta prop | Jak włączyć | Dowód |
+|---|---|---|---|---|---|
+| **Tradovate / NinjaTrader Brokerage** (konta własne) | Dzienny wyciąg „każdej nocy”, tylko w dni z aktywnością (transakcje, opłaty administracyjne, P&L pozycji przez noc); miesięczny też w platformie | PDF (wg PickMyTrade). Cztery sekcje: Open Trade Equity, Account Balances, Daily Activity Summary, Daily Trading Details; w szczegółach każde wypełnienie: czas, kupno/sprzedaż, ilość, cena, ID zlecenia. Opłaty i prowizje: układ kolumn LUKA | **LUKA.** Wynik wyszukiwania dla Dashboardu: „konta prop mają ograniczony dostęp do Dashboardu”. Konta eval to konta symulacyjne w posiadaniu firmy. Nie znalazłem żadnego źródła, że eval/funded dostają wyciąg mailem | **Nie znalazłem żadnego ustawienia.** W platformie: Reports > Client Statements (PickMyTrade) | CZĘŚCIOWE: [OFICJALNE] notatka wydania Tradovate **1.191129.0 z 29.11.2019** („in addition to receiving your daily statement via email each night”) [NIEAKTUALNE: 2019, tylko jako ślad]; [OFICJALNE] artykuł „Understanding Daily Account Statements” w cytacie wyszukiwarki, bez daty; [BLOG] PickMyTrade 08.07.2026 powtarza „emails you the daily statement every night” |
+| NinjaTrader (dostawca platformy, konto Tradovate) | To samo, z Dashboardu NinjaTrader (menu użytkownika), e-wyciągi bezpłatne | PDF; support NT wskazuje wyciągi z dashboardu jako dokładny rekord dla kont Tradovate (zamiast raportu NT8) | j.w. | Dashboard | CZĘŚCIOWE (cytaty z help center i forum NT w wyszukiwarce, bez dat) |
+| **Apex** | „Account Update” dzień po naruszeniu reguły; przypomnienia o nieaktywności (dni 15 i 20); mail o gotowości PA i o zaliczeniu eval | Informacyjne, bez wypełnień | Tak, to mail firmy | Brak ustawienia w tym, co widziałem | CZĘŚCIOWE: tylko cytaty z wyników wyszukiwania; strony help center zwróciły 403 przy odczycie. Dashboard odświeża metryki **o północy ET** |
+| **Take Profit Trader** | Nie znalazłem maili. Control Center aktualizuje się po sesji, zwykle 23:00 do 24:00 ET | Panel, nie mail | Tak | n/d | [BLOG] proptradingvibes: **[BEZ DATY]** |
+| **Topstep** | Nie znalazłem maili (wyciągów, raportu Combine) | Eksport „Trades”/„Orders” CSV z TopstepX po zakresie dat | Tak | Eksport ręczny | CZĘŚCIOWE: help.topstep.com (wynik wyszukiwania), bez daty |
+| Tradeify, Lucid, MFFU, Alpha, Bulenox, Earn2Trade | **LUKA**: wyszukiwania nie zwróciły niczego, co wprost opisuje maile o naruszeniu, raporcie dziennym lub celu. Nie traktować jako „nie ma” | | | | |
+
+Wnioski:
+- Wyciąg Tradovate to **jedyny wskazany (CZĘŚCIOWO) wyciąg z wypełnieniami wysyłany mailem**, ale **nie wiadomo, czy dotyczy kont prop**. To rozstrzyga jedna obserwacja u Szymona (U.7, test 1).
+- Maile firm prop to **alerty o zdarzeniach** (naruszenie, aktywacja, zaliczenie), nie źródło wypełnień. Ich wartość dla dziennika: sygnał zmiany fazy konta (`prop_phase`) bez API. Treść maili i wzór tematu nieznane, więc parser powstałby dopiero z prawdziwej wiadomości.
+
+### U.3 Drogi automatyczne bez OAuth Tradovate (pytanie 2)
+
+| Droga | Tylko odczyt | Stałość | Dane logowania | Regulamin | Wykonalność (1 osoba) | Werdykt |
+|---|---|---|---|---|---|---|
+| **a1. Lokalna baza NT8** (`Documents\NinjaTrader 8\db\NinjaTrader.sqlite`) | Tak, plik | Niska dla Szymona | Brak | Nie sprawdzony | Plik jest SQLite, ale schemat niedokumentowany i zmieniał się między 8.0.28 a 8.1.3 [FORUM NT, wypowiedź supportu] | **Odpada.** PRZETESTOWANE: na komputerze Szymona NT8 jest, ale `db` zawiera **tylko dane rynkowe ES** (`.ncd`, `.ntb`) plus `NinjaTrader.sqlite`; logi tylko z 04.01 do 09.01.2026. Zawartości sqlite nie otwierałem. Support NT: zlecenia złożone w innej aplikacji mogą nie zostać zapisane w NT8, a dla Tradovate zalecają wyciągi z dashboardu. Szymon handluje z TradingView, więc NT8 nie zobaczy jego wypełnień |
+| **a2. Pamięć lokalna TradingView Desktop** | Tak, plik | Nieznana | W tym samym katalogu leżą ciasteczka i sesje | Nie sprawdzony | LevelDB/IndexedDB w formacie wewnętrznym Chromium, pliki w użyciu (`LOCK`) | **Odrzucone.** PRZETESTOWANE struktura: aplikacja ze sklepu Microsoft, profil w `%LOCALAPPDATA%\Packages\TradingView.Desktop_n534cwy3pjxzj\LocalCache\Roaming\TradingView\`, są magazyny `IndexedDB\https_www.tradingview.com_0...` i `IndexedDB\https_trader.tradovate.com_0...`, `Local Storage`, `Network\Cookies`. Nie znalazłem dokumentacji, że historia konta jest tam trwale zapisana (LUKA), a magazyn pochodzenia `trader.tradovate.com` to z natury miejsce na sesję. Czytanie go to dotykanie poświadczeń sesji, wbrew «jak najbardziej bezpieczne». Aplikacja desktopowa Tradovate: nie sprawdzano, ta sama zasada |
+| **b. Panel brokera w TradingView przez CDP** | **Nie wymuszone.** Odczyt DOM jest tylko odczytem z konstrukcji skryptu, nie platformy | Średnia: zależy od otwartego TradingView, portu CDP i niezmiennego DOM | Brak (sesja już jest) | TradingView, sekcja 3 polityk: zakaz „non-display” i „machine-driven” dotyczy **danych rynkowych**; o danych konta brak zapisu, o scrapingu brak zapisu (strona bez daty: **[BEZ DATY]**). README narzędzia tradingview-mcp ostrzega, że ToS TradingView ogranicza „automated data collection, scraping” | Wykonalna od ręki: łącznik `tj` już czyta przez CDP. Panel ma zakładki Positions, Orders, History, Account history, kolumny zależne od brokera [OFICJALNE TradingView, cn.tradingview.com, bez daty: **[BEZ DATY]**] | **Warunkowo, wymaga decyzji klasy 3** (patrz U.5) |
+| **c. Trade copiery i agregatory** | **Nie.** Tradovate: skopiowanie zleceń wymaga klucza z pełnym dostępem do zleceń [FORUM]; TradeSyncer zajmuje jedną z dwóch sesji | Wysoka | Hasło lub klucz | Firmy prop monitorują połączenia, TradeSyncer ma limity i zawieszenia (ryzyko 3 wyżej) | Łatwa, ale sprzeczna z wymogiem | **Odpada.** Publicznego API odczytu nie znalazłem |
+| **d1. TradesViz jako pośrednik** | Tak, po stronie TradesViz: API `GET`-only, zakresy m.in. `trades.read`, `executions.read`, `analytics.read`, klucz ograniczony do wybranych kont; „API and MCP cannot place, change or cancel broker orders” | Wysoka. Synchronizacja z brokerem raz na dobę, zwykle po 18:00 ET | Szymon łączy brokera u nich, my dostajemy **tylko klucz API TradesViz**, nie dane brokera | Regulamin API TradesViz nie sprawdzony (LUKA). Sam sync Tradovate u nich to OAuth Tradovate, więc **pytanie o zakres OAuth jest przeniesione, nie rozwiązane** | Wykonalna: klucz, cykliczne GET z paginacją kursorem. Dostęp API/MCP wymaga planu **Pro lub Platinum** (cennik nie sprawdzony) | **Opcja awaryjna.** Dowody: [DZIENNIK] blog 02.10.2026 i dokumentacja `/api-mcp/docs/` (przeczytana w części, 100 z 400 tys. znaków); strona Tradovate zaktualizowana 25.05.2026. Rozbieżność: wpis o Tradovate mówi „read-only permissions”, strona Tradeify każe wkleić „access code”. Czy ich sync widzi konta prop Tradovate, strona nie rozstrzyga. Nie ustaliłem, czy da się wystawić klucz wyłącznie z zakresami odczytu |
+| **d2. TradeZella** | Deklaracja „read-only” | Sync co 3 h (wg Tanto, drugie źródło) | OAuth (niepotwierdzone) | n/d | **Nie znalazłem publicznego API ani webhooka.** Nasz dziennik nie mógłby od nich czytać | **Odpada** jako źródło |
+| **d3. Tradervue** | API REST, JSON | Wysoka | **HTTP Basic: login i hasło do Tradervue** [OFICJALNE, GitHub tradervue/api-docs, bez daty: **[BEZ DATY]**] | n/d | Brak auto-synchronizacji Tradovate (import CSV) | **Odpada:** wymaga przechowania hasła, a źródłem i tak byłby plik |
+| **e. Rithmic R\|Trader Pro, „periodic CSV export”** | Tak, plik na dysku | Wysoka, **tylko gdy R\|Trader Pro jest uruchomiony** | Brak | Funkcja programu | Prosta: okno Recent Orders, ikona pliku, „periodic csv export”, „Save every”; plik jest **nadpisywany** w tym samym miejscu | **Najlepsza droga dla kont Rithmic** (np. Bulenox, Apex na Rithmic). Dla Tradovate bezużyteczna. Dowód: [DZIENNIK] TradesViz, 24.10.2024; oficjalnej dokumentacji Rithmic nie znalazłem (LUKA: nazwa pliku, kolumny, prowizje) |
+| **f. Panele firm pod stałym linkiem** | Tak (odczyt widoku) | Dane odświeżane raz dziennie w nocy ET (Apex północ, TPT 23:00 do 24:00) | **Wymagają logowania.** Publicznych linków nie znalazłem | Topstep: dane logowania nie mogą być udostępniane (ryzyko 1) | Wymagałoby odczytu zalogowanego panelu, czyli tego samego co (b) na obcej stronie | **Odpada** jako automat. Panel bywa źródłem **alertu**, nie wypełnień |
+
+### U.4 Obserwacje z komputera Szymona i dokumentacji
+
+- PRZETESTOWANE: TradingView Desktop jest zainstalowany ze sklepu Microsoft, a w jego profilu istnieje magazyn `https_trader.tradovate.com`. To zgodne z tym, że połączenie z brokerem idzie przez okno logowania Tradovate. Czy to OAuth, nie wiem (LUKA).
+- OFICJALNE (prop.tradovate.com, 11.08.2026, zmienione 19.08.2026): konta prop łączą się w TradingView przez wybór „NinjaTrader”, typ **Demo**, i **login oraz hasło wydane przez firmę**. Jeśli tak jest u Szymona, to hasło firmy prop **już leży** w jego TradingView. Odczyt z TradingView tego nie powiela, a każda droga „z nowym logowaniem” (nasz OAuth, klucz) dodaje drugą kopię dostępu.
+- Limit dwóch sesji Tradovate (ryzyko 4) dotyczy każdego nowego logowania; TradeSyncer wprost pisze, że jego połączenie zużywa jedną z dwóch sesji, a Topstep opisuje błąd TradingView „broker connection limit has been exceeded” [BLOG/OFICJALNE help Topstep, wyniki wyszukiwania, bez dat]. Odczyt z już otwartego TradingView **nie dodaje sesji** (WYWNIOSKOWANE, do sprawdzenia). To realna przewaga drogi (b) nad OAuth i TradesViz.
+
+### U.5 Ryzyko drogi b (odczyt panelu TradingView przez CDP), konkretnie
+
+1. **Ten sam interfejs ma przyciski zleceń.** Port CDP daje każdemu lokalnemu procesowi pełne sterowanie zalogowaną sesją (kliknięcia, wpisywanie, przechwytywanie ruchu, ciasteczka). To cecha CDP, nie błąd: „any local malware… could abuse the endpoint” [BLOG/audyt bezpieczeństwa; dokumentacja Mozilli o tym samym modelu; dla Electrona wprost niepotwierdzone]. Powierzchnia ataku istnieje, dopóki port jest otwarty, niezależnie od tego, co robi łącznik.
+2. **Hook blokuje zlecenia, ale to blokada po naszej stronie.** To dokładnie ta kategoria, którą użytkownik odrzucił 16.10 dla OAuth («Nie, tylko z potwierdzonym read-only»). Jeśli odczyt panelu ma ją omijać, to **decyzja klasy trzeciej**, nie nasza.
+3. **Łagodzenia (jeśli użytkownik zaakceptuje):** (a) tylko `Runtime.evaluate` z jedną zamkniętą funkcją odczytu DOM i białą listą selektorów zakładek History i Account history, bez żadnych zdarzeń wejścia (`Input.*`), bez klikania w panelu; (b) uruchamianie na żądanie albo z harmonogramu, port otwarty tylko na czas odczytu; (c) w łączniku blokada żądań sieciowych o ścieżkach zleceń przez domenę `Fetch` (WYWNIOSKOWANE jako projekt; nie sprawdzono, czy TradingView wysyła zlecenia z tego procesu); (d) przy dowolnym wyjątku odczyt się przerywa, nie ponawia.
+4. **Kruchość:** DOM i kolumny zależą od brokera i wersji TradingView; zmiana układu psuje odczyt (bezpiecznie: pusty wynik, nie błędny zapis, o ile walidacja go odrzuci).
+5. **Eksport „Export data…” z menu brokera** (blog TradingView, bez daty: **[BEZ DATY]**) to kliknięcie w menu tuż obok zleceń. Odczyt DOM jest bezpieczniejszy niż automatyczne klikanie eksportu. Ręczny eksport przez człowieka jest bezpieczny i nadal jest fallbackiem.
+6. **ToS:** zapis polityk TradingView o „non-display” dotyczy danych rynkowych; o danych własnego konta nic nie znalazłem, ale autor narzędzia sam ostrzega o ryzyku (WYWNIOSKOWANE: ryzyko niskie, niepotwierdzone). Regulamin firmy prop i NinjaTrader dla takiego odczytu: LUKA.
+
+### U.6 Ranking dróg do stałego połączenia tylko do odczytu (gdyby OAuth nie wyszedł)
+
+Kryteria: (1) czy read-only jest z konstrukcji, (2) brak haseł i kluczy, (3) działa sama codziennie, (4) obejmuje konta prop.
+
+| # | Droga | Read-only | Hasła/klucze | Sama codziennie | Prop | Uwagi |
+|---|---|---|---|---|---|---|
+| **1** | **Wyciąg e-mail Tradovate na dedykowany adres odbiorczy** (reguła przekazywania w skrzynce, nasz serwer tylko odbiera) | **Tak, z konstrukcji** (brak kanału do brokera) | **Zero.** Nie mamy dostępu do skrzynki Szymona, tylko do jednego adresu, na który przekazuje wybrane wiadomości | Tak, następnego ranka (D+1, tylko dni z aktywnością) | **Nieznane (LUKA)** | **Najbezpieczniejsza.** Warunek: wyciągi muszą przychodzić dla jego kont. Układ PDF nieznany do pierwszej prawdziwej wiadomości. Parser deterministyczny (nie model), jak w ADR-034 |
+| **2** | **Odczyt panelu TradingView przez CDP** (U.5) | Nie (po naszej stronie) | Zero | Tak, jeśli TradingView jest otwarte; harmonogram na komputerze | **Tak, dokładnie to, co widać w TradingView** (Szymon tam handluje) | **Najwygodniejsza pod względem pokrycia** i jedyna, która nie dodaje sesji ani logowania. Wymaga decyzji klasy 3 |
+| **3** | **TradesViz jako pośrednik** (klucz API `GET`, zakresy odczytu) | Tak, na poziomie klucza TradesViz; sync TradesViz-Tradovate: zakres nieudokumentowany | Klucz TradesViz (odczyt) | Tak, raz na dobę po 18:00 ET, bez włączonego komputera | Nieznane | **Najwygodniejsza w obsłudze** (jednorazowe podłączenie, potem sama), ale płatna (Pro), dane u trzeciej strony i nadal zależna od OAuth Tradovate po ich stronie. Nie spełnia «bez Tradovate» |
+| **4** | **Rithmic periodic export** (dla kont Rithmic) | Tak, plik | Zero | Tak, gdy R\|Trader Pro działa | Tak (konta prop na Rithmic) | Obowiązkowa dla Rithmic, bez znaczenia dla Tradovate |
+| **5** | **Ręczny eksport CSV** (Tradovate Orders + Cash History; TopstepX Trades) | Tak | Zero | **Nie** (klikanie) | Tak | Zawsze dostępny zapas, już w ADR-034 etap A |
+| odrzucone | Baza NT8, pamięć TradingView Desktop, trade copiery, TradeZella, Tradervue, panele firm | | | | | Powody w U.3 |
+
+**Najbezpieczniejsza: nr 1** (poczta), bo nie ma żadnego kanału do konta, a więc nie ma czego przechwycić ani zablokować. **Najwygodniejsza: nr 2** pod względem pokrycia (widzi to, na czym Szymon naprawdę handluje) albo **nr 3** pod względem obsługi (działa bez komputera). Żadna nie jest jednocześnie pierwsza w obu kolumnach, więc rozsądny zestaw to **nr 1 jako stały strumień dla kont, dla których przychodzą wyciągi, plus nr 5 jako zapas**, a nr 2 tylko za zgodą użytkownika na ryzyko z U.5.
+
+Uczciwa niewiadoma: **jeśli maile nie przychodzą dla kont prop**, nr 1 odpada dla tego, co Szymona najbardziej obchodzi, i wtedy realne są tylko nr 2 (decyzja) albo nr 5 (klikanie).
+
+### U.7 Co sprawdzić u Szymona, zanim cokolwiek zbudujemy (kilka minut)
+
+1. **Skrzynka:** czy w ostatnich tygodniach przyszedł mail „statement” od Tradovate lub NinjaTrader, i co przychodzi od firmy prop poza fakturami? Przekazać jedną wiadomość (lub temat i nazwę załącznika) z usuniętymi danymi osobowymi. To jedyny sposób, żeby poznać format.
+2. **TradingView, Account Manager:** na koncie prop i na koncie własnym zapisać nazwy zakładek (Positions, Orders, History, Account history) i kolumn historii. Czy w historii są prowizje?
+3. **Które konta:** firma, program, „NinjaTrader” czy „Tradovate” przy wyborze brokera w TradingView (U.4).
+
+### U.8 Decyzje klasy trzeciej
+
+1. **Odczyt panelu TradingView przez CDP (nr 2):** czy akceptujesz drogę, w której „tylko do odczytu” zapewnia nasz skrypt i hook, a nie platforma, skoro dla OAuth powiedziałeś «Nie, tylko z potwierdzonym read-only»? Rekomendacja: **nie jako domyślna, tak jako jawnie włączana na żądanie**, po Twojej decyzji. Brakuje kontekstu: czy otwarty port CDP działa na Twoim komputerze stale, czy tylko na czas pracy łącznika.
+2. **Przekazywanie maili:** czy zgadzasz się na dedykowany adres odbiorczy dziennika (wyciągi zawierają dane konta; trzeba też rozstrzygnąć, czy przechowujemy PDF, bo ADR-034 pkt 2 mówi o nieprzechowywaniu pliku CSV).
+3. **TradesViz:** czy dopuszczasz kolejny podmiot przetwarzający dane finansowe i koszt planu Pro, jeśli poczta i CDP odpadną.
+
+### U.9 Co to zmienia w projekcie (do wpisania w ADR-034 po decyzji)
+
+- **Jeden wlot, wymienne źródła.** Etap A (plik) i każde przyszłe źródło (poczta, CDP, OAuth, TradesViz) zasilają ten sam podgląd i zapis. `broker_accounts.method` rozszerzyć o wartości `email_statement` i `tradingview_panel` (oba za osobną decyzją), a `tradesviz_api` trzymać jako opcję awaryjną; zamiast zawężać do `csv_import` i `oauth_tradovate`.
+- **„Połącz” w UI nie musi czekać na OAuth.** Jeśli test z U.7 pokaże wyciągi, przycisk „Połącz” dla Tradovate = „Wskaż adres, na który przekażesz wyciągi”, bez żadnego logowania.
+- **Faza konta z maili firm prop** (naruszenie, zaliczenie) jako podpowiedź do `prop_phase`, zawsze do potwierdzenia przez użytkownika.
+- **Akcja pozyskania:** nie dotyczy (research techniczny dziennika).
+
 ## Zapisane pliki
 
 - R:\PROJEKTY\web_developer\projekty\trade-journal\docs\research\polaczenia-kont.md
