@@ -238,3 +238,17 @@ tokenu). Zdejmij zmienną dopiero po włączeniu 2FA i pierwszym `tj login` zatw
   **Token importu** (zakres `import`, 24 h, pokazywany raz) tworzysz tam samo, ręcznie.
 - **Smoke po wdrożeniu:** `curl https://dziennik.panekweb.pl/api/v2/meta` → `401`; z tokenem → `200` i `contractHash`
   równy temu z `docs/openapi-v2.json`.
+
+## 11. Notatka dnia bez konta (migracja 0029, ADR-033, 2026-10-16)
+
+Migracja `0029_notatka_dnia_bez_konta` **zmienia dane**: scala notatki dnia przypięte do kont w jedną notatkę dnia
+bez konta (Słowa użytkownika 16.10.2026: «Scal w migracji»).
+
+1. **Przed wdrożeniem: kopia bazy w Coolify** (Backups → „Backup now”) i sprawdzenie, że plik kopii powstał.
+   Bez kopii nie wdrażać.
+2. Wdrożenie: migracja uruchamia się przy starcie kontenera. Kopia stanu sprzed scalenia zostaje w schemacie
+   `tj_kopie` w tej samej bazie.
+3. Sprawdzenie: w kalendarzu dni z dawnymi notatkami pokazują ich treść; dni z kilkoma kontami mają teksty z dopiskiem
+   konta, a zrzuty dnia są widoczne.
+4. Cofnięcie (tylko gdy coś jest nie tak, w jednej transakcji): `psql -1 -f docs/v2/rollback/0029_down.sql`.
+   Nadpisuje zmiany w scalonych dniach zrobione po migracji; pełny powrót daje kopia z punktu 1.

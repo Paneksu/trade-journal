@@ -98,6 +98,8 @@ if (!TEST_URL) {
     const admin = postgres(url, { max: 1, onnotice: () => {} });
     try {
       await admin.unsafe("DROP SCHEMA IF EXISTS drizzle CASCADE");
+      // Kopie danych sprzed migracji 0029 (scalenie notatek dnia) leza w osobnym schemacie.
+      await admin.unsafe("DROP SCHEMA IF EXISTS tj_kopie CASCADE");
       await admin.unsafe("DROP SCHEMA IF EXISTS public CASCADE");
       await admin.unsafe("CREATE SCHEMA public");
     } finally {
@@ -2188,18 +2190,18 @@ if (!TEST_URL) {
       it("0028_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
         // wzorce: stan bazy po migracjach 0000..N zbudowany od zera osobnym przebiegiem
         const wzorzec = new Map<number, string>();
-        for (let n = 19; n <= 28; n++) wzorzec.set(n, await odciskPoMigracji(n));
+        for (let n = 19; n <= 29; n++) wzorzec.set(n, await odciskPoMigracji(n));
         // 0028 zbudowane od zera osobnym migratorem to ten sam katalog, co po scripts/migrate.mjs
         await reset();
         migrateSkryptem();
         const przed = await odcisk();
-        expect(przed).toBe(wzorzec.get(28));
+        expect(przed).toBe(wzorzec.get(29));
         expect(przed).toBe(odciskSkrypt);
         expect((await sql`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(138);
 
         const admin = postgres(url, { max: 1, onnotice: () => {} });
         try {
-          for (const n of [28, 27, 26, 25, 24, 23, 22, 21, 20]) {
+          for (const n of [29, 28, 27, 26, 25, 24, 23, 22, 21, 20]) {
             const nr = `00${n}`;
             await admin.begin(async (tx) => {
               await tx.unsafe(rollback(nr));
@@ -2208,6 +2210,8 @@ if (!TEST_URL) {
             const wpisy = await admin`SELECT 1 FROM drizzle.__drizzle_migrations WHERE created_at >= ${1787650000000 + (n - 20) * 10000000}`;
             expect(wpisy.length, `wpisy migratora od ${nr}`).toBe(0);
           }
+          const kopie = await admin`SELECT 1 FROM pg_namespace WHERE nspname = 'tj_kopie'`;
+          expect(kopie.length, "0029_down kasuje schemat kopii").toBe(0);
           const funkcje2b = await admin`
             SELECT proname FROM pg_proc WHERE pronamespace = 'public'::regnamespace
               AND proname IN ('tj_guard_null_only', 'tj_ai_suggestion_flow', 'tj_note_addition_insert', 'tj_plan_guard',
@@ -2252,7 +2256,7 @@ if (!TEST_URL) {
         // ponowne zastosowanie przez scripts/migrate.mjs
         const wyjscie = migrateSkryptem();
         for (const tag of ["0017_api_tokens", "0018_notatki", "0019_auth_events_token_fk", "0020_proces_playbook", "0021_plan_werdykt",
-          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki", "0028_poprawki_po_przegladzie"]) {
+          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki", "0028_poprawki_po_przegladzie", "0029_notatka_dnia_bez_konta"]) {
           expect(wyjscie).toContain(tag);
         }
         expect(await odcisk()).toBe(przed);

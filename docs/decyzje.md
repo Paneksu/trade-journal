@@ -1685,6 +1685,27 @@ z cofnięciem, a dopiski do strategii (obserwacje, nie reguły) wchodzą bez zat
    z własnych trade'ów, `origin = 'ai'`). W UI są podpisane „wg mentora, n = 0”. Nadal są tylko
    propozycją: zatwierdza wyłącznie użytkownik, po jednej (MUST 16.5).
 
+### ADR-033, uzupełnienie: jedna notatka dnia bez konta (2026-10-16)
+
+- **Notatka dnia jest jedna i bez konta.** Decyzja sesji głównej (16.10.2026), bo tak zapisują ją rytuał na „Dziś”
+  i AI przez `PUT /api/v2/days/:date`. Kalendarz i panel dnia czytają ją stamtąd; zapis z kalendarza, szybka
+  notatka z arkusza „+” i zdjęcie dnia idą do notatki bez konta. Notatki sesji backtestu są osobne (bez zmian).
+- **Stare wpisy na kontach: «Scal w migracji»** (Słowa użytkownika, 16.10.2026). Migracja
+  `0029_notatka_dnia_bez_konta` (cofnięcie: `docs/v2/rollback/0029_down.sql`):
+  - dzień z jednym wpisem na koncie: ten sam wiersz traci konto (zrzuty zostają);
+  - dzień z kilkoma wpisami (różne konta albo istniejąca notatka bez konta): teksty łączą się, tekst z wpisu na koncie
+    dostaje dopisek ` — [nazwa konta]`; pola liczbowe i ustawienia dnia z notatki bez konta, a gdy jej brak, z pierwszego
+    konta (kolejność kont z aplikacji); brakujące uzupełnia kolejny wpis, a różne wartości trafiają linią
+    „Inne wartosci z tego dnia: …” z dopiskiem konta do „Po sesji”, żeby nic nie zginęło;
+  - zrzuty dnia przechodzą na scaloną notatkę (pliki zostają w katalogu `dzien-<stary id>`, ścieżka jest w `file`);
+  - słowa użytkownika (`user_words`) nie mają klucza do `day_notes` (kotwica to data), więc treść i kotwica zostają;
+  - kopia stanu sprzed scalenia leży w schemacie `tj_kopie` (`notatki_0029`, `zrzuty_0029`) i służy cofnięciu;
+    po potwierdzeniu, że produkcja jest w porządku, można ją usunąć osobną migracją.
+- **Przed migracją na produkcji: kopia bazy** (`docs/wdrozenie-coolify.md`, sekcja 11).
+- **Przewijanie na telefonie: «Zostaw»** (Słowa użytkownika, 16.10.2026). Dolny pasek zostaje przyklejony (sticky);
+  Lighthouse na `/mozg` mobile daje dostępność 96, bo przy pierwszym ekranie pasek częściowo przykrywa wiersz listy
+  (cel dotyku 380×17 px). Przewijanie treści w kontenerze nad paskiem odrzucone.
+
 ---
 
 ## ADR-030, uzupełnienie wdrożeniowe fazy 2 / R2 (2026-10-15)

@@ -98,6 +98,8 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 18 | Ekran /strategies zostaje poza nawigacją (strategie sesji backtestu), link z Playbooka | Słowa użytkownika: «OK, zostaw» | Strategie opisują sesje backtestu, karty setupów je zastępują w nawigacji | 2026-10-15 |
 | 19 | Etap 3 UI v2 (Przegląd tygodnia i miesiąca, Prop: konta i konto, Statystyki v2) przyjęty, dalej etap 4 | Słowa użytkownika: «Akceptuję, dalej etap 4» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-16 |
 | 20 | Etap 4 UI v2 (Kalendarz, Backtest, Ustawienia, PWA z arkuszem „+”) przyjęty, dalej runda szlifu r2 | Słowa użytkownika: «Akceptuję» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-16 |
+| 21 | Notatki dnia z kont scalone migracją 0029 w jedną notatkę dnia bez konta (teksty z dopiskiem konta, zrzuty przepięte) | Słowa użytkownika: «Scal w migracji» | Jedna notatka dnia jak w rytuale i API; ADR-033 | 2026-10-16 |
+| 22 | Przewijanie na telefonie zostaje: dolny pasek przyklejony, /mozg mobile ma dostępność 96 w Lighthouse (pasek przykrywa wiersz przy pierwszym ekranie) | Słowa użytkownika: «Zostaw» | Przewijanie w kontenerze zmieniłoby całą aplikację i psuło zrzuty całej strony | 2026-10-16 |
 
 ## Znak
 Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.
