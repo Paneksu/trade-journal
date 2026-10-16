@@ -1,7 +1,9 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
+import { czyWynikUkryty } from "@/lib/api-v2/ukrycie-wyniku";
 import { przebiegDopasowania } from "@/lib/brokerzy/dopasowania";
+import { ukryteTradyBrokera } from "@/lib/brokerzy/odczyt";
 import { brokerSkonfigurowany } from "@/lib/brokerzy/klucz";
 import { db } from "@/lib/db";
 import {
@@ -199,6 +201,8 @@ export type UzgodnioneWiersz = {
   feeSource: "broker" | "rate" | null;
   /** »Poslizg i oplaty«: roznica miedzy wynikiem z rachunku a wyliczonym. */
   roznicaCenty: number | null;
+  /** Slepa ocena: trade dziennika ma werdykt AI wydany przed wynikiem i nie jest zamkniety; wynik zakryty (puste pola). */
+  wynikUkryty: boolean;
 };
 
 /** »Uzgodnione z rachunku«: dopasowane trade'y brokera z wynikiem »bylo -> jest«, najnowsze pierwsze. */
@@ -213,7 +217,9 @@ export async function uzgodnioneZRachunku(limit = 30, dni = 30, teraz: Date = ne
     .where(and(eq(brokerTrades.matchState, "matched"), gte(brokerTrades.matchedAt, od)))
     .orderBy(desc(brokerTrades.matchedAt), desc(brokerTrades.id))
     .limit(limit);
+  const ukryte = await ukryteTradyBrokera(db, wiersze.map((w) => w.bt.id));
   return wiersze.map(({ bt, nazwa, pnl, pnlEstimate, fees, brokerAmount }) => {
+    const zakryty = ukryte.has(bt.id);
     const u = uzgodnij({ pnl, pnlEstimate, brokerAmount, feesEstimate: fees, feesBroker: bt.feeSource === "broker" ? bt.feesCents : null });
     return {
       brokerTradeId: bt.id,
@@ -226,11 +232,12 @@ export async function uzgodnioneZRachunku(limit = 30, dni = 30, teraz: Date = ne
       entryTime: bt.entryTime.toISOString(),
       accountName: nazwa,
       // Przed dopasowaniem wynikiem byla poprzednia kwota z rachunku, a gdy jej nie bylo, wynik wyliczony.
-      pnlPrzed: bt.prevBrokerAmountCents ?? pnlEstimate,
-      pnlPo: pnl,
-      feesCents: bt.feesCents,
-      feeSource: bt.feeSource,
-      roznicaCenty: u.roznicaCenty,
+      pnlPrzed: zakryty ? null : (bt.prevBrokerAmountCents ?? pnlEstimate),
+      pnlPo: zakryty ? null : pnl,
+      feesCents: zakryty ? null : bt.feesCents,
+      feeSource: zakryty ? null : bt.feeSource,
+      roznicaCenty: zakryty ? null : u.roznicaCenty,
+      wynikUkryty: zakryty,
     };
   });
 }
@@ -254,6 +261,8 @@ export type DoDecyzjiWiersz = {
   stan: "ambiguous" | "unmatched";
   powod: string | null;
   kandydaci: KandydatWiersz[];
+  /** Slepa ocena: wynik tego trade'a brokera jest zakryty (puste pola wyniku), bo na tym koncie i w tym dniu trade z werdyktem AI nie jest zamkniety. */
+  wynikUkryty: boolean;
 };
 
 /** »Do decyzji«: zamkniete trade'y brokera bez dopasowania, z kandydatami z dziennika i powodem. */
@@ -276,8 +285,10 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
     ? await db.select({ id: trades.id, entryTime: trades.entryTime, contracts: trades.contracts, pnl: trades.pnl, direction: trades.direction }).from(trades).where(inArray(trades.id, idKandydatow))
     : [];
   const kandydatPoId = new Map(kandydaci.map((k) => [k.id, k]));
+  const ukryte = await ukryteTradyBrokera(db, wiersze.map((w) => w.bt.id));
   return wiersze.map(({ bt, ba, nazwa }) => {
     const d = poId.get(bt.id);
+    const zakryty = ukryte.has(bt.id);
     return {
       brokerTradeId: bt.id,
       contract: bt.contract,
@@ -285,9 +296,10 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
       direction: bt.direction,
       quantity: Number(bt.maxQty),
       entryTime: bt.entryTime.toISOString(),
-      exitTime: bt.exitTime?.toISOString() ?? null,
-      netCents: bt.netCents,
-      feeSource: bt.feeSource,
+      exitTime: zakryty ? null : (bt.exitTime?.toISOString() ?? null),
+      netCents: zakryty ? null : bt.netCents,
+      feeSource: zakryty ? null : bt.feeSource,
+      wynikUkryty: zakryty,
       brokerAccountId: ba.id,
       accountId: ba.accountId,
       accountName: nazwa,
@@ -299,7 +311,7 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
           : (d?.powod ?? (bt.instrumentId === null ? "kontrakt nie ma instrumentu w dzienniku" : null)),
       kandydaci: (d?.kandydaci ?? []).flatMap((id) => {
         const k = kandydatPoId.get(id);
-        return k ? [{ tradeId: k.id, entryTime: k.entryTime.toISOString(), contracts: Number(k.contracts), pnl: k.pnl, direction: k.direction }] : [];
+        return k ? [{ tradeId: k.id, entryTime: k.entryTime.toISOString(), contracts: Number(k.contracts), pnl: zakryty ? null : k.pnl, direction: k.direction }] : [];
       }),
     };
   });
@@ -464,9 +476,16 @@ export type DaneRachunkuTradu = {
   matchKind: "auto" | "user" | "ai_accepted" | "created" | null;
   feesBrokerCents: number | null;
   feeSource: "broker" | "rate" | null;
+  /** Slepa ocena: wynik zakryty, wszystkie liczby puste. */
+  wynikUkryty: boolean;
 };
 
 export async function daneRachunkuTradu(tradeId: number): Promise<DaneRachunkuTradu | null> {
+  // Slepa ocena: trade otwarty z werdyktem AI nie pokazuje wyniku ani rozbicia (ten sam mechanizm co API).
+  if (await czyWynikUkryty(db, tradeId)) {
+    const [bt] = await db.select({ id: brokerTrades.id, matchKind: brokerTrades.matchKind }).from(brokerTrades).where(eq(brokerTrades.tradeId, tradeId)).limit(1);
+    return { pnl: null, pnlEstimate: null, fees: null, brokerAmount: null, zrodlo: "wyliczony", roznicaCenty: null, poslizgCenty: null, roznicaOplatCenty: null, brokerTradeId: bt?.id ?? null, matchKind: bt?.matchKind ?? null, feesBrokerCents: null, feeSource: null, wynikUkryty: true };
+  }
   const [t] = await db.select({ pnl: trades.pnl, pnlEstimate: trades.pnlEstimate, fees: trades.fees, brokerAmount: trades.brokerAmount }).from(trades).where(eq(trades.id, tradeId)).limit(1);
   if (!t) return null;
   const [bt] = await db.select({ id: brokerTrades.id, matchKind: brokerTrades.matchKind, feesCents: brokerTrades.feesCents, feeSource: brokerTrades.feeSource }).from(brokerTrades).where(eq(brokerTrades.tradeId, tradeId)).limit(1);
@@ -484,6 +503,7 @@ export async function daneRachunkuTradu(tradeId: number): Promise<DaneRachunkuTr
     matchKind: bt?.matchKind ?? null,
     feesBrokerCents: bt?.feesCents ?? null,
     feeSource: bt?.feeSource ?? null,
+    wynikUkryty: false,
   };
 }
 

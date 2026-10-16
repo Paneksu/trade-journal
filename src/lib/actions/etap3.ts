@@ -68,12 +68,16 @@ export async function przypnijPreset(_p: Etap3State, d: FormData): Promise<Etap3
     minDays: calkowita(d.get("minDays")),
     maxContractsMini: calkowita(d.get("maxMini")),
     maxContractsMicro: calkowita(d.get("maxMicro")),
+    // Stawki opłat round turn (USD za kontrakt) -> centy; puste = z presetu (ADR-034 pkt 5).
+    feeRtMiniCents: centy(d.get("feeMini")),
+    feeRtMicroCents: centy(d.get("feeMicro")),
   };
   for (const [k, v] of Object.entries(pola)) if (Number.isNaN(v)) return { error: `Pole ${k}: wpisz liczbę.` };
   const ddRaw = d.get("ddType");
   const ddType = ddRaw === "eod" || ddRaw === "intraday" || ddRaw === "static" || ddRaw === "trailing_to_static" ? ddRaw : undefined;
   if (!presetId && (!ddType || pola.maxDdCents === undefined)) return { error: "Bez presetu podaj typ DD i maksymalny DD." };
   const zrodlo = tekst(d.get("sourceUrl")).trim();
+  const zrodloOplat = tekst(d.get("feeSourceUrl")).trim();
   // Zakresy i adres https tym samym schematem co POST /api/v2/prop/accounts/:id/rules (audyt pkt 5).
   const reguly = PropRegulyUtworzSchema.safeParse({
     validFrom: od,
@@ -81,6 +85,7 @@ export async function przypnijPreset(_p: Etap3State, d: FormData): Promise<Etap3
     ...(ddType ? { ddType } : {}),
     ...Object.fromEntries(Object.entries(pola).filter(([, v]) => v !== undefined)),
     ...(zrodlo ? { sourceUrl: zrodlo } : {}),
+    ...(zrodloOplat ? { feeSourceUrl: zrodloOplat } : {}),
   });
   if (!reguly.success) {
     return {
@@ -94,6 +99,9 @@ export async function przypnijPreset(_p: Etap3State, d: FormData): Promise<Etap3
         maxContractsMini: "Kontrakty mini",
         maxContractsMicro: "Kontrakty micro",
         sourceUrl: "Źródło (musi zaczynać się od https://)",
+        feeSourceUrl: "Źródło stawki opłat (musi zaczynać się od https://)",
+        feeRtMiniCents: "Opłata mini",
+        feeRtMicroCents: "Opłata micro",
         ddType: "Typ DD",
       }),
     };
@@ -102,6 +110,7 @@ export async function przypnijPreset(_p: Etap3State, d: FormData): Promise<Etap3
   if (!w.ok) return { error: w.komunikat };
   revalidatePath(`/prop/${konto}`);
   revalidatePath("/prop");
+  revalidatePath("/prop/polaczenia");
   return { ok: true, komunikat: w.komunikat };
 }
 

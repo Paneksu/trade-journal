@@ -102,6 +102,16 @@ const warunekUkryty = sqlBrokerUkryty({
   entryTime: sql`${brokerTrades.entryTime}`,
 });
 
+/** Podzbior `ids` trade'ow brokera, ktorych wynik jest ukryty (slepa ocena): ten sam mechanizm co w API, uzywany tez w interfejsie. */
+export async function ukryteTradyBrokera(tx: Db, ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const wiersze = await tx
+    .select({ id: brokerTrades.id, ukryty: sql<boolean>`${warunekUkryty}` })
+    .from(brokerTrades)
+    .where(inArray(brokerTrades.id, ids));
+  return new Set(wiersze.filter((w) => w.ukryty === true).map((w) => w.id));
+}
+
 async function wczytaj(tx: Db, warunki: SQL[], limit: number): Promise<Wiersz[]> {
   const wiersze = await tx
     .select({

@@ -594,6 +594,38 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       expect(po.json.trades.some((t: { netCents: number | null }) => t.netCents === 7050)).toBe(true);
     });
 
+    it("interfejs tez zakrywa wynik: podglad importu, »Do decyzji« i dane przy trade'zie nie pokazuja liczb trade'u z ukrytym wynikiem", async () => {
+      const x = await tradeOtwartyZWerdyktem(`${DZIEN}T13:20:00Z`);
+      const { podgladImportu } = await import("@/lib/decyzje/broker");
+      const podglad = await podgladImportu({ bajty: new TextEncoder().encode(ORDERS), strefa: null, oczekiwanySha: null });
+      expect(podglad.ok, JSON.stringify(podglad)).toBe(true);
+      if (!podglad.ok) return;
+      expect(podglad.pozycje.length).toBeGreaterThan(0);
+      for (const p of podglad.pozycje) {
+        expect(p.wynikUkryty).toBe(true);
+        expect([p.nettoCenty, p.bruttoCenty, p.oplatyCenty, p.pnlPrzed, p.pnlPo, p.wyjscie, p.cenaWyjscia]).toEqual([null, null, null, null, null, null, null]);
+      }
+      // podglad niczego nie zapisal
+      expect((await sql`select count(*)::int as n from broker_fills`)[0].n).toBe(0);
+
+      await inbox(ORDERS);
+      await inbox(CASH);
+      const { doDecyzji, daneRachunkuTradu } = await import("@/lib/queries/broker");
+      const lista = await doDecyzji();
+      expect(lista.length).toBeGreaterThan(0);
+      for (const w of lista) {
+        expect(w.wynikUkryty).toBe(true);
+        expect([w.netCents, w.exitTime, w.feeSource]).toEqual([null, null, null]);
+      }
+      const dane = await daneRachunkuTradu(x);
+      expect(dane).toMatchObject({ wynikUkryty: true, pnl: null, pnlEstimate: null, fees: null, brokerAmount: null, roznicaCenty: null });
+
+      // po zamknieciu trade'a z werdyktem liczby wracaja
+      await sql`update trades set status = 'closed', exit_time = ${`${DZIEN}T13:25:00Z`}, exit_price = 20105, exit_count = 1 where id = ${x}`;
+      const odslonieta = await doDecyzji();
+      expect(odslonieta.every((w) => !w.wynikUkryty)).toBe(true);
+    });
+
     it("trade dopasowany do trade'a z ukrytym wynikiem: blok broker bez wyniku, wyjscia i oplat, a wypelnienia tylko sprzed wejscia", async () => {
       const x = await tradeOtwartyZWerdyktem(`${DZIEN}T13:32:00Z`);
       await inbox(ORDERS);

@@ -22,6 +22,7 @@ import type { PlatformaBrokera } from "@/lib/db/schema";
 import { persistTrade } from "@/lib/trades/persist";
 import type { TradeDraft } from "@/lib/domain/trade-draft";
 
+import { ukryteTradyBrokera } from "./odczyt";
 import { przebiegDopasowania, type ZastosowaneDopasowanie } from "./dopasowania";
 import { skrotKonta, sha256Hex } from "./klucz";
 import {
@@ -88,6 +89,11 @@ export type PozycjaImportu = {
   nowy: boolean;
   /** Czy trade dziennika zostal utworzony z danych brokera w tym imporcie. */
   utworzony: boolean;
+  /**
+   * Slepa ocena (ukrycie-wyniku.ts): trade z tego konta i dnia ma werdykt AI wydany przed wynikiem, a sam nie jest zamkniety.
+   * Wynik, wyjscie i oplaty tego trade'a brokera sa wtedy zakryte takze w interfejsie (puste), do zamkniecia trade'a z werdyktem.
+   */
+  wynikUkryty: boolean;
 };
 
 export type KontoWPliku = {
@@ -465,6 +471,7 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
 
   // --- pozycje do raportu ---
   const finalne = idyTrade.size === 0 ? [] : await tx.select().from(brokerTrades).where(inArray(brokerTrades.id, [...idyTrade])).orderBy(asc(brokerTrades.entryTime));
+  const ukryte = await ukryteTradyBrokera(tx, finalne.map((t) => t.id));
   const ostatnie4 = new Map(kontaWPliku.map((k) => [k.brokerAccountId, k]));
   const poId = new Map(dotkniete.map((t) => [t.wiersz.id, t]));
   const dop = new Map<number, Dopasowanie>(przebieg.dopasowania.map((d) => [d.brokerTradeId, d]));
@@ -474,6 +481,7 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
     const k = ostatnie4.get(bt.brokerAccountId);
     const d = dop.get(bt.id);
     const z = zast.get(bt.id);
+    const u = ukryte.has(bt.id);
     return {
       id: bt.id,
       externalRef: bt.externalRef,
@@ -481,15 +489,15 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
       kierunek: bt.direction,
       ilosc: Number(bt.maxQty),
       wejscie: bt.entryTime.toISOString(),
-      wyjscie: bt.exitTime?.toISOString() ?? null,
+      wyjscie: u ? null : (bt.exitTime?.toISOString() ?? null),
       cenaWejscia: Number(bt.avgEntryPrice),
-      cenaWyjscia: bt.avgExitPrice === null ? null : Number(bt.avgExitPrice),
+      cenaWyjscia: u || bt.avgExitPrice === null ? null : Number(bt.avgExitPrice),
       status: bt.status,
-      bruttoCenty: bt.grossCents,
-      oplatyCenty: bt.feesCents,
-      zrodloOplat: bt.feeSource,
-      nettoCenty: bt.netCents,
-      zrodloBrutto: bt.grossSource,
+      bruttoCenty: u ? null : bt.grossCents,
+      oplatyCenty: u ? null : bt.feesCents,
+      zrodloOplat: u ? null : bt.feeSource,
+      nettoCenty: u ? null : bt.netCents,
+      zrodloBrutto: u ? null : bt.grossSource,
       kontoOstatnie4: k?.ostatnie4 ?? null,
       kontoDziennikaId: k?.kontoDziennikaId ?? null,
       stanDopasowania: bt.matchState,
@@ -497,10 +505,11 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
       tradeId: bt.tradeId,
       kandydaci: d?.kandydaci ?? [],
       powod: d?.powod ?? null,
-      pnlPrzed: z?.pnlPrzed ?? null,
-      pnlPo: z?.pnlPo ?? null,
+      pnlPrzed: u ? null : (z?.pnlPrzed ?? null),
+      pnlPo: u ? null : (z?.pnlPo ?? null),
       nowy: poId.get(bt.id)?.nowy ?? false,
       utworzony: utw.has(bt.id),
+      wynikUkryty: u,
     };
   });
 
