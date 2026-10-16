@@ -126,8 +126,9 @@ export async function zaktualizujKwoteUi(brokerTradeId: number): Promise<WynikOp
     const [bt] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, brokerTradeId)).for("update").limit(1);
     if (!bt) return blad(`Trade brokera #${brokerTradeId} nie istnieje. Odśwież listę.`);
     if (bt.tradeId === null) return blad(`Trade brokera #${brokerTradeId} nie jest dopasowany, więc nie ma czego aktualizować.`);
-    await odswiezKwoteDopasowania(tx, bt);
-    return { ok: true, komunikat: "Kwota w dzienniku zgadza się z rachunkiem." };
+    const w = await odswiezKwoteDopasowania(tx, bt);
+    if (w.blad) return blad(`Nie udało się zaktualizować kwoty: ${w.blad}`);
+    return { ok: true, komunikat: w.zmieniono ? "Kwota w dzienniku zgadza się teraz z rachunkiem." : "Kwota w dzienniku już zgadzała się z rachunkiem, nic nie zmieniono." };
   });
 }
 

@@ -142,17 +142,30 @@ export async function odepnijDopasowanie(
 }
 
 /** Kwota netto trade'a brokera zmienila sie (np. doszla Cash History z oplatami): odswiezamy ja w dopasowanym trade'zie. */
-export async function odswiezKwoteDopasowania(tx: Transakcja, bt: WierszTradu): Promise<void> {
-  if (bt.tradeId === null) return;
+export async function odswiezKwoteDopasowania(
+  tx: Transakcja,
+  bt: WierszTradu,
+  /** Netto trade'a brokera PRZED przeliczeniem: gdy netto zniklo, ruszamy kwote tylko jesli uzytkownik jej nie zmienil po dopasowaniu. */
+  poprzedniNetto?: number | null,
+): Promise<{ zmieniono: boolean; blad: string | null }> {
+  if (bt.tradeId === null) return { zmieniono: false, blad: null };
   const [t] = await tx.select({ kwota: trades.brokerAmount }).from(trades).where(eq(trades.id, bt.tradeId)).limit(1);
-  if (!t) return;
-  // Netto zniklo (np. cofnieto Cash History, a stawki nie ma): wraca kwota sprzed dopasowania, nie zostaje liczba z cofnietego pliku.
-  const cel = bt.netCents ?? (bt.matchKind === "created" ? null : (bt.prevBrokerAmountCents ?? null));
-  if (bt.netCents === null && bt.matchKind === "created") return;
-  if (t.kwota === cel) return;
+  if (!t) return { zmieniono: false, blad: null };
+  let cel: number | null;
+  if (bt.netCents !== null) {
+    cel = bt.netCents;
+  } else {
+    // Netto zniklo (np. cofnieto Cash History, a stawki nie ma): wraca kwota sprzed dopasowania (dla utworzonego z rachunku: brak kwoty),
+    // ale tylko gdy kwota w dzienniku to wciaz ta z rachunku, a nie wpis uzytkownika.
+    cel = bt.matchKind === "created" ? null : (bt.prevBrokerAmountCents ?? null);
+    if (poprzedniNetto !== undefined && t.kwota !== poprzedniNetto) return { zmieniono: false, blad: null };
+  }
+  if (t.kwota === cel) return { zmieniono: false, blad: null };
   const w = await wpiszKwote(tx, bt.tradeId, cel);
+  if (!w.ok) return { zmieniono: false, blad: w.komunikat };
   // Zmiana kwoty dopasowanego trade'a ma byc WIDOCZNA na liscie »Uzgodnione z rachunku« (było -> jest, z »Cofnij«), takze dla starego dopasowania.
-  if (w.ok) await tx.update(brokerTrades).set({ matchedAt: new Date(), updatedAt: new Date() }).where(eq(brokerTrades.id, bt.id));
+  await tx.update(brokerTrades).set({ matchedAt: new Date(), updatedAt: new Date() }).where(eq(brokerTrades.id, bt.id));
+  return { zmieniono: true, blad: null };
 }
 
 export type PrzebiegDopasowania = {

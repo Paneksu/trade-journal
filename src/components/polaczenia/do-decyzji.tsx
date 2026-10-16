@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { dopasujPonownieAkcja, dopasujRecznieAkcja, pominTradeBrokeraAkcja, przypiszKontoAkcja, utworzTradeZBrokeraAkcja, zaktualizujKwoteAkcja } from "@/lib/actions/broker";
 import { cx } from "@/lib/classes";
 import { pnlClass } from "@/lib/format";
-import type { DoDecyzjiWiersz, ImportWiersz, KontoPolaczone, NettoZmienioneWiersz } from "@/lib/queries/broker";
+import type { DoDecyzjiWiersz, ImportWiersz, KontoPolaczone, NettoZmienioneWiersz, PominietyWiersz } from "@/lib/queries/broker";
 
 import { czas, klasaPrzycisku, kwota, nazwaFormatu, POLE_KLASA, Zywy, type KontoDziennika } from "./wspolne";
 
@@ -113,7 +113,49 @@ function WierszNetto({ w, strefa }: { w: NettoZmienioneWiersz; strefa: string })
   );
 }
 
-export function DoDecyzjiLista({ wiersze, odrzucone, strefa, nettoZmienione = [] }: { wiersze: DoDecyzjiWiersz[]; odrzucone: ImportWiersz[]; strefa: string; nettoZmienione?: NettoZmienioneWiersz[] }) {
+function WierszPominiety({ w, strefa }: { w: PominietyWiersz; strefa: string }) {
+  const [trwa, start] = useTransition();
+  const [info, setInfo] = useState<{ tekst: string; blad: boolean } | null>(null);
+  return (
+    <li className="border-b border-line py-3" data-testid={`broker-pominiety-${w.brokerTradeId}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="text-karta text-text">
+          <span className="num">{w.contract}</span> {w.direction} <span className="num">{w.quantity}</span>
+          <span className="text-muted"> · {w.accountName ?? "konto u brokera"} · {czas(w.entryTime, strefa)}</span>
+        </p>
+        <button
+          type="button"
+          data-testid={`broker-wroc-do-decyzji-${w.brokerTradeId}`}
+          className={klasaPrzycisku(false)}
+          disabled={trwa}
+          onClick={() =>
+            start(async () => {
+              const r = await pominTradeBrokeraAkcja(w.brokerTradeId, true);
+              setInfo(r.error ? { tekst: r.error, blad: true } : { tekst: r.komunikat ?? "Gotowe.", blad: false });
+            })
+          }
+        >
+          Wróć do decyzji
+        </button>
+      </div>
+      <Zywy blad={info?.blad}>{info?.tekst}</Zywy>
+    </li>
+  );
+}
+
+export function DoDecyzjiLista({
+  wiersze,
+  odrzucone,
+  strefa,
+  nettoZmienione = [],
+  pominiete = [],
+}: {
+  wiersze: DoDecyzjiWiersz[];
+  odrzucone: ImportWiersz[];
+  strefa: string;
+  nettoZmienione?: NettoZmienioneWiersz[];
+  pominiete?: PominietyWiersz[];
+}) {
   const [trwa, start] = useTransition();
   const [info, setInfo] = useState<{ tekst: string; blad: boolean } | null>(null);
   return (
@@ -152,6 +194,17 @@ export function DoDecyzjiLista({ wiersze, odrzucone, strefa, nettoZmienione = []
           <ul>
             {nettoZmienione.map((w) => (
               <WierszNetto key={w.brokerTradeId} w={w} strefa={strefa} />
+            ))}
+          </ul>
+        </div>
+      )}
+      {pominiete.length > 0 && (
+        <div className="space-y-2" data-testid="broker-pominiete">
+          <h3 className="text-karta text-text">Pominięte</h3>
+          <p className="text-meta text-muted">Pominąłeś je albo cofnąłeś dopasowanie, więc automat ich nie rusza. Tu możesz je przywrócić do decyzji.</p>
+          <ul>
+            {pominiete.map((w) => (
+              <WierszPominiety key={w.brokerTradeId} w={w} strefa={strefa} />
             ))}
           </ul>
         </div>

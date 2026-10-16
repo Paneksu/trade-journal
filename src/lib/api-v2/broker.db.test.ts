@@ -637,6 +637,16 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       expect(JSON.stringify(r.json)).toContain("would_alter_matched");
       expect((await sql`select count(*)::int as n from broker_fills`)[0].n).toBe(przed);
       expect((await sql`select match_state from broker_trades where id = ${bt.id}`)[0].match_state).toBe("skipped");
+      expect(JSON.stringify(r.json)).not.toContain("#null");
+      expect(JSON.stringify(r.json)).toContain("pominąłeś");
+
+      // z pominiecia jest powrot: trade widac w sekcji »Pominiete« i wraca do decyzji przyciskiem
+      const { pominiete, doDecyzji } = await import("@/lib/queries/broker");
+      expect((await pominiete()).map((w) => w.brokerTradeId)).toContain(bt.id);
+      const { pominTradeBrokeraUi } = await import("@/lib/decyzje/broker");
+      expect((await pominTradeBrokeraUi(bt.id, true)).ok).toBe(true);
+      expect((await pominiete()).map((w) => w.brokerTradeId)).not.toContain(bt.id);
+      expect((await doDecyzji()).map((w) => w.brokerTradeId)).toContain(bt.id);
     });
 
     it("dopasowanie reczne: Cash History nie zmienia kwoty w dzienniku, trade pojawia sie jako »rachunek zmienil netto«, a »Zaktualizuj kwote« ja zmienia", async () => {

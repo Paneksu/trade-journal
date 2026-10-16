@@ -174,7 +174,7 @@ export type OpcjePrzeliczania = {
 
 export type SkutekOkna = {
   /** Trade'y brokera po przeliczeniu (nowe i istniejace) z flaga, czy sa nowe w tym przebiegu. */
-  trade: { wiersz: WierszTraduBrokera; domena: TradeZGrupowania; nowy: boolean; zmieniony: boolean }[];
+  trade: { wiersz: WierszTraduBrokera; domena: TradeZGrupowania; nowy: boolean; zmieniony: boolean; poprzedniNetto: number | null }[];
   usuniete: number;
   /** Uwagi z odpinania dopasowan (np. kwota zmieniona po dopasowaniu, wiec nie przywrocona): do pokazania uzytkownikowi. */
   uwagi: string[];
@@ -286,7 +286,7 @@ export async function przeliczOkno(
         .returning();
       wiersz = nowy;
     }
-    wynik.trade.push({ wiersz, domena: t, nowy: !stary, zmieniony });
+    wynik.trade.push({ wiersz, domena: t, nowy: !stary, zmieniony, poprzedniNetto: stary ? stary.netCents : null });
   }
 
   // 3) trade'y, ktorych po przeliczeniu nie ma (np. po cofnieciu importu): odpinamy od dziennika i kasujemy
@@ -295,8 +295,12 @@ export async function przeliczOkno(
     // Pominiety (»Cofnij« albo »Pomin«) liczy sie jak dopasowany: odrzucenie przez uzytkownika nie moze wrocic automatem.
     // Decyzja sesji glownej (autoryzacja uzytkownika z 17.10.2026), ADR-034 odstepstwo 13.
     if (opcje.ochronaDopasowan && (stary.tradeId !== null || stary.matchState === "skipped")) {
+      const stanOpis =
+        stary.tradeId !== null
+          ? `który jest już dopasowany do trade'a #${stary.tradeId} dziennika`
+          : "który pominąłeś albo którego dopasowanie cofnąłeś";
       throw new BladAutomatu(
-        `Ten plik zmieniłby trade brokera ${stary.externalRef} (${stary.contract}, wejście ${stary.entryTime.toISOString()}), który jest już dopasowany do trade'a #${stary.tradeId} dziennika: nowe wypełnienia zmieniają podział historii kontraktu na trade'y. Automat takich plików nie stosuje. Zaimportuj plik ręcznie w aplikacji (Prop → Połączenia) i sprawdź podgląd.`,
+        `Ten plik zmieniłby trade brokera ${stary.externalRef} (${stary.contract}, wejście ${stary.entryTime.toISOString()}), ${stanOpis}: nowe wypełnienia zmieniają podział historii kontraktu na trade'y. Automat takich plików nie stosuje. Zaimportuj plik ręcznie w aplikacji (Prop → Połączenia) i sprawdź podgląd.`,
       );
     }
     if (stary.tradeId !== null) {
@@ -321,8 +325,11 @@ export async function przeliczOkno(
   }
 
   // 5) dopasowane trade'y: kwota z rachunku mogla sie zmienic (np. doszla Cash History z oplatami)
-  for (const { wiersz, zmieniony } of wynik.trade) {
-    if (wiersz.tradeId !== null && zmieniony && (!opcje.tylkoAuto || wiersz.matchKind === "auto")) await odswiezKwoteDopasowania(tx, wiersz);
+  for (const { wiersz, zmieniony, poprzedniNetto } of wynik.trade) {
+    if (wiersz.tradeId !== null && zmieniony && (!opcje.tylkoAuto || wiersz.matchKind === "auto")) {
+      const o = await odswiezKwoteDopasowania(tx, wiersz, poprzedniNetto);
+      if (o.blad) wynik.uwagi.push(`Trade #${wiersz.tradeId}: ${o.blad}`);
+    }
   }
   return wynik;
 }

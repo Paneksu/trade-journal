@@ -127,7 +127,10 @@ export async function kontaPolaczone(): Promise<KontoPolaczone[]> {
       .where(
         and(
           eq(brokerFills.brokerAccountId, ba.id),
-          or(isNull(brokerFills.brokerTradeId), inArray(brokerFills.brokerTradeId, db.select({ id: brokerTrades.id }).from(brokerTrades).where(sql`not ${warunekUkryty}`))),
+          or(
+            isNull(brokerFills.brokerTradeId),
+            inArray(brokerFills.brokerTradeId, db.select({ id: brokerTrades.id }).from(brokerTrades).where(and(eq(brokerTrades.brokerAccountId, ba.id), sql`not ${warunekUkryty}`))),
+          ),
         ),
       );
     const [ost] = await db
@@ -330,6 +333,28 @@ export async function doDecyzji(limit = 100): Promise<DoDecyzjiWiersz[]> {
       }),
     };
   });
+}
+
+export type PominietyWiersz = { brokerTradeId: number; contract: string; direction: "long" | "short"; quantity: number; entryTime: string; accountName: string | null };
+
+/** Trade'y brokera, ktore uzytkownik pominal albo ktorych dopasowanie cofnal (stan `skipped`): stad wracaja do decyzji. Ukryte (slepa ocena) pomijamy. */
+export async function pominiete(limit = 50): Promise<PominietyWiersz[]> {
+  const wiersze = await db
+    .select({ bt: brokerTrades, nazwa: accounts.name })
+    .from(brokerTrades)
+    .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
+    .leftJoin(accounts, eq(brokerAccounts.accountId, accounts.id))
+    .where(and(eq(brokerTrades.matchState, "skipped"), eq(brokerTrades.status, "closed"), isNull(brokerTrades.tradeId), sql`not ${warunekUkryty}`))
+    .orderBy(desc(brokerTrades.entryTime))
+    .limit(limit);
+  return wiersze.map(({ bt, nazwa }) => ({
+    brokerTradeId: bt.id,
+    contract: bt.contract,
+    direction: bt.direction,
+    quantity: Number(bt.maxQty),
+    entryTime: bt.entryTime.toISOString(),
+    accountName: nazwa,
+  }));
 }
 
 export type NettoZmienioneWiersz = {
