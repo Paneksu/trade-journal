@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
+import { KOMUNIKAT_WYMAGANE_2FA } from "@/lib/api-v2/logowanie-urzadzen";
 import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, ZAKRESY_TOKENU_IMPORTU, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
@@ -157,10 +158,12 @@ export type TokenImportuState = { token?: string; prefix?: string; expiresAt?: s
 /**
  * Jedyna droga do zakresu "import" (Slowa uzytkownika 15.10.2026): reczny przycisk w UI, za sesja.
  * Token (24 h) jest pokazywany RAZ w odpowiedzi tej akcji i nigdzie nie jest zapisany w jawnej postaci.
- * Wymaga sudo (albo hasla przy wylaczonym 2FA), tak jak zatwierdzenie urzadzenia.
+ * Wymaga sudo. Bez wlaczonego 2FA jest ZABLOKOWANE (Slowa uzytkownika 15.10.2026: «Zamkniete do
+ * wlaczenia 2FA»; w kodzie od 17.10.2026): nie pytamy o haslo, tylko mowimy, co wlaczyc.
  */
 export async function utworzTokenImportuAkcja(haslo = ""): Promise<TokenImportuState> {
   const sesja = await requireSession();
+  if (!sesja.totpEnabledAt) return { error: KOMUNIKAT_WYMAGANE_2FA, potwierdzenie: "haslo" };
   const brak = await wymagajPotwierdzenia(sesja, haslo);
   if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
   const t = await utworzTokenImportu();

@@ -223,9 +223,12 @@ trzeba by uwzględnić w `adresZNaglowkow` (`lib/api-v2/http.ts`).
 2. **R2** = ta sekcja, gałąź `feat/notatki-api-v2` (zawiera już R1): migracje `0017_api_tokens`, `0018_notatki` i
    `0019_auth_events_token_fk` wykonują się przy starcie kontenera (`scripts/migrate.mjs`). Dopiero po udanym R1.
 
-**Logowanie urządzeń zamknięte do włączenia 2FA** (Słowa użytkownika 15.10.2026: «Zamknięte do włączenia 2FA»):
-przed wdrożeniem R2 ustaw w Coolify `DEVICE_LOGIN_DISABLED=1` (aplikacja jest publiczna, a `device/start` nie wymaga
-tokenu). Zdejmij zmienną dopiero po włączeniu 2FA i pierwszym `tj login` zatwierdzonym z sudo.
+**Logowanie urządzeń zamknięte do włączenia 2FA** (Słowa użytkownika 15.10.2026: «Zamknięte do włączenia 2FA»).
+Od 17.10.2026 pilnuje tego **kod, nie zmienna** (ADR-030, decyzja sesji głównej): dopóki w Ustawienia → Bezpieczeństwo
+nie jest włączone 2FA, `device/start` zwraca `403 device_login_requires_2fa` («Włącz 2FA, żeby łączyć urządzenia»),
+a przycisk „Utwórz token importu” jest zablokowany tym samym komunikatem. **Nie ustawiaj żadnej zmiennej w Coolify**:
+po włączeniu 2FA (sekcja 9, krok 9) logowanie otwiera się samo. `DEVICE_LOGIN_DISABLED=1` zostaje jako dodatkowy,
+ręczny wyłącznik na czas awarii.
 
 - **Kopia bazy przed wdrożeniem** (Coolify → Backups → „Backup now”): migracje tylko dokładają, ale
   `0018` zastępuje funkcję `tj_forbid_update` (to samo zachowanie, `TJ409`) i rozszerza `screenshots_owner`.
@@ -233,11 +236,11 @@ tokenu). Zdejmij zmienną dopiero po włączeniu 2FA i pierwszym `tj login` zatw
   Sprawdzenie przed wdrożeniem (tylko odczyt): `SELECT name FROM pg_available_extensions WHERE name IN ('unaccent','pg_trgm');`
   Jeśli zapytanie nie zwraca obu wierszy, obraz bazy nie ma `contrib` i wdrożenie trzeba wstrzymać.
 - **Nowe zmienne** (żadna nie jest wymagana): `API_V2_DISABLED=1` (wyłącznik awaryjny całego `/api/v2`),
-  `DEVICE_LOGIN_DISABLED=1` (zamyka tylko logowanie nowych urządzeń), `APP_PUBLIC_URL=https://dziennik.panekweb.pl`
+  `DEVICE_LOGIN_DISABLED=1` (dodatkowy wyłącznik logowania nowych urządzeń; bez niego i tak jest zamknięte do włączenia 2FA), `APP_PUBLIC_URL=https://dziennik.panekweb.pl`
   (adres w `verificationUri`). `INGEST_TOKEN_SHA256` zostaje, dopóki łącznik nie przejdzie na tokeny v2
   (trasy `/api/ingest/**` są wygaszane, nagłówek `Deprecation`; usunięcie po fazie 3 i za zgodą).
-- **Pierwsze urządzenie** (po zdjęciu `DEVICE_LOGIN_DISABLED`): `tj login` → Ustawienia → Urządzenia → „Połącz urządzenie” → przepisz kod.
-  Zatwierdzenie wymaga **sudo** (2FA włączone) albo hasła (2FA wyłączone); wpisy trafiają do Bezpieczeństwo → dziennik zdarzeń.
+- **Pierwsze urządzenie** (po włączeniu 2FA): `tj login` → Ustawienia → Urządzenia → „Połącz urządzenie” → przepisz kod.
+  Zatwierdzenie wymaga **sudo** (kod z 2FA); wpisy trafiają do Bezpieczeństwo → dziennik zdarzeń.
   **Token importu** (zakres `import`, 24 h, pokazywany raz) tworzysz tam samo, ręcznie.
 - **Smoke po wdrożeniu:** `curl https://dziennik.panekweb.pl/api/v2/meta` → `401`; z tokenem → `200` i `contractHash`
   równy temu z `docs/openapi-v2.json`.
