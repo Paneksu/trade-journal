@@ -34,7 +34,7 @@ export async function przypnijRegulyUi(
   potwierdz: boolean,
 ): Promise<WynikDecyzji> {
   return zapisJakoUi(async (tx) => {
-    const w = await przypnijReguly(tx, accountId, d);
+    const w = await przypnijReguly(tx, accountId, d, { ustawFazeZPresetu: true });
     if (!w.ok) return { ok: false, komunikat: w.komunikat };
     if (potwierdz) await tx.update(propRules).set({ confirmedAt: new Date() }).where(eq(propRules.id, w.regula.id));
     return { ok: true, komunikat: potwierdz ? "Reguły przypięte i potwierdzone." : "Reguły przypięte. Potwierdź je, gdy sprawdzisz regulamin." };

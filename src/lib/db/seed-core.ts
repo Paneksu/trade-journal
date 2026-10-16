@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
 
 import { hashPassword } from "../auth/password";
+import { klasaKontraktu } from "../domain/brokerzy/kontrakty";
 import { CUSTOM_FIELDS, INSTRUMENTS, TAG_CATEGORIES, TAGS } from "./seed-data";
 import * as schema from "./schema";
 
@@ -62,7 +63,8 @@ export async function seed(db: Db, log: SeedLog = () => {}): Promise<void> {
   // --- instrumenty ---
   const added = await db
     .insert(schema.instruments)
-    .values(INSTRUMENTS)
+    // Klasa kontraktu (mini / micro) potrzebna do stawki oplat (migracja 0030, ADR-034).
+    .values(INSTRUMENTS.map((i) => ({ ...i, sizeClass: klasaKontraktu(i.symbol) })))
     .onConflictDoNothing({ target: schema.instruments.symbol })
     .returning({ symbol: schema.instruments.symbol });
   log(`Instrumenty: dodano ${added.length} z ${INSTRUMENTS.length}`);

@@ -53,6 +53,9 @@ export function zPresetu(p: Preset, teraz: Date = new Date()) {
     minDays: p.minDays,
     maxContractsMini: p.maxContractsMini,
     maxContractsMicro: p.maxContractsMicro,
+    feeRtMiniCents: p.feeRtMiniCents,
+    feeRtMicroCents: p.feeRtMicroCents,
+    feeSourceUrl: p.feeSourceUrl,
     sourceUrl: p.sourceUrl,
     readOn: p.readOn,
     /** Wiek presetu w dniach: regulaminy zmieniaja sie co kilka miesiecy, wiec UI pokazuje go przy kazdym presecie. */
@@ -93,6 +96,9 @@ export function zRegulyKonta(r: Regula, preset: Preset | null, teraz: Date = new
     minDays: r.minDays,
     maxContractsMini: r.maxContractsMini,
     maxContractsMicro: r.maxContractsMicro,
+    feeRtMiniCents: r.feeRtMiniCents,
+    feeRtMicroCents: r.feeRtMicroCents,
+    feeSourceUrl: r.feeSourceUrl,
     sourceUrl: r.sourceUrl,
     extra: r.extra,
     confirmedAt: r.confirmedAt?.toISOString() ?? null,
@@ -140,6 +146,7 @@ export async function przypnijReguly(
   tx: Transakcja,
   accountId: number,
   d: z.output<typeof PropRegulyUtworzSchema>,
+  opcje: { ustawFazeZPresetu?: boolean } = {},
 ): Promise<{ ok: true; regula: ReturnType<typeof zRegulyKonta> } | BladProp> {
   const k = await kontoProp(tx, accountId);
   if (!k.ok) return k;
@@ -150,6 +157,14 @@ export async function przypnijReguly(
     if (!preset) return odrzuc(422, "unknown_reference", `pole presetId: »${d.presetId}« - nie ma takiego presetu (lista: GET /api/v2/prop/presets).`);
   }
   const wybierz = <K extends keyof Preset & keyof typeof d>(klucz: K): unknown => (d[klucz] !== undefined ? d[klucz] : preset ? preset[klucz] : null);
+
+  // Faza eval / funded pochodzi z dziennika (accounts.prop_phase, ADR-027), nie z platformy (ADR-034 pkt 1): preset dla innej
+  // fazy niz konto to blad (409), a pusta faza konta jest ustawiana z presetu, gdy przypina je uzytkownik.
+  if (preset) {
+    if (k.konto.propPhase !== null && k.konto.propPhase !== preset.phase) {
+      return odrzuc(409, "phase_mismatch", `Konto #${accountId} (${k.konto.name}) ma fazę »${k.konto.propPhase}«, a preset #${preset.id} (${preset.firm} / ${preset.program}) jest dla fazy »${preset.phase}«. Wybierz preset dla fazy konta albo najpierw zmień fazę konta w Ustawieniach → Konta.`);
+    }
+  }
 
   const ddType = (d.ddType ?? preset?.ddType) as Regula["ddType"];
   const maxDdCents = (d.maxDdCents ?? preset?.maxDdCents) as number;
@@ -177,12 +192,18 @@ export async function przypnijReguly(
       minDays: wybierz("minDays") as number | null,
       maxContractsMini: wybierz("maxContractsMini") as number | null,
       maxContractsMicro: wybierz("maxContractsMicro") as number | null,
+      feeRtMiniCents: wybierz("feeRtMiniCents") as number | null,
+      feeRtMicroCents: wybierz("feeRtMicroCents") as number | null,
+      feeSourceUrl: (d.feeSourceUrl !== undefined ? d.feeSourceUrl : (preset?.feeSourceUrl ?? null)) as string | null,
       sourceUrl: (d.sourceUrl !== undefined ? d.sourceUrl : (preset?.sourceUrl ?? null)) as string | null,
       extra: { ...(preset?.extra ?? {}), ...(d.extra ?? {}) },
       // Potwierdzenie z regulaminem (R29) robi uzytkownik w aplikacji, nie klient API.
       confirmedAt: null,
     })
     .returning();
+  if (preset && opcje.ustawFazeZPresetu && k.konto.propPhase === null) {
+    await tx.update(accounts).set({ propPhase: preset.phase }).where(eq(accounts.id, accountId));
+  }
   return { ok: true, regula: zRegulyKonta(wiersz, preset) };
 }
 

@@ -234,6 +234,32 @@ export async function utworzTokenImportu(
   return { id: w.id, token: nowy.token, prefix: nowy.prefix, expiresAt };
 }
 
+/** Token automatu importu z rachunku: czas zycia 90 dni (decyzja gustu 16.10.2026; uniewaznienie bez sudo w kazdej chwili). */
+export const WAZNOSC_TOKENU_BROKERA_DNI = 90;
+
+/**
+ * Token `import_broker` (ADR-034 pkt 3): JEDYNY zakres tokenu, tylko z UI (akcja za sesja i w trybie sudo), nigdy kodem
+ * urzadzenia. Otwiera wylacznie `POST /api/v2/broker/inbox`. Jawny token jest pokazany raz, w bazie zostaje skrot.
+ */
+export async function utworzTokenImportuBrokera(
+  teraz: Date = new Date(),
+): Promise<{ id: number; token: string; prefix: string; expiresAt: Date }> {
+  const nowy = wygenerujToken();
+  const expiresAt = new Date(teraz.getTime() + WAZNOSC_TOKENU_BROKERA_DNI * 86_400_000);
+  const [w] = await db
+    .insert(apiTokens)
+    .values({
+      name: `automat eksportów ${teraz.toISOString().slice(0, 16).replace("T", " ")}`,
+      prefix: nowy.prefix,
+      tokenSha256: nowy.sha256,
+      scopes: ["import_broker"],
+      createdVia: "ui",
+      expiresAt,
+    })
+    .returning({ id: apiTokens.id });
+  return { id: w.id, token: nowy.token, prefix: nowy.prefix, expiresAt };
+}
+
 /**
  * Uniewaznia WSZYSTKIE aktywne tokeny urzadzen naraz ("wyloguj wszedzie" + tokeny, ADR-031).
  * Zwraca id uniewaznionych, zeby wolajacy zostawil wpis token_revoked dla kazdego.

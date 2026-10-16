@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
-import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, ZAKRESY_TOKENU_IMPORTU, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
+import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, utworzTokenImportuBrokera, ZAKRESY_TOKENU_IMPORTU, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
 import { verifyPassword } from "@/lib/auth/password";
@@ -166,5 +166,20 @@ export async function utworzTokenImportuAkcja(haslo = ""): Promise<TokenImportuS
   const t = await utworzTokenImportu();
   await zdarzenie("token_created", { tokenId: t.id, via: "ui", zakresy: ZAKRESY_TOKENU_IMPORTU, tokenImportu: true });
   revalidatePath("/settings/devices");
+  return { token: t.token, prefix: t.prefix, expiresAt: t.expiresAt.toISOString() };
+}
+
+/**
+ * Token automatu importu z rachunku (`import_broker`, ADR-034 pkt 3): osobny od tokenu, ktorym pracuje AI. Wydawany wylacznie
+ * tutaj, w trybie sudo (albo po hasle przy wylaczonym 2FA), pokazywany RAZ. Unieważnienie (`uniewaznUrzadzenie`) sudo nie wymaga.
+ */
+export async function utworzTokenBrokeraAkcja(haslo = ""): Promise<TokenImportuState> {
+  const sesja = await requireSession();
+  const brak = await wymagajPotwierdzenia(sesja, haslo);
+  if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
+  const t = await utworzTokenImportuBrokera();
+  await zdarzenie("token_created", { tokenId: t.id, via: "ui", zakresy: ["import_broker"], tokenBrokera: true });
+  revalidatePath("/settings/devices");
+  revalidatePath("/prop/polaczenia");
   return { token: t.token, prefix: t.prefix, expiresAt: t.expiresAt.toISOString() };
 }

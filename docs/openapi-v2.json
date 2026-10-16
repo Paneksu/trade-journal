@@ -18275,6 +18275,40 @@
                               }
                             ]
                           },
+                          "feeRtMiniCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feeRtMicroCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feeSourceUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "sourceUrl": {
                             "type": "string"
                           },
@@ -18332,6 +18366,9 @@
                           "minDays",
                           "maxContractsMini",
                           "maxContractsMicro",
+                          "feeRtMiniCents",
+                          "feeRtMicroCents",
+                          "feeSourceUrl",
                           "sourceUrl",
                           "readOn",
                           "ageDays",
@@ -18549,6 +18586,40 @@
                                       }
                                     ]
                                   },
+                                  "feeRtMiniCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "feeRtMicroCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "feeSourceUrl": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
                                   "sourceUrl": {
                                     "anyOf": [
                                       {
@@ -18632,6 +18703,9 @@
                                   "minDays",
                                   "maxContractsMini",
                                   "maxContractsMicro",
+                                  "feeRtMiniCents",
+                                  "feeRtMicroCents",
+                                  "feeSourceUrl",
                                   "sourceUrl",
                                   "extra",
                                   "confirmedAt",
@@ -19545,6 +19619,40 @@
                               }
                             ]
                           },
+                          "feeRtMiniCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feeRtMicroCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feeSourceUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "sourceUrl": {
                             "anyOf": [
                               {
@@ -19628,6 +19736,9 @@
                           "minDays",
                           "maxContractsMini",
                           "maxContractsMicro",
+                          "feeRtMiniCents",
+                          "feeRtMicroCents",
+                          "feeSourceUrl",
                           "sourceUrl",
                           "extra",
                           "confirmedAt",
@@ -19858,6 +19969,40 @@
                         }
                       ]
                     },
+                    "feeRtMiniCents": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "feeRtMicroCents": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "feeSourceUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
                     "sourceUrl": {
                       "anyOf": [
                         {
@@ -19941,6 +20086,9 @@
                     "minDays",
                     "maxContractsMini",
                     "maxContractsMicro",
+                    "feeRtMiniCents",
+                    "feeRtMicroCents",
+                    "feeSourceUrl",
                     "sourceUrl",
                     "extra",
                     "confirmedAt",
@@ -20147,6 +20295,42 @@
                         "type": "integer",
                         "exclusiveMinimum": 0,
                         "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feeRtMiniCents": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feeRtMicroCents": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "feeSourceUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uri",
+                        "pattern": "^https:\\/\\/.*"
                       },
                       {
                         "type": "null"
@@ -20380,6 +20564,40 @@
                             }
                           ]
                         },
+                        "feeRtMiniCents": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "feeRtMicroCents": {
+                          "anyOf": [
+                            {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "feeSourceUrl": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
                         "sourceUrl": {
                           "anyOf": [
                             {
@@ -20463,6 +20681,9 @@
                         "minDays",
                         "maxContractsMini",
                         "maxContractsMicro",
+                        "feeRtMiniCents",
+                        "feeRtMicroCents",
+                        "feeSourceUrl",
                         "sourceUrl",
                         "extra",
                         "confirmedAt",

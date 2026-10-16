@@ -158,6 +158,10 @@ const nadpisania = {
   minDays: z.number().int().positive().nullish(),
   maxContractsMini: z.number().int().positive().nullish(),
   maxContractsMicro: z.number().int().positive().nullish(),
+  /** Stawka oplat round turn za kontrakt (prowizja + gielda + NFA), centy: mini i micro (ADR-034). Bez wartosci: z presetu. */
+  feeRtMiniCents: z.number().int().nonnegative().nullish(),
+  feeRtMicroCents: z.number().int().nonnegative().nullish(),
+  feeSourceUrl: z.string().url().startsWith("https://").nullish(),
   sourceUrl: z.string().url().startsWith("https://").nullish(),
   extra: z.record(z.string(), z.unknown()).optional(),
 };
