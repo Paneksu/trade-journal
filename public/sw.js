@@ -4,8 +4,8 @@
  * Nawigacja idzie zawsze do sieci; dopiero gdy sieć nie odpowie, dostaje stronę offline.
  * Zmiana wersji = nowa nazwa pamięci, stare są kasowane przy aktywacji.
  */
-const WERSJA = "tj-offline-v1";
-const STATYCZNE = ["/offline.html", "/icons/favicon.svg", "/icons/icon-192.png"];
+const WERSJA = "tj-offline-v2";
+const STATYCZNE = ["/offline.html", "/icons/favicon.svg", "/icons/icon-192.png", "/icons/znak-pelny.svg"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(WERSJA).then((c) => c.addAll(STATYCZNE)).then(() => self.skipWaiting()));

@@ -11,7 +11,7 @@ setup("logowanie hasłem", async ({ page }) => {
   await expect(page.getByRole("heading", { name: /Wpisz hasło/ })).toBeVisible();
 
   await page.getByLabel("Hasło").fill(haslo);
-  await page.getByRole("button", { name: "Wejdź" }).click();
+  await page.getByRole("button", { name: "Zaloguj" }).click();
 
   await expect(page).toHaveURL("/");
   await page.context().storageState({ path: SESJA });

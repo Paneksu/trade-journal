@@ -66,7 +66,7 @@ test.describe("2FA TOTP", () => {
   async function zalogujHaslem(page: Page, haslo = HASLO) {
     await page.goto("/login");
     await page.getByLabel("Hasło").fill(haslo);
-    await page.getByRole("button", { name: "Wejdź" }).click();
+    await page.getByRole("button", { name: "Zaloguj" }).click();
   }
 
   /** Wysyla formularz kodu i czeka na odpowiedz serwera, zeby komunikat byl z TEJ proby, a nie z poprzedniej. */

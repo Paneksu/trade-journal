@@ -139,7 +139,7 @@ test.describe("UI v2: Kalendarz, Backtest, Ustawienia, PWA", () => {
       for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) wynik.push(new URL(r.url).pathname);
       return wynik.sort();
     });
-    expect(wpisy).toEqual(["/icons/favicon.svg", "/icons/icon-192.png", "/offline.html"]);
+    expect(wpisy).toEqual(["/icons/favicon.svg", "/icons/icon-192.png", "/icons/znak-pelny.svg", "/offline.html"]);
 
     await page.reload();
     await context.setOffline(true);
