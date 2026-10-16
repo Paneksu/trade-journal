@@ -14,7 +14,7 @@ export default function BladEkranu({ error, reset }: { error: Error & { digest?:
     <Strona>
       <div role="alert" className="mx-auto max-w-md space-y-3 py-16 text-center">
         <h1 className="text-tytul font-medium tracking-tight text-text">Coś poszło nie tak</h1>
-        <p className="text-karta text-muted">Ten ekran nie wczytał się do końca. Dane są bezpieczne: nic nie zostało zapisane w połowie.</p>
+        <p className="text-karta text-muted">Ten ekran nie wczytał się do końca. Spróbuj ponownie; jeśli błąd wraca, numer zdarzenia poniżej pomoże go znaleźć w logach.</p>
         {error.digest && <p className="num text-meta text-faint">Numer zdarzenia: {error.digest}</p>}
         <div className="flex flex-wrap justify-center gap-2 pt-2">
           <button type="button" onClick={reset} className={klasaPigulki(true)}>

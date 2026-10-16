@@ -2,7 +2,11 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { cx } from "@/lib/classes";
 
-/* Prymitywy interfejsu. Celowo bez biblioteki komponentow: caly wyglad
+/* STARY ZESTAW (sprzed UI v2, faza 5). Nowe ekrany biorą prymitywy z `components/ui/v2.tsx` (karta, pigułki,
+   pusty stan, szkielet). Te zostają dla formularzy i ekranów, które jeszcze nie przeszły przebudowy; nie dokładać
+   tu nowych wzorców (code review fazy 5, 16.10.2026).
+
+   Prymitywy interfejsu. Celowo bez biblioteki komponentow: caly wyglad
    wynika z tokenow w globals.css, wiec nic nie przynosi cudzych decyzji. */
 
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";

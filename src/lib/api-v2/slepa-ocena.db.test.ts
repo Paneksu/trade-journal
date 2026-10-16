@@ -13,7 +13,11 @@ vi.mock("server-only", () => ({}));
  * /days/:date, /chart-annotations, /search. To, co napisano PRZED wejsciem (plan), zostaje widoczne. Po zamknieciu trade'a
  * wszystko wraca. Dowodem jest odczyt prawdziwych tras na lokalnej bazie.
  */
-describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza lokalna)", () => {
+// Niestabilność z review fazy 5 (16.10.2026): w pełnym przebiegu test potrafił przekroczyć domyślne 5 s. Przyczyna:
+// pierwsze dynamiczne import() ok. 19 tras v2 kompiluje cały graf modułów w środku pierwszego testu (ok. 1,3 s na
+// spokojnej maszynie, kilka razy więcej pod obciążeniem, np. przy równoległym e2e na tej samej bazie). Trasy
+// rozgrzewamy w beforeAll z własnym limitem, a testy (kilka odczytów API każdy) dostają 20 s zapasu.
+describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza lokalna)", { timeout: 20_000 }, () => {
   let sql: Sql;
   let rw: Par;
   let ro: Par;
@@ -25,13 +29,34 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
   const TOKEN = `ZLOTYKLUCZ${Date.now().toString(36)}`;
 
   beforeAll(async () => {
+    await Promise.all([
+      import("@/app/api/v2/trades/[id]/reviews/route"),
+      import("@/app/api/v2/chart-annotations/route"),
+      import("@/app/api/v2/days/[date]/route"),
+      import("@/app/api/v2/user-words/route"),
+      import("@/app/api/v2/search/route"),
+      import("@/app/api/v2/trades/[id]/route"),
+      import("@/app/api/v2/trade-plans/route"),
+      import("@/app/api/v2/trade-plans/[id]/addenda/route"),
+      import("@/app/api/v2/notes/route"),
+      import("@/app/api/v2/trade-plans/[id]/route"),
+      import("@/app/api/v2/notes/[id]/route"),
+      import("@/app/api/v2/notes/[id]/additions/route"),
+      import("@/app/api/v2/user-words/[id]/interpretation/route"),
+      import("@/app/api/v2/profile/route"),
+      import("@/app/api/v2/strategy-gaps/route"),
+      import("@/app/api/v2/reviews/weekly/[weekStart]/route"),
+      import("@/app/api/v2/reviews/weekly/route"),
+      import("@/app/api/v2/profile/corrections/route"),
+      import("@/app/api/v2/trades/[id]/reviews/[reviewId]/override/route"),
+    ]);
     sql = polacz();
     ({ instrumentId } = await zapewnijPodstawy(sql));
     rw = await nowyToken(sql, ["read", "write", "propose"]);
     ro = await nowyToken(sql, ["read"]);
     const [k] = await sql`insert into accounts (name, type) values (${`SLEPA-${znacznik}`}, 'live') returning id`;
     kontoId = k.id;
-  });
+  }, 120_000);
   afterAll(async () => {
     await sql`delete from chart_annotations where trade_id in (select id from trades where account_id = ${kontoId})`;
     await sql`delete from day_notes where day = ${DZIEN}`;

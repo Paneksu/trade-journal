@@ -285,14 +285,17 @@ describe.skipIf(!MOZNA_NA_BAZIE)("trades, days, sessions, skips, reviews przez v
       return GET(zadanie(`/days/${data}${query}`, { token }), parametry({ date: data }));
     };
 
-    it("zapis i odczyt notatki dnia konta; powtórny zapis nadpisuje tylko podane pola", async () => {
-      const a = await put("1991-04-01", { accountId: kontoId, preSession: "Bias long, unieważnienie pod 19900.", mood: 4, energy: 3 });
+    it("zapis i odczyt notatki dnia (jedna, bez konta); powtórny zapis nadpisuje tylko podane pola", async () => {
+      // Notatka dnia jest jedna i bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»).
+      await sql`delete from day_notes where day = '1991-04-01' and backtest_session_id is null`;
+      const a = await put("1991-04-01", { preSession: "Bias long, unieważnienie pod 19900.", mood: 4, energy: 3 });
       expect(a.status).toBe(201);
-      const b = await put("1991-04-01", { accountId: kontoId, postSession: "Zgodnie z planem." });
+      const b = await put("1991-04-01", { postSession: "Zgodnie z planem." });
       expect(b.status).toBe(200);
+      // accountId w zapytaniu GET zawęża tylko trade'y; notatka dnia jest ta sama.
       const dzien = await (await get("1991-04-01", `?accountId=${kontoId}`)).json();
       expect(dzien.dayNote).toMatchObject({ preSession: "Bias long, unieważnienie pod 19900.", postSession: "Zgodnie z planem.", mood: 4, energy: 3, noTrade: false });
-      const [w] = await sql`select pre_session, post_session from day_notes where day = '1991-04-01' and account_id = ${kontoId}`;
+      const [w] = await sql`select pre_session, post_session from day_notes where day = '1991-04-01' and account_id is null and backtest_session_id is null`;
       expect(w).toMatchObject({ pre_session: "Bias long, unieważnienie pod 19900.", post_session: "Zgodnie z planem." });
     });
 
@@ -320,8 +323,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("trades, days, sessions, skips, reviews przez v
       expect(dzien.trades.length).toBeGreaterThan(0);
       expect((await get("2026-02-30")).status).toBe(400);
       expect((await get("wczoraj")).status).toBe(400);
-      expect((await put("1991-04-04", { accountId: 999_999, mood: 3 })).status).toBe(404);
+      // accountId w zapisie dnia: zawsze 422 (notatka dnia nie należy do konta), także z nieistniejącym kontem.
+      expect((await put("1991-04-04", { accountId: 999_999, mood: 3 })).status).toBe(422);
       expect((await put("1991-04-04", { accountId: kontoId, sessionId: 1 })).status).toBe(422);
+      expect((await put("1991-04-04", { sessionId: 999_999, mood: 3 })).status).toBe(404);
       expect((await put("1991-04-04", { mood: 9 })).status).toBe(400);
       expect((await put("1991-04-04", { noTradeReason: "wymyślony" })).status).toBe(422);
       expect((await put("1991-04-04", { mood: 3 }, ro.token)).status).toBe(403);

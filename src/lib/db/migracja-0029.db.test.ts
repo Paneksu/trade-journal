@@ -31,6 +31,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
   it("dwa konta w tym samym dniu: jeden wiersz bez konta z obiema treściami i przepiętymi zrzutami; cofnięcie przywraca", async () => {
     const DZIEN = "1977-03-07";
     const SAM = "1977-03-08";
+    const MIESZANY = "1977-03-09";
     await sql
       .begin(async (tx) => {
         await tx.unsafe(cofniecie);
@@ -45,6 +46,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
         const [nsesja] = await tx`insert into day_notes (day, backtest_session_id, post_session) values (${DZIEN}, ${s.id}, 'Sesja') returning id`;
         await tx`insert into screenshots (file, day_note_id, sort_order) values ('dzien-x/a0.webp', ${na.id}, 0), ('dzien-x/b0.webp', ${nb.id}, 0), ('dzien-x/b1.webp', ${nb.id}, 1)`;
         await tx`insert into screenshots (file, day_note_id, sort_order) values ('dzien-x/s0.webp', ${nsesja.id}, 0)`;
+        // Notatka bez konta (rytuał/AI) i wpis na koncie (stary kalendarz) w tym samym dniu.
+        const [nbez] = await tx`insert into day_notes (day, account_id, pre_session, mood, bias) values (${MIESZANY}, null, 'Plan z rytuału', 2, 'long') returning id`;
+        const [nkonto] = await tx`insert into day_notes (day, account_id, post_session, mood, energy) values (${MIESZANY}, ${a.id}, 'Wniosek z kalendarza', 4, 3) returning id`;
+        await tx`insert into screenshots (file, day_note_id, sort_order) values ('dzien-x/m-bez.webp', ${nbez.id}, 0), ('dzien-x/m-konto.webp', ${nkonto.id}, 0)`;
 
         for (const i of instrukcje) await tx.unsafe(i);
 
@@ -56,10 +61,11 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
         expect(n.pre_session).toBe("Plan A — [Konto A 0029]");
         expect(n.post_session).toContain("Wnioski A — [Konto A 0029]\n\nWnioski B — [Konto B 0029]");
         // Pola liczbowe z pierwszego konta; inne wartości z drugiego wpisu nie giną (linia z dopiskiem konta).
-        expect([n.mood, n.energy, n.day_rating, n.no_trade]).toEqual([3, 4, 2, false]);
-        expect(n.post_session).toContain("Inne wartosci z tego dnia: nastroj 5, dzien bez transakcji (no_setup) — [Konto B 0029]");
+        // Dzień bez transakcji: flaga true, jeśli miał ją którykolwiek wpis (decyzja sesji głównej 16.10.2026).
+        expect([n.mood, n.energy, n.day_rating, n.no_trade, n.no_trade_reason]).toEqual([3, 4, 2, true, "no_setup"]);
+        expect(n.post_session).toContain("Inne wartosci z tego dnia: nastroj 5 — [Konto B 0029]");
         const zrzuty = await tx`select file, day_note_id, sort_order from screenshots where file like 'dzien-x/%' order by sort_order, id`;
-        expect(zrzuty.filter((z) => z.file !== "dzien-x/s0.webp").map((z) => [z.file, z.day_note_id, z.sort_order])).toEqual([
+        expect(zrzuty.filter((z) => ["dzien-x/a0.webp", "dzien-x/b0.webp", "dzien-x/b1.webp"].includes(z.file)).map((z) => [z.file, z.day_note_id, z.sort_order])).toEqual([
           ["dzien-x/a0.webp", na.id, 0],
           ["dzien-x/b0.webp", na.id, 1],
           ["dzien-x/b1.webp", na.id, 2],
@@ -67,6 +73,18 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
         // Jeden wpis na koncie: ten sam wiersz, tylko bez konta i bez dopisku.
         const [sam] = await tx`select id, account_id, post_session from day_notes where day = ${SAM} and backtest_session_id is null`;
         expect([sam.id, sam.account_id, sam.post_session]).toEqual([ns.id, null, "Sam wpis"]);
+        // Bez konta + wpis na koncie: zostaje wiersz bez konta (jego id), tekst z konta z dopiskiem, nastrój z wpisu bez
+        // konta, brakująca energia z konta, różny nastrój z konta jako linia; oba zrzuty na scalonej notatce.
+        const mieszany = await tx`select * from day_notes where day = ${MIESZANY} and backtest_session_id is null`;
+        expect(mieszany).toHaveLength(1);
+        const m = mieszany[0];
+        expect([m.id, m.account_id, m.pre_session, m.mood, m.energy, m.bias]).toEqual([nbez.id, null, "Plan z rytuału", 2, 3, "long"]);
+        expect(m.post_session).toBe("Wniosek z kalendarza — [Konto A 0029]\n\nInne wartosci z tego dnia: nastroj 4 — [Konto A 0029]");
+        const zrzutyM = await tx`select file, day_note_id, sort_order from screenshots where file like 'dzien-x/m-%' order by sort_order`;
+        expect(zrzutyM.map((z) => [z.file, z.day_note_id, z.sort_order])).toEqual([
+          ["dzien-x/m-bez.webp", nbez.id, 0],
+          ["dzien-x/m-konto.webp", nbez.id, 1],
+        ]);
         // Notatka sesji backtestu bez zmian.
         const [sesja] = await tx`select account_id, backtest_session_id, post_session from day_notes where id = ${nsesja.id}`;
         expect([sesja.backtest_session_id, sesja.post_session]).toEqual([s.id, "Sesja"]);

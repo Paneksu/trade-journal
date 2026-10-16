@@ -19349,8 +19349,8 @@
                   },
                   "amountCents": {
                     "type": "integer",
-                    "minimum": -9007199254740991,
-                    "maximum": 9007199254740991
+                    "minimum": -1000000000,
+                    "maximum": 1000000000
                   },
                   "occurredOn": {
                     "type": "string",

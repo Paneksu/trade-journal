@@ -19,7 +19,6 @@ import { NO_TRADE_REASONS } from "@/lib/domain/day-log";
 /** Dziennik dnia: co planowałeś przed sesją, co z tego wyszło albo dlaczego nie grałeś. */
 export function DayNoteForm({
   day,
-  accountId,
   hasTrades = false,
   values,
   wersja,

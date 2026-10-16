@@ -1706,6 +1706,28 @@ z cofnięciem, a dopiski do strategii (obserwacje, nie reguły) wchodzą bez zat
   Lighthouse na `/mozg` mobile daje dostępność 96, bo przy pierwszym ekranie pasek częściowo przykrywa wiersz listy
   (cel dotyku 380×17 px). Przewijanie treści w kontenerze nad paskiem odrzucone.
 
+### ADR-033, uzupełnienie: code review i audyt fazy 5 (2026-10-16)
+
+- **Notatka dnia: «Tak, zawsze jedna»** (Słowa użytkownika, 16.10.2026). Notatka dnia dziennika jest jedna i bez konta,
+  a próba przypisania jej do konta jest odrzucana z komunikatem: `PUT /api/v2/days/:date` i załącznik dnia z
+  `accountId` dają 422 `day_note_has_no_account` (kontrakt i `docs/openapi-v2.json` zaktualizowane). `GET` z
+  `accountId` zawęża tylko trade'y dnia. Akcje UI (`saveDayNote`, zrzuty dnia, rytuał, szybka notatka) zapisują
+  wyłącznie bez konta. Notatki dnia sesji backtestu bez zmian.
+- **Nadpisanie notatki dnia (P1):** formularze rytuału i kalendarza wysyłają `updatedAt` z chwili otwarcia; zmiana
+  w międzyczasie (inna karta, rytuał, AI) = odmowa z komunikatem, nie nadpisanie. Szybka notatka dopisuje atomowo
+  w SQL. Zapisy idą jako aktor `ui` przez `lib/decyzje/dzien.ts` (P3).
+- **Migracja 0029, `no_trade`:** decyzja sesji głównej (16.10.2026): flaga „dzień bez transakcji” scalonej notatki
+  jest prawdą, jeśli miał ją którykolwiek scalany wpis; powód z pierwszego wpisu, który go podał.
+- **Ślepa ocena w UI (blokery review):** kalendarz (zablokowany panel notatki, zrzuty dnia sprzed wejścia), księga
+  (wynik zerowany na serwerze), galeria i listy trade'ów (kłódka), Mózg (dopiski, załączniki i tytuły do `[[`),
+  edycja ukrytego trade'a zablokowana. Dowód: `e2e/slepa-ui.spec.ts` (HTML i RSC), czerwony przebieg na starym kodzie
+  w `docs/audyt/slepa-czerwien.txt`.
+- **CSP (audyt pkt 6):** nonce z `proxy.ts`, `script-src 'self' 'nonce-…' 'strict-dynamic'`, `'unsafe-eval'` tylko w dev,
+  `style-src 'self' 'unsafe-inline'` (atrybuty `style` Reacta i `<style>` strony offline; styl nie wykonuje kodu).
+- **Niestabilny `slepa-ocena.db.test`:** przyczyną był koszt pierwszego dynamicznego `import()` ok. 19 tras v2 w środku
+  pierwszego testu (1,25 s spokojnie, kilka razy więcej pod obciążeniem). Trasy rozgrzewane w `beforeAll`, limit testu
+  20 s. Indeks `trades.trading_day` już istnieje (`trades_trading_day_idx`), migracja 0030 niepotrzebna.
+
 ---
 
 ## ADR-030, uzupełnienie wdrożeniowe fazy 2 / R2 (2026-10-15)

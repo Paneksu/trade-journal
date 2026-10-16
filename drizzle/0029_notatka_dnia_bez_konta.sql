@@ -83,7 +83,6 @@ BEGIN
           CASE WHEN r."sleep" IS NOT NULL AND v_sleep IS NOT NULL AND r."sleep" <> v_sleep THEN 'sen ' || r."sleep" END,
           CASE WHEN r."max_trades" IS NOT NULL AND v_max IS NOT NULL AND r."max_trades" <> v_max THEN 'maks. trade''ow ' || r."max_trades" END,
           CASE WHEN r."bias" IS NOT NULL AND v_bias IS NOT NULL AND r."bias" <> v_bias THEN 'bias ' || r."bias" END,
-          CASE WHEN r."no_trade" AND NOT v_no_trade THEN 'dzien bez transakcji' || coalesce(' (' || r."no_trade_reason"::text || ')', '') END,
           CASE WHEN r."no_trade" AND v_no_trade AND r."no_trade_reason" IS DISTINCT FROM v_reason AND r."no_trade_reason" IS NOT NULL THEN 'powod pauzy ' || r."no_trade_reason"::text END);
         IF nullif(v_inne, '') IS NOT NULL THEN
           v_dopiski := concat_ws(E'\n', v_dopiski, 'Inne wartosci z tego dnia: ' || v_inne || v_et);
@@ -91,6 +90,9 @@ BEGIN
         v_mood := coalesce(v_mood, r."mood"); v_energy := coalesce(v_energy, r."energy");
         v_rating := coalesce(v_rating, r."day_rating"); v_sleep := coalesce(v_sleep, r."sleep");
         v_max := coalesce(v_max, r."max_trades"); v_bias := coalesce(v_bias, r."bias");
+        -- Dzien bez transakcji: flaga jest true, jesli mial ja ktorykolwiek scalany wpis (decyzja sesji glownej 16.10.2026);
+        -- powod z pierwszego wpisu, ktory go podal, inne powody trafiaja linia do "Po sesji" (wyzej).
+        IF r."no_trade" AND NOT v_no_trade THEN v_no_trade := true; v_reason := coalesce(v_reason, r."no_trade_reason"); END IF;
         v_created := least(v_created, r."created_at"); v_updated := greatest(v_updated, r."updated_at");
       END IF;
     END LOOP;

@@ -353,6 +353,10 @@ export function Ksiega({ wiersze: wszystkieWiersze, tags, lacznie }: { wiersze: 
                 <input
                   type="checkbox"
                   aria-label="Zaznacz wszystkie"
+                  // Przez pierwsze 800 ms lista ma tylko pierwszą partię wierszy: „zaznacz wszystkie” zaznaczyłoby
+                  // tylko ją, a usuwanie dotyczy zaznaczonych (review 16.10.2026). Do pełnego załadowania wyłączone.
+                  disabled={!pelna}
+                  title={pelna ? undefined : "Wczytuję resztę listy…"}
                   checked={wszystkie}
                   onChange={() => setZaznaczone(wszystkie ? [] : wiersze.map((w) => w.id))}
                   className={cx(

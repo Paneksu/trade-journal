@@ -644,7 +644,8 @@ test("ta sama konfluencja na dwoch interwalach przezywa edycje", async ({ page }
    *  3. ponowny zapis bez zmian nie mnozy wierszy.
    */
   await page.goto("/trades");
-  const wiersz = page.locator("table tbody tr[data-trade]").first();
+  // Ślepa ocena: otwarty trade z werdyktem AI nie ma edycji (review fazy 5), więc bierzemy pierwszy zwykły wiersz.
+  const wiersz = page.locator("table tbody tr[data-trade]").filter({ hasNotText: "ukryty" }).first();
   await wiersz.locator("a").first().click();
   await page.getByRole("link", { name: /edytuj/i }).first().click();
   await page.waitForURL(/\/edit$/);
@@ -719,7 +720,8 @@ test("galeria pokazuje kafle ze zrzutem i filtruje po tagu", async ({ page }) =>
   // UI v2: galeria ma ten sam nagłówek co lista; aktywny widok mówi przełącznik Lista / Galeria.
   await expect(page.getByRole("group", { name: "Widok" }).getByRole("link", { name: "Galeria" })).toHaveAttribute("aria-current", "true");
 
-  const kafle = page.locator("main ul > li");
+  // Kafel otwartego trade'a z werdyktem AI ma kłódkę zamiast obrazu (ślepa ocena), więc liczymy tylko kafle z obrazem.
+  const kafle = page.locator("main ul > li").filter({ has: page.locator("img") });
   const ile = await kafle.count();
   if (ile > 0) {
     // Domyslnie tylko trade'y ze zrzutem (ADR-019), wiec kazdy kafel ma obraz.
