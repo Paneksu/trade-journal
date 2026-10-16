@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { hkdfSync } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   BACKUP_ALPHABET,
@@ -6,6 +7,8 @@ import {
   czyKodZapasowy,
   formatujKodZapasowy,
   hmacKoduZapasowego,
+  kluczGlowny,
+  kluczTotpDziala,
   kodTotp,
   noweKodyZapasowe,
   normalizujKod,
@@ -151,5 +154,74 @@ describe("kody zapasowe", () => {
     expect(hmacKoduZapasowego("ABCDEFGHJK", KLUCZ)).toBe(h);
     expect(hmacKoduZapasowego("ABCDEFGHJK", INNY_KLUCZ)).not.toBe(h);
     expect(hmacKoduZapasowego("ABCDEFGHJL", KLUCZ)).not.toBe(h);
+  });
+});
+
+describe("klucz glowny wyprowadzony z SESSION_SECRET (ADR-031, decyzja z 17.10.2026)", () => {
+  const SESJA = "test-secret-test-secret-test-secret-123456";
+  const JAWNY = Buffer.alloc(32, 3).toString("base64url");
+
+  it("bez TOTP_ENC_KEY klucz pochodzi z HKDF(SESSION_SECRET, info tj-totp-v1) i jest deterministyczny", () => {
+    const oczekiwany = Buffer.from(
+      hkdfSync("sha256", Buffer.from(SESJA), Buffer.alloc(0), "tj-totp-v1", 32),
+    );
+    const a = kluczGlowny({ SESSION_SECRET: SESJA });
+    expect(a.zrodlo).toBe("SESSION_SECRET");
+    expect(a.klucz.equals(oczekiwany)).toBe(true);
+    expect(kluczGlowny({ SESSION_SECRET: SESJA, TOTP_ENC_KEY: "  " }).klucz.equals(oczekiwany)).toBe(true);
+    // inny sekret sesji = inny klucz; klucz nie jest samym SESSION_SECRET
+    expect(kluczGlowny({ SESSION_SECRET: SESJA + "x" }).klucz.equals(oczekiwany)).toBe(false);
+    expect(a.klucz.equals(Buffer.from(SESJA).subarray(0, 32))).toBe(false);
+  });
+
+  it("jawny TOTP_ENC_KEY ma pierwszenstwo", () => {
+    const w = kluczGlowny({ SESSION_SECRET: SESJA, TOTP_ENC_KEY: JAWNY });
+    expect(w.zrodlo).toBe("TOTP_ENC_KEY");
+    expect(w.klucz.equals(Buffer.alloc(32, 3))).toBe(true);
+  });
+
+  it("TOTP_ENC_KEY ustawiony, ale bledny, rzuca zamiast po cichu przelaczyc na SESSION_SECRET", () => {
+    expect(() => kluczGlowny({ SESSION_SECRET: SESJA, TOTP_ENC_KEY: "krotki" })).toThrow(/6 znaków/);
+  });
+
+  it("bez obu zrodel (albo z za krotkim SESSION_SECRET) rzuca z faktyczna dlugoscia", () => {
+    expect(() => kluczGlowny({})).toThrow(/SESSION_SECRET ma 0 znaków/);
+    expect(() => kluczGlowny({ SESSION_SECRET: "za-krotki" })).toThrow(/SESSION_SECRET ma 9 znaków/);
+  });
+
+  describe("przez process.env: szyfrowanie sekretu i kody zapasowe bez TOTP_ENC_KEY", () => {
+    let staryKlucz: string | undefined;
+    let staraSesja: string | undefined;
+    beforeEach(() => {
+      staryKlucz = process.env.TOTP_ENC_KEY;
+      staraSesja = process.env.SESSION_SECRET;
+      delete process.env.TOTP_ENC_KEY;
+      process.env.SESSION_SECRET = SESJA;
+    });
+    afterEach(() => {
+      if (staryKlucz === undefined) delete process.env.TOTP_ENC_KEY;
+      else process.env.TOTP_ENC_KEY = staryKlucz;
+      if (staraSesja === undefined) delete process.env.SESSION_SECRET;
+      else process.env.SESSION_SECRET = staraSesja;
+    });
+
+    it("kluczTotpDziala() jest true, a sekret odszyfrowuje sie tym samym kluczem", () => {
+      expect(kluczTotpDziala()).toBe(true);
+      const zapis = zaszyfrujSekret("SEKRET-BEZ-ZMIENNEJ");
+      expect(odszyfrujSekret(zapis)).toBe("SEKRET-BEZ-ZMIENNEJ");
+    });
+
+    it("zmiana SESSION_SECRET unieważnia sekret i HMAC kodów zapasowych", () => {
+      const zapis = zaszyfrujSekret("SEKRET");
+      const hmac = hmacKoduZapasowego("ABCDEFGHJK");
+      process.env.SESSION_SECRET = "inny-secret-inny-secret-inny-secret-654321";
+      expect(() => odszyfrujSekret(zapis)).toThrow(/SESSION_SECRET/);
+      expect(hmacKoduZapasowego("ABCDEFGHJK")).not.toBe(hmac);
+    });
+
+    it("kluczTotpDziala() jest false bez obu zmiennych", () => {
+      delete process.env.SESSION_SECRET;
+      expect(kluczTotpDziala()).toBe(false);
+    });
   });
 });

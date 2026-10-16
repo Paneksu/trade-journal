@@ -203,6 +203,51 @@ describe.skipIf(!lokalna(URL_BAZY))("2FA w bazie", () => {
   });
 });
 
+describe.skipIf(!lokalna(URL_BAZY))("2FA bez TOTP_ENC_KEY: klucz z SESSION_SECRET (ADR-031)", () => {
+  const sql = postgres(URL_BAZY, { max: 2 });
+  const T = Date.UTC(2031, 0, 1, 12, 0, 0);
+  const sekret = nowySekretBase32();
+  let staryKlucz: string | undefined;
+  let staraSesja: string | undefined;
+
+  beforeAll(async () => {
+    staryKlucz = process.env.TOTP_ENC_KEY;
+    staraSesja = process.env.SESSION_SECRET;
+    delete process.env.TOTP_ENC_KEY;
+    process.env.SESSION_SECRET = "test-secret-test-secret-test-secret-123456";
+    await sql`insert into settings (id) values (1) on conflict (id) do nothing`;
+    await sql`update settings set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null where id = 1`;
+    await sql`delete from auth_backup_codes`;
+  });
+
+  afterAll(async () => {
+    await sql`update settings set totp_secret_enc = null, totp_enabled_at = null, totp_last_step = null where id = 1`;
+    await sql`delete from auth_backup_codes`;
+    if (staryKlucz === undefined) delete process.env.TOTP_ENC_KEY;
+    else process.env.TOTP_ENC_KEY = staryKlucz;
+    if (staraSesja === undefined) delete process.env.SESSION_SECRET;
+    else process.env.SESSION_SECRET = staraSesja;
+    await sql.end();
+  });
+
+  it("wlaczenie, kod TOTP i kod zapasowy dzialaja bez zmiennej TOTP_ENC_KEY", async () => {
+    expect(process.env.TOTP_ENC_KEY).toBeUndefined();
+    const wynik = await wlaczTotp(zaszyfrujSekret(sekret), numerKroku(T));
+    expect(wynik).not.toBeNull();
+    const [w] = await sql`select totp_secret_enc from settings where id = 1`;
+    expect(odszyfrujSekret(w.totp_secret_enc)).toBe(sekret);
+
+    const t2 = T + 30_000;
+    expect(await sprawdzDrugiSkladnik(kodTotp(sekret, t2), t2)).toEqual({ ok: true, rodzaj: "totp" });
+    expect(await sprawdzDrugiSkladnik(wynik!.kody[0], t2 + 30_000)).toEqual({ ok: true, rodzaj: "backup" });
+  });
+
+  it("zmiana SESSION_SECRET unieważnia 2FA: wyjatek z nazwa zmiennej, a nie ciche 'zly kod'", async () => {
+    process.env.SESSION_SECRET = "inny-secret-inny-secret-inny-secret-654321";
+    await expect(sprawdzDrugiSkladnik("123456", T + 300_000)).rejects.toThrow(/SESSION_SECRET/);
+  });
+});
+
 describe.skipIf(!lokalna(URL_BAZY))("dziennik zdarzen bezpieczenstwa", () => {
   const sql = postgres(URL_BAZY, { max: 2 });
   afterAll(async () => {

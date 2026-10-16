@@ -47,7 +47,7 @@ import { settings } from "@/lib/db/schema";
  */
 
 const BRAK_KLUCZA =
-  "Serwer nie ma poprawnego TOTP_ENC_KEY, więc nie może bezpiecznie zapisać sekretu. Ustaw zmienną w panelu wdrożeniowym (instrukcja: docs/wdrozenie-coolify.md) i uruchom aplikację ponownie.";
+  "Serwer nie ma ani poprawnego TOTP_ENC_KEY, ani SESSION_SECRET (min. 32 znaki), więc nie może bezpiecznie zapisać sekretu. Ustaw zmienną w panelu wdrożeniowym (instrukcja: docs/wdrozenie-coolify.md) i uruchom aplikację ponownie.";
 
 /** Sprawdza kod w trybie sudo/potwierdzenia: liczy porazki do wspolnej blokady. */
 async function sprawdzKodUzytkownika(kod: string): Promise<{ ok: true; rodzaj: "totp" | "backup" } | { ok: false; error: string }> {

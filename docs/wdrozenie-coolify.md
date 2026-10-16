@@ -31,7 +31,7 @@ pierwszy prawdziwy trade.
 | `SESSION_SECRET` | `openssl rand -base64 48` — minimum 32 znaki |
 | `OWNER_PASSWORD` | hasło do pierwszego logowania |
 | `UPLOADS_DIR` | `/data/zrzuty` (już ustawione w obrazie, ale niech będzie jawnie) |
-| `TOTP_ENC_KEY` | **wymagana do włączenia 2FA** (sekcja 9): 32 losowe bajty, `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Secret. **Nie zmieniaj po włączeniu 2FA** |
+| `TOTP_ENC_KEY` | **opcjonalna** (sekcja 9): 32 losowe bajty, `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Secret. Bez niej klucz 2FA jest wyprowadzany z `SESSION_SECRET` (ADR-031) i w logu startu jest ostrzeżenie. **Nie zmieniaj po włączeniu 2FA** |
 | `INGEST_TOKEN_SHA256` | **opcjonalna**: skrót SHA-256 tokenu API synchronizacji, 64 znaki hex (patrz sekcja 8). Bez niej `/api/ingest/*` odpowiada 404 |
 
 `SESSION_SECRET`, `OWNER_PASSWORD`, `TOTP_ENC_KEY` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.
@@ -173,7 +173,9 @@ wymusza ciasteczka `Secure`, dlatego dostęp ma tylko przez HTTPS (adres sslip t
 
 1. **Kopia bazy w Coolify** (Backups → ręczny backup) i sprawdzenie, że plik kopii powstał.
    Migracja `0016_totp.sql` dokłada kolumny i tabele (`auth_backup_codes`, `auth_events`), nie zmienia istniejących.
-2. **Zmienna `TOTP_ENC_KEY`** (secret) w Coolify. Wygeneruj na własnym komputerze, nie na serwerze:
+2. **Zmienna `TOTP_ENC_KEY`: opcjonalna.** Bez niej klucz 2FA jest wyprowadzany z `SESSION_SECRET` (ADR-031,
+   decyzja z 17.10.2026) i 2FA da się włączyć bez żadnej nowej zmiennej; w logu startu zobaczysz ostrzeżenie, że klucz
+   jest wyprowadzony. Jeśli chcesz rozdzielić oba sekrety, ustaw ją **przed** włączeniem 2FA. Wygeneruj na własnym komputerze, nie na serwerze:
    `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`.
    Zapisz klucz poza gitem (menedżer haseł). **Nie zmieniaj go po włączeniu 2FA.**
 3. **DNS:** w Hetzner DNS rekord A `dziennik` w strefie `panekweb.pl` → adres serwera. Sprawdź
@@ -194,7 +196,8 @@ wymusza ciasteczka `Secure`, dlatego dostęp ma tylko przez HTTPS (adres sslip t
    zapasowych (pokazują się raz). Wyloguj się i zaloguj ponownie, żeby sprawdzić drugi krok.
 10. **Po tygodniu bez problemów** usuń `OWNER_PASSWORD` ze zmiennych, jeśli jeszcze tam jest.
 
-**Awaria: telefon i kody zapasowe zgubione albo zmieniony `TOTP_ENC_KEY`.** Nie ma obejścia w aplikacji, bo
+**Awaria: telefon i kody zapasowe zgubione albo zmieniony `TOTP_ENC_KEY` (a gdy go nie ma: zmieniony `SESSION_SECRET`,
+z którego klucz jest wyprowadzany; dotyczy to także późniejszego dodania `TOTP_ENC_KEY` do działającego 2FA). Nie ma obejścia w aplikacji, bo
 ma być twardo. Z dostępem do bazy (Coolify → terminal bazy) wyłączasz 2FA SQL-em, potem włączasz od nowa:
 
 ```sql
