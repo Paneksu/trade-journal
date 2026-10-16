@@ -18,6 +18,7 @@ SHA-256 całego tokenu. Każde zapytanie: `Authorization: Bearer <token>`.
 | `write` | trade'y, zrzuty, oceny, sesje, pominięcia, notatki, słowa użytkownika, hipotezy, dzień |
 | `propose` | propozycje reguł (`POST /rules/proposals`) |
 | `import` | **dodatkowy**: tylko z nim wolno zadeklarować `origin: "vault-import"` (z `nImported`, `vaultStatus`) i `origin: "mentor"`; sam nic nie otwiera |
+| `import_broker` | **osobna klasa tokenu automatu** `tj watch-exports` (ADR-034): zakres JEDYNY w tokenie, otwiera wyłącznie `POST` i `GET /broker/inbox`; tokeny `read`/`write`/`propose` inboxa nie otworzą, a token `import_broker` nie otworzy niczego innego |
 
 **Zakres `import`** (Słowa użytkownika 15.10.2026: «Osobny zakres „import”»): token bez niego, który w `POST /notes`,
 `POST /rules/proposals` albo `POST /hypotheses` zadeklaruje `vault-import` lub `mentor`, dostaje `403 insufficient_scope`
@@ -154,6 +155,35 @@ Brakujące ekrany UI (zatwierdzanie przeglądu tygodnia, odpowiedzi na luki, oce
 - `/decyzje/rozstrzygniecia`: sprzeczność mentora z praktyką, po jednej, z cytatem mentora i linkiem `t=` obok
   Twoich słów. Wybór: zostaje moje / biorę mentora / oba pod warunkiem (Twoje słowa zapisane dosłownie).
 
+## Dane brokera (ADR-034, etap A)
+
+Konta prop są tylko do odczytu: dziennik niczego nie wysyła do brokera, tylko czyta plik eksportu (Tradovate: Orders i Cash History).
+Plik trafia do dziennika dwiema drogami, które używają tego samego parsera i tego samego zapisu: ręcznie w aplikacji (Prop → Połączenia,
+podgląd, potem „Zapisz import”) albo przez automat `tj watch-exports`, który wysyła plik z folderu Pobrane na `POST /api/v2/broker/inbox`.
+Serwer parsuje plik w pamięci i go **nie zapisuje**; zostaje SHA-256, liczniki i wiersze wypełnień bez numeru konta (numer konta u brokera
+leży w bazie wyłącznie jako HMAC-SHA256 kluczem `BROKER_ID_HMAC_KEY` i 4 ostatnie znaki).
+
+| Trasa | Zakres | Co robi |
+|---|---|---|
+| `POST /broker/inbox` | **tylko** `import_broker` | surowe bajty pliku (`text/csv`, do 5 MB, 20 000 wierszy, 64 kolumny, komórka do 1 KB); nagłówek `X-Tj-Sha256` opcjonalny (niezgodność = `409 sha_mismatch`). `201` zapisano, `200` ten plik był już zaimportowany (`duplicate`). Odpowiedź niesie `sha256` przyjętych bajtów: automat kasuje plik dopiero, gdy jest równy jego własnemu. Limit 30 plików na 10 minut na token. Stosuje **tylko dopasowania 1:1** (konto, instrument, kierunek, wejście w oknie ±120 s, ta sama liczba kontraktów) z „Cofnij” w aplikacji; **nigdy** nie tworzy trade'ów, nie przypisuje kont i nie zatwierdza sugestii. Plik z błędnymi wierszami: `422 rows_invalid`, plik zostaje u klienta, powód w „Do decyzji” |
+| `GET /broker/inbox` | `import_broker` | sprawdzenie tokenu: formaty, limit, termin ważności; nic nie zapisuje |
+| `GET /broker/trades` | `read` | trade'y brokera (`from`, `to`, `accountId`, `unmatched`): konto dziennika z kategorią, firmą, programem i fazą, wynik brutto i netto w centach, opłaty i ich źródło (`broker` / `rate`), stan dopasowania |
+| `GET /broker/trades/{id}` | `read` | to samo + wypełnienia (bez surowego wiersza pliku) |
+| `GET /broker/status` | `read` | per konto dnia: ostatni import i wypełnienie, trade'y brokera bez dopasowania, trade'y dziennika bez danych z rachunku, `needsExport` |
+| `GET` / `PUT /days/{date}/accounts` | `read` / `write` | aktywne konta dnia (wielokrotne); AI bierze z nich konto, firmę, fazę i stawkę opłat dla trade'ów z notatki |
+| `GET /trades/{id}` | `read` | nowy blok `broker` (trade brokera, `pnlSource`, różnica „poślizg i opłaty”) i pola `feesCents`, `pnlEstimateCents`, `pnlSource` w `result` |
+| `POST /ai-suggestions` | `propose` | nowe rodzaje `broker_match` (cel: trade dziennika, `payload.brokerTradeId`) i `broker_trade` (cel: `{type: "broker_trade", id}`); zatwierdza tylko użytkownik w aplikacji |
+
+**Wynik jest netto** (zmienia ADR-010): `trades.pnl` to wynik po opłatach. `pnlEstimate` to wynik wyliczony z cen minus opłaty ze stawki,
+`pnlSource: "broker"` oznacza kwotę netto z rachunku. **Ślepa ocena obejmuje dane brokera** (`ukrycie-wyniku.ts`, `sqlBrokerUkryty`): trade brokera
+dopasowany do trade'a z ukrytym wynikiem albo niedopasowany z tego samego konta i dnia po jego wejściu wychodzi z `resultHidden: true`, bez wyniku, wyjścia, statusu i opłat,
+a wypełnienia tylko sprzed wejścia trade'a dziennika (niedopasowany: żadne).
+
+**Token `import_broker`** wydaje wyłącznie użytkownik w Ustawienia → Urządzenia (tryb sudo), ważny 90 dni, unieważnienie bez sudo.
+`device/start` nie może go żądać; CHECK w bazie wymusza, że jest jedynym zakresem tokenu, powstaje z UI i ma termin. Trzecia warstwa: triggery tabel brokera
+sprawdzają w bazie, że zapis idzie od aktora `ui` albo od tokenu z dokładnie jednym zakresem `import_broker` (nieunieważnionego, niewygasłego).
+`guard.test.ts` pilnuje, że pod `/broker/**` poza inboxem są wyłącznie `GET`, a inbox przyjmuje tylko ten zakres.
+
 ## Zgodność wstecz: `/api/ingest/**`
 
 Trasy przyjmują stary skrót (`INGEST_TOKEN_SHA256`) **albo** token v2 z zakresem `write`. Każda
@@ -192,7 +222,7 @@ albo, przy wyłączonym 2FA, hasła (ADR-031); odrzucenie i unieważnienie nie w
 
 ## Zmienne środowiskowe
 
-Żadna nie jest wymagana. Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny całego v2, także tokenów v2
+Do importu z brokera potrzebna jest `BROKER_ID_HMAC_KEY` (32 losowe bajty; bez niej inbox i import w UI odpowiadają `503 broker_not_configured`). Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny całego v2, także tokenów v2
 na `/api/ingest/**`), `DEVICE_LOGIN_DISABLED=1` (zamyka tylko logowanie nowych urządzeń), `APP_PUBLIC_URL`
 (adres w `verificationUri`; za proxy bez niej używamy `X-Forwarded-Host`).
 
