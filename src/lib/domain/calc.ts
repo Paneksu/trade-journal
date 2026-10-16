@@ -8,8 +8,10 @@
  * Konwencje:
  * - kwoty w centach jako liczby calkowite
  * - ruch ceny liczymy w tickach, bo tylko to jest odporne na blad zmiennoprzecinkowy
- * - ryzyko liczymy z odleglosci do stopa; R liczymy z wyniku (prowizja poza modelem, patrz ADR-010)
- * - kwota z brokera, gdy podana, bije siatke tickow: to rachunek jest faktem,
+ * - ryzyko liczymy z odleglosci do stopa (bez oplat); R liczymy z wyniku NETTO
+ * - wynik trade'a jest NETTO, czyli po oplatach (ADR-034, zmienia ADR-010): stawka za kontrakt w obie strony
+ *   (`feeRtCents`) x zamkniete kontrakty; bez stawki oplat jest 0, a wynik dostaje flage `bezOplat`
+ * - kwota z brokera (netto z rachunku), gdy podana, bije siatke tickow: to rachunek jest faktem,
  *   a model tickowy tylko przyblizeniem (ADR-016)
  */
 
@@ -67,12 +69,27 @@ export type TradeInput = {
    * even u brokera - wiec sprawdzamy `null`, nie falsy.
    */
   brokerAmount?: number | null;
+  /**
+   * Stawka oplat dla klasy instrumentu tego trade'a: round turn (wejscie + wyjscie) za JEDEN kontrakt, w centach
+   * (prowizja + gielda + NFA). `null`/`undefined` = brak stawki: oplaty liczone jako 0 i `bezOplat` = true (ADR-034 pkt 5).
+   */
+  feeRtCents?: number | null;
 };
 
 export type TradeResult = {
   ticks: number | null;
   riskTicks: number | null;
+  /** Wynik NETTO w centach: kwota z rachunku, gdy jest, inaczej wynik z cen minus oplaty. */
   pnl: number | null;
+  /**
+   * Oplaty w centach: stawka x zamkniete kontrakty. 0, gdy brak stawki albo pozycja nie ma wyjsc (patrz `bezOplat`).
+   * Przy kwocie z rachunku to nadal OSZACOWANIE ze stawki, nie oplaty z rachunku.
+   */
+  fees: number;
+  /** Wynik wyliczony z cen trade'a minus oplaty (z pominieciem kwot z rachunku). `null` bez wyjsc. */
+  pnlEstimate: number | null;
+  /** Prawda, gdy pozycja ma wyjscia, a nie ma stawki oplat: wynik jest wtedy brutto. */
+  bezOplat: boolean;
   riskAmount: number | null;
   rMultiple: number | null;
   maeR: number | null;
@@ -275,10 +292,13 @@ export function computeTrade(t: TradeInput): TradeResult {
     riskTicks === null ? null : amountFromTicks(riskTicks, i.tickValue, Math.abs(contracts));
 
   let pnl: number | null = null;
+  let pnlEstimate: number | null = null;
   let ticks: number | null = null;
   let exitPrice: number | null = null;
   let exitTime: Date | null = null;
   let scalingR: number | null = null;
+  let fees = 0;
+  let bezOplat = false;
 
   if (exitCount > 0) {
     // Ticki per kawalek - potrzebne osobno, zeby je wazyc kontraktami i zeby
@@ -297,10 +317,21 @@ export function computeTrade(t: TradeInput): TradeResult {
     );
     const sumPnlPerExit = pnlPerExit.reduce((sum, p) => sum + p, 0);
 
+    /* Oplaty (ADR-034 pkt 5): stawka round turn x zamkniete kontrakty, zaokraglona raz. Kawalki z kwota z rachunku
+       sa juz netto, wiec oplat od nich nie odejmujemy drugi raz. */
+    const stawka = t.feeRtCents ?? null;
+    const oplaty = stawka === null ? 0 : Math.round(stawka * closedContracts);
+    const kontraktyBezKwoty = exits.reduce((sum, e) => (e.brokerAmount != null ? sum : sum + e.contracts), 0);
+    const oplatyOdTickow = stawka === null ? 0 : Math.round(stawka * kontraktyBezKwoty);
+    fees = oplaty;
+    bezOplat = stawka === null;
+
     // Kwota z brokera na poziomie trade'a bije wszystko (ADR-016). Pelna
     // kolejnosc pierwszenstwa: trade -> kawalek -> siatka tickow.
     const brokerAmount = t.brokerAmount ?? null;
-    pnl = brokerAmount !== null ? brokerAmount : sumPnlPerExit;
+    pnl = brokerAmount !== null ? brokerAmount : sumPnlPerExit - oplatyOdTickow;
+    pnlEstimate =
+      ticksPerExit.reduce((sum, tk, idx) => sum + amountFromTicks(tk, i.tickValue, exits[idx].contracts), 0) - oplaty;
 
     // Srednia wazona ruchu w tickach. NIE wolno tego liczyc z usrednionej
     // ceny wyjscia - moveInTicks(entry, avgPrice) daje w ogolnosci INNA
@@ -376,6 +407,9 @@ export function computeTrade(t: TradeInput): TradeResult {
     ticks,
     riskTicks,
     pnl,
+    fees,
+    pnlEstimate,
+    bezOplat,
     riskAmount,
     rMultiple,
     maeR,

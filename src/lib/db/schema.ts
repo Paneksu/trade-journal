@@ -97,6 +97,10 @@ export const accounts = pgTable(
      i dla prop, ktorego fazy jeszcze nie podano. CHECK w migracji 0015 pilnuje, zeby
      faza nie wisiala przy koncie innym niz prop (ADR-027). */
   propPhase: text().$type<"eval" | "funded">(),
+  /* Stawka oplat za kontrakt w obie strony (round turn: prowizja + gielda + NFA), w centach, osobno dla mini i micro
+     (migracja 0030, ADR-034). Dla kont prop obowiazuje stawka z reguly (prop_rules); tu stawka kont innych niz prop. */
+  feeRtMiniCents: bigint({ mode: "number" }),
+  feeRtMicroCents: bigint({ mode: "number" }),
   archived: boolean().notNull().default(false),
   sortOrder: integer().notNull().default(0),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -107,6 +111,8 @@ export const accounts = pgTable(
       "accounts_prop_phase",
       sql`${t.propPhase} is null or (${t.propPhase} in ('eval', 'funded') and ${t.type}::text = 'prop')`,
     ),
+    check("accounts_fee_mini", sql`${t.feeRtMiniCents} is null or ${t.feeRtMiniCents} >= 0`),
+    check("accounts_fee_micro", sql`${t.feeRtMicroCents} is null or ${t.feeRtMicroCents} >= 0`),
   ],
 );
 
@@ -129,10 +135,15 @@ export const instruments = pgTable(
     rthFrom: text().notNull().default("09:30"),
     rthTo: text().notNull().default("16:00"),
     exchangeTimezone: text().notNull().default("America/New_York"),
+    /* Klasa kontraktu dla stawki oplat (migracja 0030, ADR-034): mini / micro. NULL = nieznana, wtedy brak stawki. */
+    sizeClass: text().$type<"mini" | "micro">(),
     active: boolean().notNull().default(true),
     sortOrder: integer().notNull().default(0),
   },
-  (t) => [uniqueIndex("instruments_symbol_idx").on(t.symbol)],
+  (t) => [
+    uniqueIndex("instruments_symbol_idx").on(t.symbol),
+    check("instruments_size_class", sql`${t.sizeClass} is null or ${t.sizeClass} in ('mini', 'micro')`),
+  ],
 );
 
 /* --- Strategie ------------------------------------------------------------ */
@@ -321,6 +332,13 @@ export const trades = pgTable(
        i zeby formularz w edycji wracal z wypelnionym polem. */
     brokerAmount: bigint({ mode: "number" }),
 
+    /* --- Wynik netto (migracja 0030, ADR-034) -----------------------------
+       `pnl` jest NETTO: po oplatach. `fees` = stawka x zamkniete kontrakty albo suma z rachunku (centy);
+       NULL = oplaty nieznane (historia sprzed 0030 albo brak stawki), nie "zero". `pnlEstimate` = wynik z cen
+       trade'a minus oplaty (wynik wyliczony). "Wyliczony" vs "z rachunku" wynika z `brokerAmount IS NULL`. */
+    fees: bigint({ mode: "number" }),
+    pnlEstimate: bigint({ mode: "number" }),
+
     /* --- Kierunek a egzekucja (ADR-018) -----------------------------------
        Trzy stany, nie dwa: `null` znaczy "nieocenione", `false` - "kierunek
        chybiony". Przy wygranej wszystkie trzy pola zostaja puste, bo
@@ -359,7 +377,7 @@ export const trades = pgTable(
        API: gdy `updatedAt` jest pozniejszy, uzytkownik poprawial wpis w
        aplikacji i API nie ma prawa go nadpisac (wynik "conflict"). Edycja przez
        formularz NIE dotyka tych czterech kolumn. */
-    source: text().$type<"form" | "tradingview" | "fxreplay">().notNull().default("form"),
+    source: text().$type<"form" | "tradingview" | "fxreplay" | "broker">().notNull().default("form"),
     externalRef: text(),
     ingestedAt: timestamp({ withTimezone: true }),
     sourceSnapshot: jsonb().$type<Record<string, unknown>>(),
@@ -389,7 +407,9 @@ export const trades = pgTable(
     uniqueIndex("trades_external_ref_idx")
       .on(t.externalRef)
       .where(sql`${t.externalRef} is not null`),
-    check("trades_source", sql`${t.source} in ('form', 'tradingview', 'fxreplay')`),
+    check("trades_source", sql`${t.source} in ('form', 'tradingview', 'fxreplay', 'broker')`),
+    check("trades_broker_ref", sql`${t.source} <> 'broker' or ${t.externalRef} ~ '^brk:'`),
+    check("trades_fees", sql`${t.fees} is null or ${t.fees} >= 0`),
     /* Powod i potencjal maja sens wylacznie przy trafionym kierunku. Formularz
        normalizuje to wczesniej (normalizujKierunek), wiec ten warunek jest
        siatka bezpieczenstwa, a nie sciezka, ktora uzytkownik ma zobaczyc. */
@@ -841,6 +861,13 @@ export const AUTH_EVENT_KINDS = [
   "token_created",
   "token_revoked",
   "logout_all",
+  /* Dane brokera (migracja 0031, ADR-034). */
+  "broker_import",
+  "broker_import_reverted",
+  "broker_import_rejected",
+  "broker_account_mapped",
+  "broker_match_reverted",
+  "broker_history_recalculated",
 ] as const;
 export type AuthEventKind = (typeof AUTH_EVENT_KINDS)[number];
 
@@ -876,7 +903,7 @@ export const authEvents = pgTable(
    - o nich mowi test src/lib/db/migracje-v2.db.test.ts.
    ========================================================================== */
 
-export type ApiScope = "read" | "write" | "propose" | "import";
+export type ApiScope = "read" | "write" | "propose" | "import" | "import_broker";
 export type Origin = "user" | "ai" | "mentor" | "vault-import";
 
 /* --- Tokeny urzadzen (0017, ADR-030) -------------------------------------- */
@@ -907,9 +934,14 @@ export const apiTokens = pgTable(
     check("api_tokens_name", sql`length(${t.name}) between 1 and 80`),
     check("api_tokens_prefix", sql`${t.prefix} ~ '^[a-z0-9]{8}$'`),
     check("api_tokens_sha256", sql`${t.tokenSha256} ~ '^[0-9a-f]{64}$'`),
+    /* import_broker (0031, ADR-034): wylacznie samodzielny, tylko z UI i zawsze z terminem. */
     check(
       "api_tokens_scopes",
-      sql`cardinality(${t.scopes}) between 1 and 4 and ${t.scopes} <@ array['read', 'write', 'propose', 'import']`,
+      sql`cardinality(${t.scopes}) between 1 and 4 and ${t.scopes} <@ array['read', 'write', 'propose', 'import', 'import_broker'] and (not ('import_broker' = any (${t.scopes})) or ${t.scopes} = array['import_broker']::text[])`,
+    ),
+    check(
+      "api_tokens_import_broker",
+      sql`not ('import_broker' = any (${t.scopes})) or (${t.createdVia} = 'ui' and ${t.expiresAt} is not null)`,
     ),
     check("api_tokens_created_via", sql`${t.createdVia} in ('device_code', 'ui')`),
     unique("api_tokens_prefix_uq").on(t.prefix),
@@ -1436,7 +1468,9 @@ export type AiSuggestionKind =
   | "day_conclusion"
   | "weekly_conclusion"
   | "strategy_detail"
-  | "trade_setup";
+  | "trade_setup"
+  | "broker_match"
+  | "broker_trade";
 
 /* Kolejka potwierdzen. Tresc niezmienna; zmieniaja sie status, decidedAt, appliedRef.
    accepted / rejected / reverted tylko z UI (TJ403); 'applied' ustawia API wylacznie dla
@@ -1467,7 +1501,7 @@ export const aiSuggestions = pgTable(
   (t) => [
     check(
       "ai_suggestions_kind",
-      sql`${t.kind} in ('tag', 'trade_link', 'setup_example', 'process_grade', 'profile_term', 'day_conclusion', 'weekly_conclusion', 'strategy_detail', 'trade_setup')`,
+      sql`${t.kind} in ('tag', 'trade_link', 'setup_example', 'process_grade', 'profile_term', 'day_conclusion', 'weekly_conclusion', 'strategy_detail', 'trade_setup', 'broker_match', 'broker_trade')`,
     ),
     check(
       "ai_suggestions_status",
@@ -1723,6 +1757,10 @@ export const propFirmPresets = pgTable(
     minDays: smallint(),
     maxContractsMini: smallint(),
     maxContractsMicro: smallint(),
+    // Stawka oplat round turn za kontrakt (prowizja + gielda + NFA), centy; NULL = nieznana (0030, ADR-034).
+    feeRtMiniCents: bigint({ mode: "number" }),
+    feeRtMicroCents: bigint({ mode: "number" }),
+    feeSourceUrl: text(),
     sourceUrl: text().notNull(),
     // Data odczytu regulaminu.
     readOn: date().notNull(),
@@ -1766,6 +1804,9 @@ export const propFirmPresets = pgTable(
       sql`(${t.maxContractsMini} is null or ${t.maxContractsMini} > 0) and (${t.maxContractsMicro} is null or ${t.maxContractsMicro} > 0)`,
     ),
     check("prop_firm_presets_source_url", sql`${t.sourceUrl} ~ '^https://'`),
+    check("prop_firm_presets_fee_mini", sql`${t.feeRtMiniCents} is null or ${t.feeRtMiniCents} >= 0`),
+    check("prop_firm_presets_fee_micro", sql`${t.feeRtMicroCents} is null or ${t.feeRtMicroCents} >= 0`),
+    check("prop_firm_presets_fee_source_url", sql`${t.feeSourceUrl} is null or ${t.feeSourceUrl} ~ '^https://'`),
     check("prop_firm_presets_extra", sql`jsonb_typeof(${t.extra}) = 'object'`),
     /* Kolejny odczyt tego samego programu to nowy wiersz z nowym readOn. Unikat zaczyna sie od
        (firm, program, phase), wiec obsluguje tez wybor presetu w UI; osobny indeks byl by zbedny. */
@@ -1800,6 +1841,10 @@ export const propRules = pgTable(
     minDays: smallint(),
     maxContractsMini: smallint(),
     maxContractsMicro: smallint(),
+    // Kopia stawek z presetu (edytowalna); obowiazuje najnowsza regula z validFrom <= dzien trade'a (0030, ADR-034).
+    feeRtMiniCents: bigint({ mode: "number" }),
+    feeRtMicroCents: bigint({ mode: "number" }),
+    feeSourceUrl: text(),
     sourceUrl: text(),
     // Kopia presetu.extra.
     extra: jsonb().$type<Record<string, unknown>>().notNull().default({}),
@@ -1832,6 +1877,9 @@ export const propRules = pgTable(
       sql`(${t.maxContractsMini} is null or ${t.maxContractsMini} > 0) and (${t.maxContractsMicro} is null or ${t.maxContractsMicro} > 0)`,
     ),
     check("prop_rules_source_url", sql`${t.sourceUrl} is null or ${t.sourceUrl} ~ '^https://'`),
+    check("prop_rules_fee_mini", sql`${t.feeRtMiniCents} is null or ${t.feeRtMiniCents} >= 0`),
+    check("prop_rules_fee_micro", sql`${t.feeRtMicroCents} is null or ${t.feeRtMicroCents} >= 0`),
+    check("prop_rules_fee_source_url", sql`${t.feeSourceUrl} is null or ${t.feeSourceUrl} ~ '^https://'`),
     check("prop_rules_extra", sql`jsonb_typeof(${t.extra}) = 'object'`),
     unique("prop_rules_account_valid_uq").on(t.accountId, t.validFrom),
     index("prop_rules_preset_idx")
@@ -2268,3 +2316,248 @@ export type InterpretationCorrection = typeof interpretationCorrections.$inferSe
 export type MentorSource = typeof mentorSources.$inferSelect;
 export type MentorClaim = typeof mentorClaims.$inferSelect;
 export type StrategyGap = typeof strategyGaps.$inferSelect;
+
+/* ==========================================================================
+   Dane brokera (migracje 0030 do 0032, ADR-034, etap A). Migracje pisane recznie; ten plik jest ich lustrem.
+   Triggery (tj_broker_zapis, tj_broker_konto_zapis, tj_broker_import_origin, tj_broker_dopasowanie,
+   tj_trade_odepnij_broker) opisuje test src/lib/db/migracje-v2.db.test.ts.
+   ========================================================================== */
+
+export type MetodaBrokera = "export_file" | "oauth_tradovate";
+export type PlatformaBrokera = "tradovate" | "tradingview" | "topstepx" | "rithmic" | "ninjatrader" | "generic";
+
+/* Lista firm i platform jako DANE (0031, wiersze w 0032): starzeje sie w tygodniach, wiec read_on + ostrzezenie po 30 dniach. */
+export const propFirmPlatforms = pgTable(
+  "prop_firm_platforms",
+  {
+    id: serial().primaryKey(),
+    firm: text().notNull(),
+    platform: text().notNull(),
+    methods: text().array().$type<MetodaBrokera[]>().notNull(),
+    // Skad pobrac plik ("Reports -> Orders -> Download CSV").
+    exportHint: text(),
+    sourceUrl: text().notNull(),
+    readOn: date().notNull(),
+    needsVerification: boolean().notNull().default(true),
+    notes: text(),
+  },
+  (t) => [
+    check("prop_firm_platforms_firm", sql`length(${t.firm}) > 0 and length(${t.platform}) > 0`),
+    check("prop_firm_platforms_methods", sql`${t.methods} <@ array['export_file', 'oauth_tradovate']::text[]`),
+    check("prop_firm_platforms_source_url", sql`${t.sourceUrl} ~ '^https://'`),
+    unique("prop_firm_platforms_uq").on(t.firm, t.platform, t.readOn),
+  ],
+);
+
+/* Konto u brokera <-> konto dziennika. accountId NULL = konto zgloszone przez automat, czeka na przypisanie w UI.
+   Numer konta u brokera: tylko HMAC-SHA256 (klucz BROKER_ID_HMAC_KEY) i ostatnie 4 znaki. */
+export const brokerAccounts = pgTable(
+  "broker_accounts",
+  {
+    id: serial().primaryKey(),
+    accountId: integer().references(() => accounts.id, { onDelete: "cascade" }),
+    platform: text().$type<PlatformaBrokera>().notNull(),
+    method: text().$type<MetodaBrokera>().notNull(),
+    firm: text(),
+    externalAccountHmac: text().notNull(),
+    labelLast4: text(),
+    // Strefa czasowa plikow tego konta bez przesuniecia (automat); NULL = strefa z ustawien uzytkownika.
+    tz: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check("broker_accounts_platform", sql`${t.platform} in ('tradovate', 'tradingview', 'topstepx', 'rithmic', 'ninjatrader', 'generic')`),
+    check("broker_accounts_method", sql`${t.method} in ('export_file', 'oauth_tradovate')`),
+    check("broker_accounts_method_platform", sql`${t.method} <> 'oauth_tradovate' or ${t.platform} = 'tradovate'`),
+    check("broker_accounts_hmac", sql`${t.externalAccountHmac} ~ '^[0-9a-f]{64}$'`),
+    check("broker_accounts_last4", sql`${t.labelLast4} is null or length(${t.labelLast4}) <= 4`),
+    unique("broker_accounts_account_uq").on(t.accountId),
+    unique("broker_accounts_external_uq").on(t.platform, t.externalAccountHmac),
+  ],
+);
+
+export type OstrzezenieImportu = { code: string; message: string };
+
+/* Jeden wiersz na plik. Pliku nie przechowujemy: SHA-256, liczniki i ostrzezenia. */
+export const brokerImports = pgTable(
+  "broker_imports",
+  {
+    id: serial().primaryKey(),
+    origin: text().$type<"ui" | "tj_watch" | "oauth">().notNull(),
+    format: text().notNull(),
+    fileSha256: text(),
+    fileBytes: integer(),
+    tz: text().notNull(),
+    rowsTotal: integer().notNull(),
+    rowsSkipped: integer().notNull(),
+    fillsNew: integer().notNull(),
+    fillsDuplicate: integer().notNull(),
+    tradesMatched: integer().notNull(),
+    tradesCreated: integer().notNull(),
+    pendingDecisions: integer().notNull(),
+    status: text().$type<"committed" | "reverted" | "rejected">().notNull().default("committed"),
+    warnings: jsonb().$type<OstrzezenieImportu[]>().notNull().default(sql`'[]'::jsonb`),
+    note: text(),
+    createdByTokenId: integer().references(() => apiTokens.id, { onDelete: "no action" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    revertedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [
+    check("broker_imports_origin", sql`${t.origin} in ('ui', 'tj_watch', 'oauth')`),
+    check("broker_imports_sha256", sql`${t.fileSha256} is null or ${t.fileSha256} ~ '^[0-9a-f]{64}$'`),
+    check("broker_imports_status", sql`${t.status} in ('committed', 'reverted', 'rejected')`),
+    check("broker_imports_reverted", sql`(${t.status} = 'reverted') = (${t.revertedAt} is not null)`),
+    check("broker_imports_oauth_sha", sql`(${t.origin} = 'oauth') = (${t.fileSha256} is null)`),
+    check(
+      "broker_imports_counts",
+      sql`${t.rowsTotal} >= 0 and ${t.rowsSkipped} >= 0 and ${t.fillsNew} >= 0 and ${t.fillsDuplicate} >= 0 and ${t.tradesMatched} >= 0 and ${t.tradesCreated} >= 0 and ${t.pendingDecisions} >= 0`,
+    ),
+    check("broker_imports_warnings", sql`jsonb_typeof(${t.warnings}) = 'array'`),
+    uniqueIndex("broker_imports_sha_committed_uq")
+      .on(t.fileSha256)
+      .where(sql`${t.status} = 'committed' and ${t.fileSha256} is not null`),
+    index("broker_imports_created_idx").on(t.createdAt.desc()),
+    index("broker_imports_sha_idx")
+      .on(t.fileSha256)
+      .where(sql`${t.fileSha256} is not null`),
+  ],
+);
+
+/* Trade'y brokera zgrupowane z wypelnien (od zera pozycji do powrotu do zera). */
+export const brokerTrades = pgTable(
+  "broker_trades",
+  {
+    id: serial().primaryKey(),
+    brokerAccountId: integer()
+      .notNull()
+      .references(() => brokerAccounts.id, { onDelete: "cascade" }),
+    importId: integer().references(() => brokerImports.id, { onDelete: "cascade" }),
+    // 'brk:<platforma>:<skrot konta>:<id pierwszego fill wejscia>'
+    externalRef: text().notNull(),
+    contract: text().notNull(),
+    instrumentId: integer().references(() => instruments.id, { onDelete: "restrict" }),
+    direction: text().$type<"long" | "short">().notNull(),
+    maxQty: numeric({ precision: 14, scale: 4 }).notNull(),
+    entryTime: timestamp({ withTimezone: true }).notNull(),
+    exitTime: timestamp({ withTimezone: true }),
+    avgEntryPrice: numeric({ precision: 18, scale: 8 }).notNull(),
+    avgExitPrice: numeric({ precision: 18, scale: 8 }),
+    status: text().$type<"open" | "closed">().notNull(),
+    grossCents: bigint({ mode: "number" }),
+    grossSource: text().$type<"broker" | "computed">(),
+    feesCents: bigint({ mode: "number" }),
+    feeSource: text().$type<"broker" | "rate">(),
+    netCents: bigint({ mode: "number" }),
+    tradingDay: date(),
+    tradeId: integer().references(() => trades.id, { onDelete: "set null" }),
+    matchKind: text().$type<"auto" | "user" | "ai_accepted" | "created">(),
+    matchState: text().$type<"unmatched" | "ambiguous" | "matched" | "skipped">().notNull().default("unmatched"),
+    matchedAt: timestamp({ withTimezone: true }),
+    // Kwota z rachunku trade'u dziennika sprzed dopasowania (do cofniecia).
+    prevBrokerAmountCents: bigint({ mode: "number" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("broker_trades_external_ref_uq").on(t.externalRef),
+    check("broker_trades_external_ref", sql`${t.externalRef} ~ '^brk:'`),
+    check("broker_trades_direction", sql`${t.direction} in ('long', 'short')`),
+    check("broker_trades_qty", sql`${t.maxQty} > 0`),
+    check("broker_trades_status", sql`${t.status} in ('open', 'closed')`),
+    check("broker_trades_closed", sql`(${t.status} = 'closed') = (${t.exitTime} is not null)`),
+    check("broker_trades_gross_source", sql`${t.grossSource} is null or ${t.grossSource} in ('broker', 'computed')`),
+    check("broker_trades_gross_pair", sql`(${t.grossCents} is null) = (${t.grossSource} is null)`),
+    check("broker_trades_fee_source", sql`${t.feeSource} is null or ${t.feeSource} in ('broker', 'rate')`),
+    check("broker_trades_fees_pair", sql`(${t.feesCents} is null) = (${t.feeSource} is null)`),
+    check("broker_trades_fees_nonneg", sql`${t.feesCents} is null or ${t.feesCents} >= 0`),
+    check("broker_trades_match_kind", sql`${t.matchKind} is null or ${t.matchKind} in ('auto', 'user', 'ai_accepted', 'created')`),
+    check("broker_trades_match_state", sql`${t.matchState} in ('unmatched', 'ambiguous', 'matched', 'skipped')`),
+    check("broker_trades_link_kind", sql`(${t.tradeId} is null) = (${t.matchKind} is null)`),
+    check("broker_trades_link_state", sql`(${t.matchState} = 'matched') = (${t.tradeId} is not null)`),
+    uniqueIndex("broker_trades_trade_uq")
+      .on(t.tradeId)
+      .where(sql`${t.tradeId} is not null`),
+    index("broker_trades_account_entry_idx").on(t.brokerAccountId, t.entryTime),
+    index("broker_trades_day_idx").on(t.tradingDay),
+    index("broker_trades_open_state_idx")
+      .on(t.matchState)
+      .where(sql`${t.matchState} in ('unmatched', 'ambiguous')`),
+    index("broker_trades_import_idx").on(t.importId),
+  ],
+);
+
+/* Wypelnienia (zlecenia z Orders). `raw` to sparsowany wiersz BEZ numeru konta. */
+export const brokerFills = pgTable(
+  "broker_fills",
+  {
+    id: serial().primaryKey(),
+    brokerAccountId: integer()
+      .notNull()
+      .references(() => brokerAccounts.id, { onDelete: "cascade" }),
+    importId: integer().references(() => brokerImports.id, { onDelete: "cascade" }),
+    // '<platforma>:<skrot konta>:<id_zrodla>'
+    externalRef: text().notNull(),
+    brokerTradeId: integer().references(() => brokerTrades.id, { onDelete: "set null" }),
+    contract: text().notNull(),
+    side: text().$type<"buy" | "sell">().notNull(),
+    qty: numeric({ precision: 14, scale: 4 }).notNull(),
+    price: numeric({ precision: 18, scale: 8 }).notNull(),
+    filledAt: timestamp({ withTimezone: true }).notNull(),
+    feeCents: bigint({ mode: "number" }),
+    brokerPnlCents: bigint({ mode: "number" }),
+    orderRef: text(),
+    raw: jsonb().$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("broker_fills_external_ref_uq").on(t.externalRef),
+    check("broker_fills_side", sql`${t.side} in ('buy', 'sell')`),
+    check("broker_fills_qty", sql`${t.qty} > 0`),
+    check("broker_fills_price", sql`${t.price} > 0`),
+    check("broker_fills_fee", sql`${t.feeCents} is null or ${t.feeCents} >= 0`),
+    check("broker_fills_raw", sql`jsonb_typeof(${t.raw}) = 'object'`),
+    index("broker_fills_account_time_idx").on(t.brokerAccountId, t.filledAt),
+    index("broker_fills_trade_idx").on(t.brokerTradeId),
+    index("broker_fills_import_idx").on(t.importId),
+  ],
+);
+
+/* Zdarzenia Cash History: prowizje, wynik brutto pary, wplaty. Osobno od wypelnien, bo plik moze przyjsc przed Orders albo po nich. */
+export const brokerCashEvents = pgTable(
+  "broker_cash_events",
+  {
+    id: serial().primaryKey(),
+    brokerAccountId: integer()
+      .notNull()
+      .references(() => brokerAccounts.id, { onDelete: "cascade" }),
+    importId: integer().references(() => brokerImports.id, { onDelete: "cascade" }),
+    externalRef: text().notNull(),
+    kind: text().$type<"commission" | "fee" | "trade_paired" | "deposit" | "other">().notNull(),
+    // Ze znakiem: koszt < 0, wplyw > 0.
+    deltaCents: bigint({ mode: "number" }).notNull(),
+    contract: text(),
+    occurredAt: timestamp({ withTimezone: true }).notNull(),
+    raw: jsonb().$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("broker_cash_events_external_ref_uq").on(t.externalRef),
+    check("broker_cash_events_kind", sql`${t.kind} in ('commission', 'fee', 'trade_paired', 'deposit', 'other')`),
+    check("broker_cash_events_raw", sql`jsonb_typeof(${t.raw}) = 'object'`),
+    index("broker_cash_events_account_time_idx").on(t.brokerAccountId, t.occurredAt),
+    index("broker_cash_events_import_idx").on(t.importId),
+  ],
+);
+
+/* Aktywne konta dnia (rytual przed sesja), wielokrotne (Slowa uzytkownika 16.10.2026: «Kilka naraz»). */
+export const dayAccounts = pgTable(
+  "day_accounts",
+  {
+    day: date().notNull(),
+    accountId: integer()
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.accountId] })],
+);

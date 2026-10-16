@@ -35,6 +35,7 @@
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "csv-parse": "^7.0.3",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
     "heic-decode": "^2.1.0",

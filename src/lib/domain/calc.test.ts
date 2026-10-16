@@ -776,3 +776,134 @@ describe("czas lokalny", () => {
     expect(tradingDay(wWarszawie as Date, NQ.exchangeTimezone)).toBe("2026-07-15");
   });
 });
+
+/* ADR-034 pkt 5: wynik NETTO. MNQ: tick 0,25 pkt = 0,50 USD (tickValue 500); stawka Lucid 1,00 USD round turn za kontrakt. */
+describe("computeTrade - wynik netto po oplatach (ADR-034)", () => {
+  const MNQ: InstrumentSpec = { ...NQ, tickValue: 500 };
+  const MES: InstrumentSpec = { ...NQ, tickValue: 1250 };
+
+  const probka = (over: Partial<TradeInput> = {}): TradeInput => ({
+    instrument: MNQ,
+    direction: "short",
+    contracts: 9,
+    entryPrice: 30785.5,
+    exits: [{ price: 30810.5, contracts: 9, time: new Date("2026-10-13T14:04:41Z") }],
+    stopLoss: null,
+    takeProfit: null,
+    mae: null,
+    mfe: null,
+    entryTime: new Date("2026-10-13T14:03:12Z"),
+    feeRtCents: 100,
+    ...over,
+  });
+
+  it("liczby z probki: short 9 MNQ 30785,50 -> 30810,50, brutto -450,00, oplaty 9,00, netto -459,00", () => {
+    const w = computeTrade(probka());
+    expect(w.fees).toBe(900);
+    expect(w.pnlEstimate).toBe(-45_900);
+    expect(w.pnl).toBe(-45_900);
+    expect(w.bezOplat).toBe(false);
+    // Bez stawki ten sam trade to brutto -450,00 z flaga "bez oplat".
+    const brutto = computeTrade(probka({ feeRtCents: null }));
+    expect(brutto.pnl).toBe(-45_000);
+    expect(brutto.fees).toBe(0);
+    expect(brutto.bezOplat).toBe(true);
+  });
+
+  it("brak pola feeRtCents znaczy brak stawki: wynik jak dotad (brutto), flaga bez oplat", () => {
+    const { feeRtCents: _pomijam, ...bez } = probka();
+    void _pomijam;
+    const w = computeTrade(bez);
+    expect(w.pnl).toBe(-45_000);
+    expect(w.bezOplat).toBe(true);
+  });
+
+  it("mini i micro: stawka jest za JEDEN kontrakt, mnozona przez zamkniete kontrakty", () => {
+    const mini = computeTrade({ ...probka(), instrument: ES, contracts: 2, entryPrice: 5000, exits: [{ price: 5001, contracts: 2, time: new Date("2026-10-13T14:10:00Z") }], feeRtCents: 350, direction: "long" });
+    // 4 ticki x 12,50 x 2 = 100,00; oplaty 2 x 3,50 = 7,00
+    expect(mini.pnlEstimate).toBe(10_000 - 700);
+    const micro = computeTrade({ ...probka(), instrument: MES, contracts: 5, entryPrice: 5000, exits: [{ price: 5001, contracts: 5, time: new Date("2026-10-13T14:10:00Z") }], feeRtCents: 100, direction: "long" });
+    expect(micro.fees).toBe(500);
+  });
+
+  it("czesciowe wyjscia: oplaty od zamknietych kontraktow, a otwarta reszta ich jeszcze nie ma", () => {
+    const w = computeTrade(
+      probka({
+        direction: "long",
+        entryPrice: 100,
+        exits: [{ price: 101, contracts: 3, time: new Date("2026-10-13T14:10:00Z") }],
+      }),
+    );
+    // 3 z 9 kontraktow zamkniete: 4 ticki x 0,50 x 3 = 6,00; oplaty 3 x 1,00 = 3,00
+    expect(w.closedContracts).toBe(3);
+    expect(w.fees).toBe(300);
+    expect(w.pnl).toBe(600 - 300);
+  });
+
+  it("dwa wyjscia: oplaty sumuja sie po wszystkich zamknietych kontraktach", () => {
+    const w = computeTrade(
+      probka({
+        direction: "long",
+        contracts: 4,
+        entryPrice: 100,
+        exits: [
+          { price: 101, contracts: 1, time: new Date("2026-10-13T14:10:00Z") },
+          { price: 102, contracts: 3, time: new Date("2026-10-13T14:20:00Z") },
+        ],
+      }),
+    );
+    // (4 ticki x 1 + 8 tickow x 3) x 0,50 = 14,00; oplaty 4 x 1,00 = 4,00
+    expect(w.pnlEstimate).toBe(1400 - 400);
+    expect(w.fees).toBe(400);
+  });
+
+  it("kwota z rachunku (netto) wygrywa z oszacowaniem, a pnlEstimate zostaje wynikiem wyliczonym", () => {
+    const w = computeTrade(probka({ brokerAmount: -46_200 }));
+    expect(w.pnl).toBe(-46_200);
+    expect(w.pnlEstimate).toBe(-45_900);
+    // Roznica = "poslizg i oplaty" widoczna przy trade'zie.
+    expect((w.pnl as number) - (w.pnlEstimate as number)).toBe(-300);
+  });
+
+  it("kwota z rachunku rowna zero jest wartoscia (BE u brokera), nie brakiem", () => {
+    expect(computeTrade(probka({ brokerAmount: 0 })).pnl).toBe(0);
+  });
+
+  it("kawalek z kwota z rachunku jest juz netto: oplat od niego nie odejmujemy drugi raz", () => {
+    const w = computeTrade(
+      probka({
+        direction: "long",
+        contracts: 2,
+        entryPrice: 100,
+        exits: [
+          { price: 101, contracts: 1, time: new Date("2026-10-13T14:10:00Z"), brokerAmount: 150 },
+          { price: 101, contracts: 1, time: new Date("2026-10-13T14:20:00Z") },
+        ],
+      }),
+    );
+    // kawalek 1: 1,50 netto; kawalek 2: 4 ticki x 0,50 = 2,00 minus oplata 1,00
+    expect(w.pnl).toBe(150 + 200 - 100);
+  });
+
+  it("R liczy sie z wyniku netto, a ryzyko (odleglosc do SL) zostaje bez oplat: SL trafiony w calosci to ponizej -1R", () => {
+    const w = computeTrade(probka({ direction: "long", contracts: 1, entryPrice: 100, stopLoss: 99, exits: [{ price: 99, contracts: 1, time: new Date("2026-10-13T14:10:00Z") }] }));
+    // 4 ticki x 0,50 = 2,00 ryzyka; strata 2,00 + oplata 1,00 = -3,00 -> -1,5 R
+    expect(w.riskAmount).toBe(200);
+    expect(w.pnl).toBe(-300);
+    expect(w.rMultiple).toBeCloseTo(-1.5, 6);
+  });
+
+  it("pozycja bez wyjsc nie ma oplat ani wyniku wyliczonego", () => {
+    const w = computeTrade(probka({ exits: [] }));
+    expect(w.pnl).toBeNull();
+    expect(w.pnlEstimate).toBeNull();
+    expect(w.fees).toBe(0);
+    expect(w.bezOplat).toBe(false);
+  });
+
+  it("stawka zero to stawka (np. firma bez prowizji), nie brak stawki", () => {
+    const w = computeTrade(probka({ feeRtCents: 0 }));
+    expect(w.bezOplat).toBe(false);
+    expect(w.pnl).toBe(-45_000);
+  });
+});
