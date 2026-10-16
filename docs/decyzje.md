@@ -1470,6 +1470,19 @@ urządzenia muszą działać bez klienta VPN).
   blokada 8 prób dawała się omijać jednym nagłówkiem.
 - **Kopia lokalnej bazy:** `npm run db:backup` robi `pg_dump` tylko, gdy `DATABASE_URL` jest lokalny.
 
+**Decyzja sesji głównej (autoryzacja z 17.10.2026): klucz 2FA wyprowadzany z `SESSION_SECRET`, gdy brak `TOTP_ENC_KEY`.**
+Uzasadnienie: użytkownik nie ma dostępu do ustawiania zmiennych w Coolify, więc wymóg osobnej `TOTP_ENC_KEY`
+uniemożliwiał włączenie 2FA. Mechanizm: `kluczGlowny()` w `lib/auth/totp.ts`. Jawny `TOTP_ENC_KEY` (niepusty) ma
+pierwszeństwo, a gdy jest ustawiony, ale błędny, aplikacja rzuca błąd zamiast po cichu przełączyć źródło. Gdy go nie ma,
+klucz główny to `HKDF-SHA256(SESSION_SECRET, salt = puste, info = "tj-totp-v1", 32 B)`; z niego dalej, tą samą ścieżką co
+dotąd, powstają osobne podklucze (szyfrowanie sekretu, HMAC kodów zapasowych). Przy starcie serwera (produkcja) w logu
+pojawia się ostrzeżenie `[auth] OSTRZEŻENIE: ... wyprowadzony z SESSION_SECRET`. Skutek: **zmiana `SESSION_SECRET`
+unieważnia sekret TOTP i kody zapasowe** (logowanie kodem przestaje działać), więc trzeba wtedy wyłączyć 2FA w bazie
+(SQL z sekcji 9 `docs/wdrozenie-coolify.md`) i włączyć je ponownie. Dodanie `TOTP_ENC_KEY` po włączeniu 2FA działa tak samo
+jak jego zmiana: też unieważnia. Osłabienie: jeden sekret robi za podpis sesji i za źródło klucza szyfrującego; wyciek
+samej bazy nadal nie daje ani sekretu, ani sprawdzenia kodów zapasowych (klucz leży poza bazą). Odwracalne: ustawienie
+`TOTP_ENC_KEY` przed włączeniem 2FA oddziela oba sekrety.
+
 ---
 
 ## ADR-032 — łącznik `Paneksu/tj-connector` jako plugin Claude Code; AI steruje wykresem, nigdy nie składa zleceń (2026-10-14)

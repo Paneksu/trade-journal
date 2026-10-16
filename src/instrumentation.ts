@@ -10,12 +10,17 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  // Klucz 2FA sprawdzamy przy starcie, zeby brak zmiennej wyszedl w logach wdrozenia,
+  // Klucz 2FA sprawdzamy przy starcie, zeby problem wyszedl w logach wdrozenia,
   // a nie dopiero wtedy, gdy ktos probuje wlaczyc 2FA albo sie zalogowac kodem.
   if (process.env.NODE_ENV === "production") {
-    const { wczytajKluczGlowny } = await import("@/lib/auth/totp");
+    const { kluczGlowny } = await import("@/lib/auth/totp");
     try {
-      wczytajKluczGlowny();
+      const { zrodlo } = kluczGlowny();
+      if (zrodlo === "SESSION_SECRET") {
+        console.warn(
+          "[auth] OSTRZEŻENIE: TOTP_ENC_KEY nie jest ustawiony, klucz 2FA jest wyprowadzony z SESSION_SECRET. Zmiana SESSION_SECRET unieważni sekret TOTP i kody zapasowe (trzeba będzie ponownie włączyć 2FA). Ustaw TOTP_ENC_KEY, żeby to rozdzielić.",
+        );
+      }
     } catch (e) {
       console.error(`[auth] 2FA niedostępne: ${e instanceof Error ? e.message : e}`);
     }
