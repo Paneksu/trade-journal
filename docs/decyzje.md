@@ -1482,6 +1482,11 @@ unieważnia sekret TOTP i kody zapasowe** (logowanie kodem przestaje działać),
 jak jego zmiana: też unieważnia. Osłabienie: jeden sekret robi za podpis sesji i za źródło klucza szyfrującego; wyciek
 samej bazy nadal nie daje ani sekretu, ani sprawdzenia kodów zapasowych (klucz leży poza bazą). Odwracalne: ustawienie
 `TOTP_ENC_KEY` przed włączeniem 2FA oddziela oba sekrety.
+Kto zna `SESSION_SECRET`, i tak podrobi sesję (podpis ciasteczka), więc wspólny sekret prawie nie poszerza powierzchni ataku.
+**Odwracalne, gdy pojawi się dostęp do zmiennych w Coolify:** ustawić `TOTP_ENC_KEY`, wyłączyć i ponownie włączyć 2FA.
+**Procedura po rotacji `SESSION_SECRET`** (bez `TOTP_ENC_KEY`): logowanie kodem przestaje działać (błąd konfiguracji w logach),
+więc wyłącz 2FA SQL-em z sekcji 9 `docs/wdrozenie-coolify.md` (UPDATE `settings` + DELETE `auth_backup_codes`), zaloguj się hasłem
+i włącz 2FA ponownie (nowy QR i nowe kody zapasowe).
 
 ---
 
