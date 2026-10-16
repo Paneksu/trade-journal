@@ -13,6 +13,7 @@ import {
   Textarea,
 } from "@/components/ui/base";
 import { saveDayNote } from "@/lib/actions/journal";
+import { KonfliktNotatki } from "./konflikt-notatki";
 import type { ActionState } from "@/lib/actions/settings";
 import { NO_TRADE_REASONS } from "@/lib/domain/day-log";
 
@@ -24,10 +25,8 @@ export function DayNoteForm({
   wersja,
 }: {
   day: string;
-  /** Pole zostaje dla zgodności wywołań; notatka dnia jest jedna i bez konta (ADR-033, «Tak, zawsze jedna»). */
-  accountId?: number | null;
   hasTrades?: boolean;
-  /** updatedAt notatki z chwili otwarcia ("" gdy jej nie ma): serwer odmawia zapisu, gdy ktoś zmienił ją w międzyczasie. */
+  /** Skrót wartości pól tego formularza z chwili otwarcia (podpisPol): konflikt tylko przy zmianie TYCH pól w tle. */
   wersja: string;
   values: {
     preSession?: string | null;
@@ -55,7 +54,7 @@ export function DayNoteForm({
               ? "Tego dnia są już zapisane trade'y."
               : "Świadomie odpuszczony dzień też jest wpisem w dzienniku."
           }
-          key={wersja} defaultChecked={Boolean(values.noTrade)}
+          defaultChecked={Boolean(values.noTrade)}
           disabled={hasTrades}
         />
 
@@ -66,7 +65,7 @@ export function DayNoteForm({
           <Select
             id="noTradeReason"
             name="noTradeReason"
-            key={wersja} defaultValue={values.noTradeReason ?? ""}
+            defaultValue={values.noTradeReason ?? ""}
             disabled={hasTrades}
           >
             <option value="">—</option>
@@ -85,7 +84,7 @@ export function DayNoteForm({
           id="preSession"
           name="preSession"
           rows={3}
-          key={wersja} defaultValue={values.preSession ?? ""}
+          defaultValue={values.preSession ?? ""}
           placeholder="Plan na dziś: co gram, czego nie ruszam, jakie dane wychodzą."
         />
       </div>
@@ -96,7 +95,7 @@ export function DayNoteForm({
           id="postSession"
           name="postSession"
           rows={3}
-          key={wersja} defaultValue={values.postSession ?? ""}
+          defaultValue={values.postSession ?? ""}
           placeholder="Co się wydarzyło, co powtórzyć, czego nie robić jutro."
         />
       </div>
@@ -109,7 +108,7 @@ export function DayNoteForm({
         ].map((f) => (
           <div key={f.name} className="space-y-1.5">
             <Label htmlFor={f.name}>{f.label}</Label>
-            <Select id={f.name} name={f.name} key={wersja} defaultValue={f.value ?? ""}>
+            <Select id={f.name} name={f.name} defaultValue={f.value ?? ""}>
               <option value="">—</option>
               {[5, 4, 3, 2, 1].map((n) => (
                 <option key={n} value={n}>
@@ -121,7 +120,7 @@ export function DayNoteForm({
         ))}
       </div>
 
-      {state.error && <ErrorMessage>{state.error}</ErrorMessage>}
+      {state.konflikt && state.error ? <KonfliktNotatki komunikat={state.error} /> : state.error && <ErrorMessage>{state.error}</ErrorMessage>}
       {state.ok && <SuccessMessage>Zapisano notatkę dnia.</SuccessMessage>}
       <SaveButton />
     </form>

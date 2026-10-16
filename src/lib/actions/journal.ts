@@ -79,8 +79,10 @@ export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionS
     day,
     { preSession, postSession, mood, energy, dayRating, noTrade, noTradeReason: noTradeReason as NoTradeReason | null | undefined },
     typeof wersja === "string" ? wersja : "",
+    null,
+    d.get("scal") === "1",
   );
-  if (!w.ok) return { error: w.komunikat };
+  if (!w.ok) return { error: w.komunikat, konflikt: w.konflikt };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -99,7 +101,8 @@ async function ensureDayNote(
     .insert(dayNotes)
     // Notatka dnia dziennika jest bez konta (ADR-033, «Tak, zawsze jedna»); accountId nie wchodzi do klucza.
     .values({ day, accountId: null, backtestSessionId: sessionId })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, sessionId), set: { updatedAt: new Date() } })
+    // Dodanie zrzutu nie zmienia treści notatki: updatedAt zostaje (review B1; formularz dnia nie dostaje fałszywego konfliktu).
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, sessionId), set: { updatedAt: sql`${dayNotes.updatedAt}` } })
     .returning({ id: dayNotes.id });
   return row.id;
 }

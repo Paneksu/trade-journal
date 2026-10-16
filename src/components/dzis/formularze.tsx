@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 
 import { cx } from "@/lib/classes";
 import { zapiszPoSesji, zapiszPrzedSesja } from "@/lib/actions/rytual";
+import { KonfliktNotatki } from "@/components/calendar/konflikt-notatki";
 import type { ActionState } from "@/lib/actions/settings";
 import { klasaPigulki } from "@/components/ui/v2";
 
@@ -57,6 +58,7 @@ function Skala({ nazwa, etykieta, wartosc }: { nazwa: string; etykieta: string; 
 }
 
 function Komunikat({ stan }: { stan: ActionState }) {
+  if (stan.konflikt && stan.error) return <KonfliktNotatki komunikat={stan.error} />;
   if (stan.error) return <p role="alert" className="text-meta text-loss">{stan.error}</p>;
   if (stan.ok)
     return (
@@ -86,7 +88,7 @@ export function FormularzPrzedSesja({
   preSession: string | null;
   uniewaznienie: string | null;
   szeroki?: boolean;
-  /** updatedAt notatki dnia z chwili otwarcia ("" gdy jej nie ma): serwer odmawia zapisu, gdy ktoś zmienił ją w międzyczasie. */
+  /** skrót pól tego formularza z chwili otwarcia (podpisPol): konflikt tylko przy zmianie TYCH pól w tle (review B1). */
   wersja: string;
 }) {
   const [stan, akcja, trwa] = useActionState<ActionState, FormData>(zapiszPrzedSesja, {});
@@ -94,7 +96,7 @@ export function FormularzPrzedSesja({
     <div className="grid gap-4 sm:grid-cols-[1fr_120px]">
       <div>
         <Etykieta htmlFor="rytual-bias">Bias dnia</Etykieta>
-        <select key={wersja} id="rytual-bias" name="bias" defaultValue={bias ?? ""} className={cx(POLE, "h-10 cursor-pointer")}>
+        <select id="rytual-bias" name="bias" defaultValue={bias ?? ""} className={cx(POLE, "h-10 cursor-pointer")}>
           <option value="">nie ustalony</option>
           <option value="long">long</option>
           <option value="short">short</option>
@@ -103,14 +105,14 @@ export function FormularzPrzedSesja({
       </div>
       <div>
         <Etykieta htmlFor="rytual-max">Maks. trade&apos;ów</Etykieta>
-        <input key={wersja} id="rytual-max" name="maxTrades" type="number" min={1} max={20} inputMode="numeric" defaultValue={maxTrades ?? ""} className={cx(POLE, "num h-10")} />
+        <input id="rytual-max" name="maxTrades" type="number" min={1} max={20} inputMode="numeric" defaultValue={maxTrades ?? ""} className={cx(POLE, "num h-10")} />
       </div>
     </div>
   );
   const skale = (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Skala key={wersja} nazwa="sleep" etykieta="Sen" wartosc={sleep} />
-      <Skala key={wersja} nazwa="energy" etykieta="Energia" wartosc={energy} />
+      <Skala nazwa="sleep" etykieta="Sen" wartosc={sleep} />
+      <Skala nazwa="energy" etykieta="Energia" wartosc={energy} />
     </div>
   );
   const uniew = (
@@ -119,7 +121,6 @@ export function FormularzPrzedSesja({
         Unieważnienie
       </Etykieta>
       <textarea
-        key={wersja}
         id="rytual-uniewaznienie"
         name="invalidation"
         rows={2}
@@ -132,7 +133,7 @@ export function FormularzPrzedSesja({
   const plan = (
     <div>
       <Etykieta htmlFor="rytual-plan">Plan na sesję</Etykieta>
-      <textarea key={wersja} id="rytual-plan" name="preSession" rows={3} defaultValue={preSession ?? ""} className={cx(POLE, "resize-y")} />
+      <textarea id="rytual-plan" name="preSession" rows={3} defaultValue={preSession ?? ""} className={cx(POLE, "resize-y")} />
     </div>
   );
   return (
@@ -189,11 +190,11 @@ export function FormularzPoSesji({
       <input type="hidden" name="wersja" value={wersja} />
       <div>
         <Etykieta htmlFor="rytual-po">Jeden wniosek z sesji</Etykieta>
-        <textarea key={wersja} id="rytual-po" name="postSession" rows={5} defaultValue={postSession ?? ""} className={cx(POLE, "resize-y")} />
+        <textarea id="rytual-po" name="postSession" rows={5} defaultValue={postSession ?? ""} className={cx(POLE, "resize-y")} />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Skala key={wersja} nazwa="dayRating" etykieta="Ocena dnia" wartosc={dayRating} />
-        <Skala key={wersja} nazwa="mood" etykieta="Nastrój" wartosc={mood} />
+        <Skala nazwa="dayRating" etykieta="Ocena dnia" wartosc={dayRating} />
+        <Skala nazwa="mood" etykieta="Nastrój" wartosc={mood} />
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={trwa} className={cx(klasaPigulki(false), "disabled:opacity-60")}>

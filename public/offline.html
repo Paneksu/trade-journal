@@ -10,6 +10,9 @@
 <!-- Offline shell PWA (UI v2, etap 4; wygląd spójny z logowaniem 16.10.2026): statyczna strona bez żadnych danych.
      Service worker podaje ją tylko, gdy nawigacja nie dostanie odpowiedzi z sieci; danych finansowych nie trzymamy
      w pamięci podręcznej. Znak FVG V1 i siatka wykresu 4% jak na ekranie logowania. -->
+<!-- Kolory wpisane na sztywno (wartości tokenów z globals.css: --color-bg #0b0e12, --color-text #e6eaee, --color-muted
+     #97a3b0, --color-accent #e8a44c, karta #1c232c / #353d48): to statyczny plik podawany z pamięci podręcznej service
+     workera bez arkusza aplikacji, więc zmienne CSS nie są tu dostępne. Przy zmianie tokenów zaktualizuj też ten plik. -->
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; min-height: 100%; background: #0b0e12; color: #e6eaee; }

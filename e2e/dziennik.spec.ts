@@ -432,7 +432,7 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   // Stan wyjsciowy wymuszony, a nie zalozony - inaczej przerwany przebieg
   // zostawia flage i nastepne uruchomienie startuje od jedynki.
   await page.getByLabel("Dzień bez transakcji").uncheck();
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
   const kafelPauz = page.locator('[data-kpi="pauzy"]');
@@ -440,7 +440,7 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
 
   await page.getByLabel("Dzień bez transakcji").check();
   await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
   await page.goto("/calendar?miesiac=2020-03");
@@ -455,7 +455,7 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   // Odznaczenie wraca do stanu wyjsciowego - test nie zostawia sladu.
   await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
   await page.getByLabel("Dzień bez transakcji").uncheck();
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
   await page.goto("/calendar?miesiac=2020-03");
@@ -802,14 +802,14 @@ test("dzień z samym pominiętym trade'em da się oznaczyć jako bez transakcji"
 
   await znacznik.check();
   await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
   // Sprzatanie - test nie zostawia notatki dnia w bazie (sam trade zostaje,
   // tak jak w pozostalych testach tego pliku).
   await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-10");
   await page.getByLabel("Dzień bez transakcji").uncheck();
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 });
 
@@ -830,7 +830,7 @@ test("kafel kalendarza z samym pominiętym trade'em pokazuje dalej pauzę, nie d
   await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-11");
   await page.getByLabel("Dzień bez transakcji").check();
   await page.locator("#noTradeReason").selectOption({ label: "Brak setupu" });
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
   await page.goto("/calendar?miesiac=2021-02");
@@ -847,7 +847,7 @@ test("kafel kalendarza z samym pominiętym trade'em pokazuje dalej pauzę, nie d
   // Sprzatanie.
   await page.goto("/calendar?miesiac=2021-02&dzien=2021-02-11");
   await page.getByLabel("Dzień bez transakcji").uncheck();
-  await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+  await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 });
 

@@ -1,0 +1,39 @@
+
+Running 35 tests using 1 worker
+
+[1/35] [logowanie] › e2e\logowanie.setup.ts:6:6 › logowanie hasłem
+[2/35] [dziennik] › e2e\csp.spec.ts:7:5 › CSP z nonce na stronach i bez naruszeń w konsoli
+[3/35] [dziennik] › e2e\dziennik.spec.ts:48:5 › nowy trade liczy wynik zgodnie z parametrami kontraktu
+[4/35] [dziennik] › e2e\dziennik.spec.ts:75:5 › zapisany trade zmienia wynik netto na pulpicie o swoją kwotę
+[5/35] [dziennik] › e2e\dziennik.spec.ts:97:5 › nowe pole własne pojawia się w formularzu i w filtrach
+[6/35] [dziennik] › e2e\dziennik.spec.ts:123:5 › sesja backtestu ma statystyki osobne od dziennika
+[7/35] [dziennik] › e2e\dziennik.spec.ts:159:5 › zrzut wykresu wgrywa się i jest widoczny tylko po zalogowaniu
+[8/35] [dziennik] › e2e\dziennik.spec.ts:248:5 › dziennik nie wpuszcza bez hasła
+[9/35] [dziennik] › e2e\dziennik.spec.ts:268:5 › kwota z brokera na kawałku liczy cenę wyjścia zgodnie z siatką tickową
+[10/35] [dziennik] › e2e\dziennik.spec.ts:362:5 › kwota z brokera dla całego trade'a nadal nadpisuje wynik, ale nie rusza ceny kawałka (ADR-016)
+[11/35] [dziennik] › e2e\dziennik.spec.ts:401:5 › kwota z brokera dla całego trade'a wypełnia cenę jedynego wyjścia (ADR-016)
+[12/35] [dziennik] › e2e\dziennik.spec.ts:428:5 › dzień bez transakcji zapisuje się i liczy w pokryciu dziennika
+[13/35] [dziennik] › e2e\dziennik.spec.ts:465:5 › dnia z trade'ami nie da się oznaczyć jako bez transakcji
+[14/35] [dziennik] › e2e\dziennik.spec.ts:482:5 › zrzut wklejony ze schowka ląduje w dniu bez transakcji
+[15/35] [dziennik] › e2e\dziennik.spec.ts:527:5 › sesja backtestu dokumentuje dzień bez sygnału razem ze zrzutem
+[16/35] [dziennik] › e2e\dziennik.spec.ts:590:5 › filtr wynik=be zgadza sie z liczba trade'ow ze statystyk na granicy progu (ADR-011)
+[17/35] [dziennik] › e2e\dziennik.spec.ts:638:5 › ta sama konfluencja na dwoch interwalach przezywa edycje
+[18/35] [dziennik] › e2e\dziennik.spec.ts:700:5 › pole kierunku pojawia sie tylko przy stracie, nie przy wygranej
+[19/35] [dziennik] › e2e\dziennik.spec.ts:718:5 › galeria pokazuje kafle ze zrzutem i filtruje po tagu
+[20/35] [dziennik] › e2e\dziennik.spec.ts:743:5 › trade nie wzięty z dodatnim wynikiem nie rusza KPI pulpitu, ale liczy się w sekcji Pominięte
+[21/35] [dziennik] › e2e\dziennik.spec.ts:783:5 › dzień z samym pominiętym trade'em da się oznaczyć jako bez transakcji
+[22/35] [dziennik] › e2e\dziennik.spec.ts:816:5 › kafel kalendarza z samym pominiętym trade'em pokazuje dalej pauzę, nie dzień handlowy
+[23/35] [dziennik] › e2e\dziennik.spec.ts:854:5 › galeria ma więcej kafli niż widok tylko dziennika żywego (backtesty się liczą)
+[24/35] [dziennik] › e2e\dziennik.spec.ts:896:5 › przełączenie trade'a closed → missed → closed w edycji zachowuje kwotę wyniku
+[25/35] [dziennik] › e2e\dziennik.spec.ts:934:5 › trade z dwoma wyjściami liczy sumę, średnią cenę i wpływ skalowania
+[26/35] [dziennik] › e2e\dziennik.spec.ts:1001:5 › pozycja częściowo zamknięta zapisuje status „otwarty”, pokazuje wynik z etykietą „częściowo” i nie rusza KPI pulpitu
+[27/35] [dziennik] › e2e\dziennik.spec.ts:1054:5 › puste kontrakty przy jednym wyjściu liczą się jak cała pozycja wpisana wprost
+[28/35] [dziennik] › e2e\dziennik.spec.ts:1092:5 › formularz domyślnie pokazuje jedno wyjście, a lista kawałków dopiero po zaznaczeniu
+[29/35] [dziennik] › e2e\dziennik.spec.ts:1137:5 › suma kontraktów w dwóch wyjściach przekraczająca pozycję jest odrzucana z komunikatem po polsku
+[30/35] [dziennik] › e2e\dziennik.spec.ts:1165:5 › usunięcie drugiego wyjścia w edycji wraca do wyniku sprzed skalowania, „Wpływ skalowania” znika
+[31/35] [dziennik] › e2e\logowanie-wyglad.spec.ts:16:7 › logowanie i offline: axe i szerokość przy 1440
+[32/35] [dziennik] › e2e\logowanie-wyglad.spec.ts:16:7 › logowanie i offline: axe i szerokość przy 375
+[33/35] [dziennik] › e2e\notatka-tlo.spec.ts:33:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › kalendarz: wpisz tekst, wklej zrzut dnia, tekst dalej jest w polu i zapisuje się bez konfliktu
+[34/35] [dziennik] › e2e\notatka-tlo.spec.ts:56:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › Dziś: wpisz „Po sesji”, zapisz „Przed sesją”; tekst „Po sesji” zostaje w polu i zapisuje się
+[35/35] [dziennik] › e2e\slepa-ui.spec.ts:97:7 › Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML ani RSC › kalendarz, księga, galeria, nowa notatka i edycja: bez kwoty, R i treści po wejściu
+  35 passed (59.8s)

@@ -19,6 +19,9 @@ const DZIEN = "2016-02-09";
 const PNL = 77_777; // 777,77 USD z wyjścia częściowego
 const SEKRET_NOTATKI = `Po sesji tajne ${RUN}`;
 const SEKRET_TYTUL = `Tytuł po wejściu ${RUN}`;
+const CENA_WYJSCIA = "20777.75"; // wyjście częściowe: cena zdradza wynik
+const SEKRET_DOPISKU = `Dopisek po wejściu ${RUN}`;
+const PLIK_ZALACZNIKA = `nota-e2e/po-wejsciu-${RUN}.webp`;
 
 test.describe.configure({ mode: "serial" });
 
@@ -28,6 +31,8 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
   let tradeId = 0;
   let notatkaId = 0;
   let notaDniaId = 0;
+  let notaPrzedId = 0;
+  let slowaId = 0;
 
   test.beforeAll(async () => {
     wymagajLokalnych(DB_URL, BASE);
@@ -50,6 +55,8 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
         returning id`;
       await tx`insert into trade_rule_checks (review_id, rule_id, rule_text, verdict, evidence) values (${r.id}, 'E2E-S', 'Bias', 'pass', 'Dowód')`;
     });
+    // Wyjście częściowe z charakterystyczną ceną (review potwierdzające, pkt 2): nie może trafić do formularza edycji.
+    await sql`insert into trade_exits (trade_id, sort_order, exit_time, exit_price, contracts) values (${tradeId}, 0, ${`${DZIEN}T15:00:00Z`}, ${CENA_WYJSCIA}, 1)`;
     // Notatka dnia zapisana teraz, czyli po wejściu: jej treść jest ukryta.
     await sql`delete from day_notes where day = ${DZIEN} and backtest_session_id is null`;
     const [d] = await sql`insert into day_notes (day, account_id, post_session) values (${DZIEN}, null, ${SEKRET_NOTATKI}) returning id`;
@@ -58,7 +65,16 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
       await tx`select set_config('tj.actor', 'ui', true)`;
       const [n] = await tx`insert into notes (kind, slug, title, body_md, origin, day) values ('concept', ${`e2e-slepa-${RUN}`}, ${SEKRET_TYTUL}, 'x', 'user', ${DZIEN}) returning id`;
       notatkaId = n.id;
+      // Notatka przypięta do trade'a, napisana PRZED wejściem (widoczna), z dopiskiem i załącznikiem zrobionymi PO wejściu
+      // (ukryte; review potwierdzające, pkt 3: notatkaDoWidoku).
+      const [p] = await tx`insert into notes (kind, slug, title, body_md, origin, trade_id, created_at, updated_at)
+        values ('concept', ${`e2e-slepa-przed-${RUN}`}, ${`Notatka przed wejściem ${RUN}`}, 'Teza przed wejściem.', 'user', ${tradeId}, ${`${DZIEN}T14:00:00Z`}, ${`${DZIEN}T14:00:00Z`}) returning id`;
+      notaPrzedId = p.id;
+      const [w] = await tx`insert into user_words (text, source, role, trade_id, captured_at) values (${`Cytat ${RUN}`}, 'chat', 'note.body', ${tradeId}, ${`${DZIEN}T14:10:00Z`}) returning id`;
+      slowaId = w.id;
     });
+    await sql`insert into note_additions (note_id, body_md, origin, trade_id, quote_words_id) values (${notaPrzedId}, ${SEKRET_DOPISKU}, 'ai', ${tradeId}, ${slowaId})`;
+    await sql`insert into screenshots (note_id, file, sort_order) values (${notaPrzedId}, ${PLIK_ZALACZNIKA}, 0)`;
   });
 
   test.afterAll(async () => {
@@ -68,7 +84,11 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
     await ciche(sql`delete from trade_reviews where trade_id = ${tradeId}`);
     await ciche(sql`delete from trades where id = ${tradeId}`);
     await ciche(sql`delete from day_notes where id = ${notaDniaId}`);
-    await ciche(sql`delete from note_revisions where note_id = ${notatkaId}`);
+    await ciche(sql`delete from screenshots where note_id = ${notaPrzedId}`);
+    await ciche(sql`delete from note_additions where note_id = ${notaPrzedId}`);
+    await ciche(sql`delete from note_revisions where note_id in (${notatkaId}, ${notaPrzedId})`);
+    await ciche(sql`delete from notes where id = ${notaPrzedId}`);
+    await ciche(sql`delete from user_words where id = ${slowaId}`);
     await ciche(sql`delete from notes where id = ${notatkaId}`);
     await ciche(sql`delete from accounts where id = ${kontoId}`);
     await sql.end();
@@ -82,8 +102,9 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
       `/galeria?zezrzutem=wszystko&zrodlo=wszystko&od=${DZIEN}&do=${DZIEN}`,
       "/mozg/notatki/nowa",
       `/trades/${tradeId}/edit`,
+      `/mozg/notatki/${notaPrzedId}`,
     ];
-    const zakazane = ["777,77", "777.77", "77777", "1.94R", "1,94R", "1.9444", SEKRET_NOTATKI, SEKRET_TYTUL];
+    const zakazane = ["777,77", "777.77", "77777", "1.94R", "1,94R", "1.9444", CENA_WYJSCIA, "20777,75", "20 777,75", SEKRET_NOTATKI, SEKRET_TYTUL, SEKRET_DOPISKU, PLIK_ZALACZNIKA];
     // Zbieramy wszystkie wycieki naraz, żeby czerwony przebieg pokazał pełną listę, a nie tylko pierwszy.
     const wycieki: string[] = [];
     for (const adres of adresy) {
@@ -95,6 +116,9 @@ test.describe("Ślepa ocena: wynik i treści po wejściu nie wychodzą w HTML an
       }
     }
     expect(wycieki).toEqual([]);
+    // Notatka sprzed wejścia jest widoczna (treść), ale bez dopisku i załącznika z czasu po wejściu.
+    await page.goto(`/mozg/notatki/${notaPrzedId}`);
+    await expect(page.getByRole("heading", { level: 1, name: `Notatka przed wejściem ${RUN}` })).toBeVisible();
     // Ekran edycji mówi wprost, dlaczego jest zablokowany, a karta trade'a nie ma linku „Edytuj”.
     await page.goto(`/trades/${tradeId}/edit`);
     await expect(page.getByRole("heading", { level: 1, name: "Edycja zablokowana" })).toBeVisible();

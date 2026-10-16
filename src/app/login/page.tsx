@@ -37,14 +37,14 @@ export default async function LoginPage({
       {/* Siatka wykresu 4% i poświata za znakiem (jak w znaku FVG); czysta dekoracja. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,rgb(255_255_255/0.04)_1px,transparent_1px),linear-gradient(to_bottom,rgb(255_255_255/0.04)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(ellipse_at_50%_38%,black_0%,transparent_70%)]"
+        className="pointer-events-none absolute inset-0 [background-image:linear-gradient(to_right,color-mix(in_oklab,var(--color-text)_4%,transparent)_1px,transparent_1px),linear-gradient(to_bottom,color-mix(in_oklab,var(--color-text)_4%,transparent)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(ellipse_at_50%_38%,black_0%,transparent_70%)]"
       />
-      <div aria-hidden className="pointer-events-none absolute top-[18%] left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgb(232_164_76/0.16)_0%,transparent_65%)]" />
+      <div aria-hidden className="pointer-events-none absolute top-[18%] left-1/2 h-[420px] w-[420px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,color-mix(in_oklab,var(--color-accent)_16%,transparent)_0%,transparent_65%)]" />
 
       <div className="relative w-full max-w-[27.5rem]">
         <div className="mb-7 flex flex-col items-center text-center">
-          {/* eslint-disable-next-line @next/next/no-img-element -- statyczny SVG znaku, bez optymalizacji obrazów */}
-          <img src="/icons/znak-pelny.svg" alt="" width={120} height={120} className="size-24 drop-shadow-[0_18px_44px_rgb(232_164_76/0.26)] sm:size-[120px]" />
+          {/* eslint-disable-next-line @next/next/no-img-element -- bezterminowo: statyczny SVG z public/ (znak), optymalizacja obrazów nic tu nie daje */}
+          <img src="/icons/znak-pelny.svg" alt="" width={120} height={120} className="size-24 drop-shadow-[0_18px_44px_color-mix(in_oklab,var(--color-accent)_26%,transparent)] sm:size-[120px]" />
           <p className="mt-4 text-sekcja font-medium tracking-tight text-text">Dziennik</p>
         </div>
 

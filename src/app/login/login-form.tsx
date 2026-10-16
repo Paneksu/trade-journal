@@ -86,10 +86,13 @@ export function CodeForm({ back }: { back: string }) {
             required
             placeholder={zapasowy ? "10 znaków" : "6 cyfr"}
             aria-invalid={state.error ? true : undefined}
+            aria-describedby={state.error ? "kod-blad" : undefined}
             className={cx(POLE, "num text-center text-sekcja tracking-[0.3em]")}
           />
         </div>
-        <Blad tekst={state.error} />
+        <div id="kod-blad">
+          <Blad tekst={state.error} />
+        </div>
         <Wyslij />
       </form>
       <div className="flex flex-wrap items-center justify-between gap-2">

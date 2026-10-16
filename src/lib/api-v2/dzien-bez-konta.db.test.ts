@@ -2,7 +2,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { wyczyscLimiter } from "./limiter";
 import { MOZNA_NA_BAZIE, nowyToken, polacz, sprzatnijPoTokenach, zapewnijPodstawy, type Par, type Sql } from "./test/db-pomocnik";
-import { PARAMS, wywolaj } from "./test/pomocnik-2b";
+import sharp from "sharp";
+
+import { PARAMS, wywolaj, wywolajMultipart } from "./test/pomocnik-2b";
 
 vi.mock("server-only", () => ({}));
 
@@ -44,6 +46,15 @@ describe.skipIf(!MOZNA_NA_BAZIE)("notatka dnia bez konta w API v2 (baza lokalna)
     const z = await put({ accountId: kontoId, preSession: "Plan na koncie" });
     expect(z.status, JSON.stringify(z.json)).toBe(422);
     expect(JSON.stringify(z.json)).toContain("day_note_has_no_account");
+    expect((await sql`select count(*)::int as n from day_notes where day = ${DZIEN}`)[0].n).toBe(0);
+
+    // Załącznik dnia z ?accountId= też 422 (zakłada notatkę dnia przez ten sam zapis), bez żadnego wiersza.
+    const form = new FormData();
+    const bajty = await sharp({ create: { width: 8, height: 8, channels: 3, background: { r: 9, g: 9, b: 9 } } }).png().toBuffer();
+    form.append("shot", new File([new Uint8Array(bajty)], "dzien.png", { type: "image/png" }));
+    const zal = await wywolajMultipart(import("@/app/api/v2/days/[date]/attachments/route"), `/days/${DZIEN}/attachments?accountId=${kontoId}`, rw.token, form, PARAMS({ date: DZIEN }));
+    expect(zal.status, JSON.stringify(zal.json)).toBe(422);
+    expect(JSON.stringify(zal.json)).toContain("day_note_has_no_account");
     expect((await sql`select count(*)::int as n from day_notes where day = ${DZIEN}`)[0].n).toBe(0);
 
     expect((await put({ preSession: "Plan" })).status).toBe(201);

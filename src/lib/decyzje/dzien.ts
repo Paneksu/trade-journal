@@ -4,6 +4,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { dayNotes, userWords } from "@/lib/db/schema";
 import { zapisJakoUi } from "@/lib/api-v2/zapis";
 import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
+import { podpisPol } from "@/lib/trades/podpis-notatki";
 
 /**
  * Zapisy notatki dnia z aplikacji (code review fazy 5, P1 i P3, 16.10.2026): jako aktor `ui`, jak reszta decyzji.
@@ -11,9 +12,9 @@ import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
  * Notatka dnia dziennika jest JEDNA i bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»).
  * Notatki sesji backtestu mają własne wiersze i własne akcje (`saveBacktestDayNote`), tu ich nie ma.
  *
- * Nadpisanie: formularz wysyła `wersja` = `updatedAt` notatki z chwili otwarcia ("" gdy notatki nie było). Gdy
- * w międzyczasie notatkę zmienił ktoś inny (druga karta, rytuał, AI przez API), zapis jest odrzucany zamiast
- * po cichu nadpisać cudzy tekst. Szybka notatka z arkusza „+” nie potrzebuje wersji: dopisuje atomowo w SQL.
+ * Nadpisanie: formularz wysyła `wersja` = skrót wartości SWOICH pól z chwili otwarcia (`podpisPol`). Gdy w międzyczasie
+ * ktoś zmienił te same pola (druga karta, rytuał, AI przez API), zapis jest odrzucany z komunikatem i opcją „scal”
+ * zamiast po cichu nadpisać cudzy tekst. Zmiana innych pól i zrzuty dnia nie są konfliktem (review B1). Szybka notatka z arkusza „+” nie potrzebuje wersji: dopisuje atomowo w SQL.
  */
 
 export type PolaNotatkiDnia = Partial<
@@ -23,7 +24,7 @@ export type PolaNotatkiDnia = Partial<
 export type WynikNotatkiDnia = { ok: true } | { ok: false; komunikat: string; konflikt?: boolean };
 
 const KONFLIKT =
-  "Notatkę dnia ktoś zmienił po otwarciu formularza (inna karta, rytuał albo AI). Nic nie zapisaliśmy: odśwież stronę, a swój tekst skopiuj przed odświeżeniem.";
+  "Notatka zmieniła się w tle (inna karta, rytuał albo AI zmienił te same pola). Nic nie zapisaliśmy, Twój tekst zostaje w polu: scal go z aktualną wersją albo odśwież formularz.";
 
 class Konflikt extends Error {}
 
@@ -34,19 +35,37 @@ const warunekDnia = (dzien: string) => and(eq(dayNotes.day, dzien), isNull(dayNo
  * (formularz otwarty, gdy notatki jeszcze nie było); `uniewaznienie` = słowa użytkownika (rola `day.invalidation`),
  * zapisywane w tej samej transakcji, nowa rewizja tylko przy zmianie treści.
  */
-export async function zapiszNotatkeDniaUi(dzien: string, pola: PolaNotatkiDnia, wersja: string, uniewaznienie?: string | null): Promise<WynikNotatkiDnia> {
+export async function zapiszNotatkeDniaUi(
+  dzien: string,
+  pola: PolaNotatkiDnia,
+  wersja: string,
+  uniewaznienie?: string | null,
+  scal = false,
+): Promise<WynikNotatkiDnia> {
   return zapisJakoUi(async (tx) => {
     const teraz = new Date();
-    const [obecna] = await tx.select({ id: dayNotes.id, updatedAt: dayNotes.updatedAt }).from(dayNotes).where(warunekDnia(dzien)).for("update").limit(1);
+    const klucze = Object.keys(pola);
+    const [obecna] = await tx.select().from(dayNotes).where(warunekDnia(dzien)).for("update").limit(1);
+    let doZapisu: PolaNotatkiDnia = pola;
+    // Wersja = skrót TYCH pól, które formularz zapisuje (review B1): zmiana innych pól albo zrzut dnia nie jest konfliktem.
+    if (podpisPol(obecna ?? null, klucze) !== wersja) {
+      if (!scal) throw new Konflikt();
+      // „Scal”: teksty z obu wersji zostają (aktualny, pod nim Twój), pozostałe pola z Twojego formularza.
+      doZapisu = { ...pola };
+      for (const k of ["preSession", "postSession"] as const) {
+        const moj = pola[k];
+        const ich = obecna?.[k];
+        if (k in pola && moj && ich && moj.trim() !== ich.trim() && !ich.includes(moj)) doZapisu[k] = `${ich}\n\n${moj}`;
+        else if (k in pola && !moj && ich) doZapisu[k] = ich;
+      }
+    }
     if (obecna) {
-      if (obecna.updatedAt.toISOString() !== wersja) throw new Konflikt();
-      await tx.update(dayNotes).set({ ...pola, updatedAt: teraz }).where(eq(dayNotes.id, obecna.id));
+      await tx.update(dayNotes).set({ ...doZapisu, updatedAt: teraz }).where(eq(dayNotes.id, obecna.id));
     } else {
-      if (wersja !== "") throw new Konflikt();
       // Dwa równoległe pierwsze zapisy: drugi trafi w konflikt indeksu i dostanie odmowę, nie nadpisze pierwszego.
       const wstawione = await tx
         .insert(dayNotes)
-        .values({ day: dzien, accountId: null, backtestSessionId: null, ...pola, updatedAt: teraz })
+        .values({ day: dzien, accountId: null, backtestSessionId: null, ...doZapisu, updatedAt: teraz })
         .onConflictDoNothing()
         .returning({ id: dayNotes.id });
       if (wstawione.length === 0) throw new Konflikt();

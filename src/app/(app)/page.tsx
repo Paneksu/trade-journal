@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock, Plus } from "lucide-react";
 
 import { KrzywaR } from "@/components/dzis/krzywa-r";
+import { POLA_PO_SESJI, POLA_PRZED_SESJA, podpisPol } from "@/lib/trades/podpis-notatki";
 import { ChecklistaRegul, FormularzPoSesji, FormularzPrzedSesja, Rozwijane } from "@/components/dzis/formularze";
 import { ChipProcesu, Karta, LiczbaBohater, NaglowekSekcji, NaglowekStrony, PasekZuzycia, Pigulka, Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
@@ -286,7 +287,7 @@ export default async function DzisPage() {
             <Rozwijane etykieta="Uzupełnij rytuał">
             <FormularzPrzedSesja
               dzien={d.dzis}
-              wersja={notatka?.updatedAt ?? ""}
+              wersja={podpisPol(notatka, POLA_PRZED_SESJA)}
               bias={notatka?.bias ?? null}
               maxTrades={notatka?.maxTrades ?? null}
               sleep={notatka?.sleep ?? null}
@@ -306,7 +307,7 @@ export default async function DzisPage() {
             </section>
           ) : (
             <Karta id="po-sesji" tytul="Po sesji">
-              <FormularzPoSesji dzien={d.dzis} wersja={notatka?.updatedAt ?? ""} postSession={notatka?.postSession ?? null} dayRating={notatka?.dayRating ?? null} mood={notatka?.mood ?? null} />
+              <FormularzPoSesji dzien={d.dzis} wersja={podpisPol(notatka, POLA_PO_SESJI)} postSession={notatka?.postSession ?? null} dayRating={notatka?.dayRating ?? null} mood={notatka?.mood ?? null} />
             </Karta>
           )}
         </div>
