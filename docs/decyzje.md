@@ -2129,3 +2129,8 @@ Testy wyłącznie na bazie lokalnej (`127.0.0.1:55433`), nigdy na produkcji.
 - Zakresy OAuth, licencja 24 h, limit sesji, historia fills, konta prop, pole fazy: odpowiedź Tradovate, przed etapem B.
 - Wymiana `code` przez klucz publiczny workera i osobna rola bazy w Coolify: etap B, `devops-engineer` i `backend-dev`.
 - Stawki opłat firm prop do presetów: `market-researcher` albo użytkownik, przed włączeniem wyniku wyliczonego dla prop.
+
+**Rozstrzygnięcia użytkownika do ADR-034 (2026-10-16).**
+- Automat stosuje dopasowania 1:1 bez dodatkowego kliknięcia, z „Cofnij”. Słowa użytkownika: «Tak, akceptuję» (po opisie ryzyka sfałszowanego pliku w Pobranych).
+- Przeliczenie historii na netto: przycisk z podglądem, tylko trade'y bez kwoty z rachunku. Słowa użytkownika: «Przycisk z podglądem».
+- Aktywne konto dnia jest wielokrotne (handel kilkoma kontami naraz). Słowa użytkownika: «Kilka naraz».
