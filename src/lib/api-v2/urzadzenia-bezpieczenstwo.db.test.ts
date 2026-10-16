@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { czyInnyAdres } from "./adres";
 import { wyczyscLimiter } from "./limiter";
-import { MOZNA_NA_BAZIE, polacz, unikalnyIp, zadanie, type Sql } from "./test/db-pomocnik";
+import { MOZNA_NA_BAZIE, polacz, unikalnyIp, wlaczDwaFaDlaTestu, zadanie, type Sql } from "./test/db-pomocnik";
 
 vi.mock("server-only", () => ({}));
 
@@ -37,8 +37,9 @@ describe("lista urządzeń nie ujawnia kodów oczekujących żądań", () => {
   it("akcje zatwierdzenia i tworzenia tokenu importu wymagają potwierdzenia (sudo albo hasło) i zostawiają wpis w auth_events", () => {
     const akcje = zrodlo("../actions/devices.ts");
     expect(akcje).not.toMatch(/WARUNEK SCALENIA/); // TODO z fazy 2 zamknięte
-    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, String\(d\.get\("haslo"\)/);
-    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, haslo\)/);
+    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja\)/);
+    expect(akcje).toContain("KOMUNIKAT_WYMAGANE_2FA");
+    expect(akcje).not.toContain("verifyPassword");
     for (const rodzaj of ["device_approved", "device_denied", "token_created", "token_revoked"]) {
       expect(akcje, rodzaj).toContain(`"${rodzaj}"`);
     }
@@ -49,12 +50,16 @@ describe.skipIf(!MOZNA_NA_BAZIE)("limit żądań, sprzątanie i wyłącznik devi
   let sql: Sql;
   const nazwy: string[] = [];
   const znacznik = Date.now().toString(36);
+  let przywrocDwaFa: () => Promise<void>;
   beforeAll(async () => {
     sql = polacz();
+    // device/start jest zamkniete do wlaczenia 2FA (ADR-030, 17.10.2026): testy limitu dzialaja przy wlaczonym.
+    przywrocDwaFa = await wlaczDwaFaDlaTestu(sql);
     // Test liczy GLOBALNY limit, więc zaczyna od pustej kolejki żądań w bazie testowej.
     await sql`delete from device_codes where token_id is null`;
   });
   afterAll(async () => {
+    await przywrocDwaFa();
     await sql`delete from device_codes where client_name = any(${nazwy})`;
     await sql.end();
   });
@@ -138,11 +143,40 @@ describe.skipIf(!MOZNA_NA_BAZIE)("limit żądań, sprzątanie i wyłącznik devi
     vi.unstubAllEnvs();
     expect((await start(`wlaczone ${znacznik}`)).status).toBe(200);
   });
+
+  it("bez włączonego 2FA device/start = 403 device_login_requires_2fa (bez zmiennej), a po włączeniu 2FA działa (ADR-030, 17.10.2026)", async () => {
+    await sql`delete from device_codes where token_id is null`;
+    await przywrocDwaFa(); // stan sprzed testu: 2FA wylaczone
+    try {
+      const [{ wlaczone }] = await sql`select totp_enabled_at is not null as wlaczone from settings where id = 1`;
+      expect(wlaczone).toBe(false);
+      expect(process.env.DEVICE_LOGIN_DISABLED).toBeUndefined();
+      const zamkniete = await start(`bez2fa ${znacznik}`);
+      expect(zamkniete.status).toBe(403);
+      const cialo = await zamkniete.json();
+      expect(cialo.code).toBe("device_login_requires_2fa");
+      expect(cialo.error).toBe("Włącz 2FA, żeby łączyć urządzenia");
+      const [{ ile }] = await sql`select count(*)::int as ile from device_codes where client_name = ${`bez2fa ${znacznik}`}`;
+      expect(ile).toBe(0);
+
+      // dodatkowy wylacznik wygrywa nawet przy wlaczonym 2FA i ma wlasny kod
+      przywrocDwaFa = await wlaczDwaFaDlaTestu(sql);
+      vi.stubEnv("DEVICE_LOGIN_DISABLED", "1");
+      expect((await (await start(`wyl ${znacznik}`)).json()).code).toBe("device_login_disabled");
+      vi.unstubAllEnvs();
+      expect((await start(`z2fa ${znacznik}`)).status).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+      // Dalsze testy tego bloku wymagaja wlaczonego 2FA; afterAll przywroci stan sprzed pliku.
+      await sql`update settings set totp_secret_enc = 'v1.sekret-testowy', totp_enabled_at = now() where id = 1`;
+    }
+  });
 });
 
 describe.skipIf(!MOZNA_NA_BAZIE)("lista oczekujących nie niesie kodu (P2)", () => {
   it("oczekujaceKody() zwraca żądania bez pola userCode (typ i dane)", async () => {
     const sql = polacz();
+    const przywroc = await wlaczDwaFaDlaTestu(sql);
     const nazwa = `P2 ${Date.now().toString(36)}`;
     try {
       const { POST } = await import("@/app/api/v2/device/start/route");
@@ -156,6 +190,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("lista oczekujących nie niesie kodu (P2)", () 
       expect(JSON.stringify(lista)).not.toContain(userCode);
     } finally {
       await sql`delete from device_codes where client_name = ${nazwa}`;
+      await przywroc();
       await sql.end();
     }
   });

@@ -79,7 +79,7 @@ export async function verifySecondFactor(_p: SignInState, data: FormData): Promi
     wynik = await sprawdzDrugiSkladnik(kod);
   } catch (e) {
     console.error(
-      "[auth] nie udało się sprawdzić kodu 2FA (sprawdź, czy TOTP_ENC_KEY jest ustawiony i taki sam jak przy włączaniu 2FA):",
+      "[auth] nie udało się sprawdzić kodu 2FA (sprawdź, czy TOTP_ENC_KEY (albo SESSION_SECRET, gdy TOTP_ENC_KEY nie ma) jest taki sam jak przy włączaniu 2FA):",
       e,
     );
     return { error: "Nie można teraz sprawdzić kodu. Szczegóły są w logach serwera." };

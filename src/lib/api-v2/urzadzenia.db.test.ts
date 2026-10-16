@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { wyczyscLimiter } from "./limiter";
 import { REGEX_TOKEN_V2 } from "./token";
-import { MOZNA_NA_BAZIE, polacz, unikalnyIp, zadanie, type Sql } from "./test/db-pomocnik";
+import { MOZNA_NA_BAZIE, polacz, unikalnyIp, wlaczDwaFaDlaTestu, zadanie, type Sql } from "./test/db-pomocnik";
 
 vi.mock("server-only", () => ({}));
 
@@ -18,10 +18,15 @@ describe.skipIf(!MOZNA_NA_BAZIE)("device code: start, zatwierdzenie, token raz (
   const nazwy: string[] = [];
   const znacznik = Date.now().toString(36);
 
+  let przywrocDwaFa: () => Promise<void>;
+
   beforeAll(async () => {
     sql = polacz();
+    // device/start jest zamkniete do wlaczenia 2FA (ADR-030, 17.10.2026): testy dzialaja przy wlaczonym.
+    przywrocDwaFa = await wlaczDwaFaDlaTestu(sql);
   });
   afterAll(async () => {
+    await przywrocDwaFa();
     if (stworzoneTokeny.length > 0) {
       await sql`delete from auth_events where token_id = any(${stworzoneTokeny})`;
       await sql`delete from device_codes where token_id = any(${stworzoneTokeny})`;

@@ -63,12 +63,9 @@ export function PolaczUrzadzenie() {
           ))}
         </fieldset>
         {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "haslo" && (
-          <div className="max-w-xs space-y-1">
-            <Label htmlFor="haslo" hint="2FA jest wyłączone, więc nadanie dostępu potwierdzasz hasłem (włącz 2FA w Ustawienia → Bezpieczeństwo)">
-              Hasło
-            </Label>
-            <Input id="haslo" name="haslo" type="password" autoComplete="current-password" />
-          </div>
+          <p role="status" className="text-xs text-muted">
+            Włącz 2FA, żeby łączyć urządzenia: <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>. Odrzucenie nie wymaga 2FA.
+          </p>
         )}
         {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "sudo" && (
           <p role="status" className="text-xs text-muted">
@@ -78,7 +75,7 @@ export function PolaczUrzadzenie() {
         )}
         {decyzja.error && <ErrorMessage>{decyzja.error}</ErrorMessage>}
         <div className="flex gap-2">
-          <Button type="submit" name="decyzja" value="zatwierdz" variant="primary" size="m">
+          <Button type="submit" name="decyzja" value="zatwierdz" variant="primary" size="m" disabled={(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "haslo"}>
             Zatwierdź urządzenie
           </Button>
           <Button type="submit" name="decyzja" value="odrzuc" variant="danger" size="m">
@@ -164,15 +161,13 @@ export function OdrzucOczekujacePrzycisk() {
 export function TokenImportuPrzycisk({ potwierdzenie }: { potwierdzenie: Potwierdzenie }) {
   const [pending, start] = useTransition();
   const [stan, ustawStan] = useState<TokenImportuState>({});
-  const [haslo, ustawHaslo] = useState("");
   const wymagane = stan.potwierdzenie ?? potwierdzenie;
   return (
     <div className="space-y-2">
       {wymagane === "haslo" && (
-        <div className="max-w-xs">
-          <Label htmlFor="haslo-importu" hint="2FA jest wyłączone: potwierdź hasłem">Hasło</Label>
-          <Input id="haslo-importu" type="password" autoComplete="current-password" value={haslo} onChange={(e) => ustawHaslo(e.target.value)} />
-        </div>
+        <p className="text-xs text-muted">
+          Włącz 2FA, żeby łączyć urządzenia: <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>.
+        </p>
       )}
       {wymagane === "sudo" && (
         <p className="text-xs text-muted">
@@ -183,12 +178,11 @@ export function TokenImportuPrzycisk({ potwierdzenie }: { potwierdzenie: Potwier
         type="button"
         variant="secondary"
         size="s"
-        disabled={pending}
+        disabled={pending || wymagane === "haslo"}
         onClick={() => {
           if (!window.confirm("Utworzyć token importu? Ma zakres »import« (pochodzenie vault-import i mentor), ważny 24 godziny. Pokażę go tylko raz.")) return;
           start(async () => {
-            const w = await utworzTokenImportuAkcja(haslo);
-            ustawHaslo("");
+            const w = await utworzTokenImportuAkcja();
             ustawStan(w);
           });
         }}

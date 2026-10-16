@@ -12,7 +12,8 @@ import * as OTPAuth from "otpauth";
  * Czysta warstwa 2FA (ADR-031): bez bazy, bez `next/*`, wiec w pelni testowalna.
  *
  * - TOTP wg RFC 6238: 6 cyfr, SHA-1, krok 30 s, tolerancja +-1 krok.
- * - Sekret w bazie zaszyfrowany AES-256-GCM. Klucz glowny pochodzi z TOTP_ENC_KEY,
+ * - Sekret w bazie zaszyfrowany AES-256-GCM. Klucz glowny pochodzi z TOTP_ENC_KEY (a gdy jej nie ma,
+ *   wyprowadza go HKDF z SESSION_SECRET, info "tj-totp-v1": decyzja sesji glownej z 17.10.2026, ADR-031),
  *   a z niego HKDF wyprowadza OSOBNE klucze: do szyfrowania sekretu i do HMAC kodow
  *   zapasowych. Wyciek samej bazy nie daje ani sekretu, ani mozliwosci sprawdzenia
  *   kodow zapasowych.
@@ -52,17 +53,44 @@ export function wczytajKluczGlowny(raw: string | undefined = process.env.TOTP_EN
   return bajty;
 }
 
-/** Czy klucz jest ustawiony i poprawny (bez rzucania; do wyswietlenia ostrzezenia w UI). */
+export type ZrodloKlucza = "TOTP_ENC_KEY" | "SESSION_SECRET";
+const INFO_KLUCZA_Z_SESJI = "tj-totp-v1";
+const MIN_DLUGOSC_SESSION_SECRET = 32;
+
+/**
+ * Klucz glowny 2FA. Jawny TOTP_ENC_KEY ma pierwszenstwo; gdy zmienna jest pusta lub jej nie ma,
+ * klucz wyprowadza HKDF z SESSION_SECRET (info "tj-totp-v1"). Zmienna USTAWIONA, ale bledna,
+ * rzuca zamiast po cichu przelaczyc zrodlo: literowka nie moze zmienic klucza szyfrujacego.
+ */
+export function kluczGlowny(
+  env: Record<string, string | undefined> = process.env,
+): { klucz: Buffer; zrodlo: ZrodloKlucza } {
+  if ((env.TOTP_ENC_KEY ?? "").trim()) {
+    return { klucz: wczytajKluczGlowny(env.TOTP_ENC_KEY), zrodlo: "TOTP_ENC_KEY" };
+  }
+  const sesja = env.SESSION_SECRET ?? "";
+  if (sesja.length < MIN_DLUGOSC_SESSION_SECRET) {
+    throw new Error(
+      `Brak klucza 2FA: TOTP_ENC_KEY nie jest ustawiony, a SESSION_SECRET ma ${sesja.length} znaków (do wyprowadzenia klucza trzeba co najmniej ${MIN_DLUGOSC_SESSION_SECRET}). Ustaw SESSION_SECRET albo TOTP_ENC_KEY.`,
+    );
+  }
+  const klucz = Buffer.from(
+    hkdfSync("sha256", Buffer.from(sesja, "utf8"), Buffer.alloc(0), INFO_KLUCZA_Z_SESJI, 32),
+  );
+  return { klucz, zrodlo: "SESSION_SECRET" };
+}
+
+/** Czy klucz da sie uzyskac (bez rzucania; do wyswietlenia ostrzezenia w UI). */
 export function kluczTotpDziala(): boolean {
   try {
-    wczytajKluczGlowny();
+    kluczGlowny();
     return true;
   } catch {
     return false;
   }
 }
 
-function podklucz(etykieta: "enc" | "backup", master = wczytajKluczGlowny()): Buffer {
+function podklucz(etykieta: "enc" | "backup", master = kluczGlowny().klucz): Buffer {
   return Buffer.from(hkdfSync("sha256", master, Buffer.alloc(0), `tj-totp-${etykieta}-v1`, 32));
 }
 
@@ -115,7 +143,7 @@ export function odszyfrujSekret(
     return Buffer.concat([decipher.update(szyfrogram), decipher.final()]).toString("utf8");
   } catch {
     throw new Error(
-      "Nie udało się odszyfrować sekretu TOTP: TOTP_ENC_KEY różni się od klucza, którym go zaszyfrowano, albo dane w bazie są uszkodzone.",
+      "Nie udało się odszyfrować sekretu TOTP: TOTP_ENC_KEY (albo SESSION_SECRET, z którego klucz jest wyprowadzany, gdy TOTP_ENC_KEY nie ma) różni się od tego, którym go zaszyfrowano, albo dane w bazie są uszkodzone.",
     );
   }
 }
