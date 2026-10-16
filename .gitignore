@@ -16,6 +16,7 @@
 # next.js
 /.next/
 /.next-lh/
+/.next-ruch/
 /out/
 
 # production

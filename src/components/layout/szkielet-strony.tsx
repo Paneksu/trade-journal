@@ -1,10 +1,13 @@
-import { Strona, Szkielet } from "@/components/ui/v2";
+import { ZnacznikLadowania } from "@/components/ui/ruch";
+import { Szkielet } from "@/components/ui/v2";
 
 /* Szkielet ekranu (runda r2): szkielet w układzie strony v2 (nagłówek, liczba, 3 karty,
    lista), żeby przejście między ekranami nie pokazywało pustki. */
 export function SzkieletStrony() {
   return (
-    <Strona>
+    // Zwykły kontener, nie `Strona`: szkielet nie ma wejścia, a treść po nim ma.
+    <div className="mx-auto w-full max-w-tresc">
+      <ZnacznikLadowania />
       <div role="status" aria-live="polite" className="space-y-8">
         <span className="sr-only">Wczytuję…</span>
         <div className="space-y-2">
@@ -26,6 +29,6 @@ export function SzkieletStrony() {
           ))}
         </div>
       </div>
-    </Strona>
+    </div>
   );
 }

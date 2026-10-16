@@ -245,7 +245,7 @@ function NowaGaleria({
             type="button"
             onClick={() => onUsun(i)}
             aria-label={`Usuń zrzut ${i + 1} z listy`}
-            className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint transition-colors duration-150 hover:text-loss"
+            className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint przejscie hover:text-loss"
           >
             <Trash2 size={13} aria-hidden />
           </button>

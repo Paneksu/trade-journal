@@ -79,7 +79,7 @@ export function ScreenshotGrid({
                 type="button"
                 onClick={() => setPodglad(i)}
                 aria-label={`Powiększ zrzut ${i + 1} z ${shots.length}${s.interval ? ` — interwał ${s.interval}` : ""}`}
-                className="block h-full w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border border-line transition-colors duration-150 hover:border-faint focus-visible:border-accent"
+                className="block h-full w-full cursor-zoom-in overflow-hidden rounded-[var(--radius-control)] border border-line przejscie hover:border-faint focus-visible:border-accent"
               >
                 { }
                 <ObrazZrzutu
@@ -219,7 +219,7 @@ function UsunZrzut({
         });
       }}
       aria-label="Usuń zrzut"
-      className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint transition-colors duration-150 hover:text-loss disabled:opacity-50"
+      className="absolute top-2 right-2 rounded-[var(--radius-control)] border border-line-strong bg-bg/80 p-1.5 text-faint przejscie hover:text-loss disabled:opacity-50"
     >
       <Trash2 size={13} aria-hidden />
     </button>

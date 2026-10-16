@@ -30,7 +30,7 @@ export function DimensionPicker({
           href={href(o.key)}
           aria-current={o.key === active ? "true" : undefined}
           className={cx(
-            "rounded-[var(--radius-control)] border px-2.5 py-1 text-xs transition-colors duration-150",
+            "rounded-[var(--radius-control)] border px-2.5 py-1 text-xs przejscie",
             o.key === active
               ? "border-accent bg-accent-dim text-accent"
               : "border-line-strong bg-surface-2 text-muted hover:border-faint hover:text-text",

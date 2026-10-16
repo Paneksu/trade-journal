@@ -7,6 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Camera, ChevronLeft, NotebookPen, Plus, SquarePen, X } from "lucide-react";
 
 import { ErrorMessage, Label, Select, SuccessMessage, Textarea } from "@/components/ui/base";
+import { useGestArkusza } from "@/components/ui/ruch";
 import { klasaPigulki } from "@/components/ui/v2";
 import { cx } from "@/lib/classes";
 import { celeZdjecia, szybkaNotatka, szybkieZdjecie, type CelZdjecia, type SzybkiStan } from "@/lib/actions/szybkie";
@@ -99,6 +100,7 @@ export function SzybkiArkusz({ klasa }: { klasa: string }) {
     setWidok("zdjecie");
     if (!cele) setCele((await celeZdjecia()).cele);
   };
+  const { arkusz, uchwyt } = useGestArkusza(() => otworz(false));
   const pozycja =
     "przejscie flex min-h-14 w-full items-center gap-3 rounded-[var(--radius-tab)] px-3 text-left text-karta text-text hover:bg-surface-2 focus-visible:outline-2 focus-visible:outline-offset-2";
 
@@ -110,12 +112,16 @@ export function SzybkiArkusz({ klasa }: { klasa: string }) {
         </span>
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-bg/70" />
+        <Dialog.Overlay className="tj-tlo fixed inset-0 z-[var(--z-modal)] bg-bg/70" />
         <Dialog.Content
+          ref={arkusz}
           aria-describedby={undefined}
-          className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] mx-auto flex max-h-[90vh] max-w-lg flex-col overflow-y-auto rounded-t-[var(--radius-panel)] border-t border-line-strong bg-sidebar px-3 pt-2 pb-[calc(16px+env(safe-area-inset-bottom))]"
+          className="tj-arkusz fixed inset-x-0 bottom-0 z-[var(--z-modal)] mx-auto flex max-h-[90vh] max-w-lg flex-col overflow-y-auto rounded-t-[var(--radius-panel)] border-t border-line-strong bg-sidebar px-3 pt-2 pb-[calc(16px+env(safe-area-inset-bottom))]"
         >
-          <div aria-hidden className="mx-auto mb-2 h-1 w-10 rounded-full bg-line-strong" />
+          {/* Uchwyt: pociągnięcie w dół zamyka arkusz (gest), strefa dotyku 32 px. */}
+          <div {...uchwyt} data-uchwyt-arkusza className="-mt-2 mb-0 flex h-8 cursor-grab touch-none items-center justify-center">
+            <div aria-hidden className="h-1 w-10 rounded-full bg-line-strong" />
+          </div>
           <div className="mb-2 flex items-center justify-between gap-2 px-2">
             {widok !== "menu" ? (
               <button type="button" onClick={() => setWidok("menu")} className="przejscie flex h-9 items-center gap-1 rounded-full pr-2 text-karta text-muted hover:text-text" aria-label="Wróć do wyboru">

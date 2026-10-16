@@ -7,6 +7,7 @@ import { Chip, NaglowekStrony, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { linkZDowodu } from "@/lib/api-v2/luki";
 import { cx } from "@/lib/classes";
+import { Wejscie } from "@/components/ui/ruch";
 import { dateTime } from "@/lib/format";
 import {
   propozycjeRegul,
@@ -215,6 +216,8 @@ export default async function DoDecyzjiPage({ searchParams }: { searchParams: Pr
                 </div>
               </div>
 
+              {/* Następna pozycja po decyzji lub strzałce: treść wchodzi od przezroczystości 160 ms, nagłówek z licznikiem stoi. */}
+              <Wejscie klucz={biezaca.klucz}>
               <div className="grid xl:grid-cols-[minmax(0,1fr)_300px]">
                 <div className="min-w-0 space-y-5 p-5 sm:p-6">
                   <h2 id="pozycja" className="text-sekcja text-text">
@@ -361,6 +364,7 @@ export default async function DoDecyzjiPage({ searchParams }: { searchParams: Pr
                   )}
                 </aside>
               </div>
+              </Wejscie>
             </section>
           ) : (
             <section className="karta p-6">

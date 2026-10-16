@@ -34,13 +34,13 @@ import type { TagWithCategory } from "@/lib/queries/dictionaries";
 const CHIP = [
   "inline-flex cursor-pointer items-center rounded-[var(--radius-control)] border",
   "border-line-strong bg-surface-2 px-2 py-1 text-xs text-muted",
-  "transition-colors duration-150 hover:border-faint",
+  "przejscie hover:border-faint",
 ].join(" ");
 
 const CHIP_MALY = [
   "inline-flex cursor-pointer items-center rounded-[var(--radius-control)] border",
   "border-line bg-surface px-1.5 py-0.5 text-[11px] text-faint",
-  "transition-colors duration-150 hover:border-faint",
+  "przejscie hover:border-faint",
 ].join(" ");
 
 export function TagPicker({

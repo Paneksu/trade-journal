@@ -55,7 +55,7 @@ export function NoTradeDayForm({
           min={dataFrom ?? undefined}
           max={dataTo ?? undefined}
           readOnly={stalaData}
-          className="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text transition-colors duration-150 hover:border-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none read-only:text-muted"
+          className="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text przejscie hover:border-faint focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none read-only:text-muted"
         />
       </div>
 

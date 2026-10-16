@@ -8,10 +8,10 @@ import { cx } from "@/lib/classes";
 type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
 
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-bg hover:bg-accent-strong border border-transparent font-semibold",
-  secondary: "bg-surface-2 text-text border border-line-strong hover:border-faint hover:bg-surface-3",
-  quiet: "bg-transparent text-muted border border-transparent hover:bg-surface-2 hover:text-text",
-  danger: "bg-transparent text-loss border border-loss/40 hover:bg-loss/10",
+  primary: "bg-accent text-bg hover:bg-accent-strong active:bg-accent border border-transparent font-semibold",
+  secondary: "bg-surface-2 text-text border border-line-strong hover:border-faint hover:bg-surface-3 active:bg-surface-2",
+  quiet: "bg-transparent text-muted border border-transparent hover:bg-surface-2 hover:text-text active:bg-surface-3",
+  danger: "bg-transparent text-loss border border-loss/40 hover:bg-loss/10 active:bg-loss/20",
 };
 
 const SIZES = {
@@ -30,7 +30,7 @@ export function Button({
     <button
       className={cx(
         "inline-flex items-center justify-center rounded-[var(--radius-control)] whitespace-nowrap",
-        "transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+        "przejscie disabled:cursor-not-allowed disabled:opacity-50",
         VARIANTS[variant],
         SIZES[size],
         className,
@@ -96,7 +96,7 @@ export function Label({
 const FIELD_CLASSES =
   "w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 " +
   "text-sm text-text placeholder:text-faint " +
-  "transition-colors duration-150 hover:border-faint " +
+  "przejscie hover:border-faint " +
   "focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent " +
   "disabled:opacity-50 aria-[invalid=true]:border-loss";
 
@@ -133,7 +133,7 @@ export function Checkbox({
           type="checkbox"
           className={cx(
             "size-4 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-line-strong",
-            "bg-surface-2 accent-accent transition-colors duration-150 hover:border-faint",
+            "bg-surface-2 accent-accent przejscie hover:border-faint",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent",
             "disabled:cursor-not-allowed",
             className,

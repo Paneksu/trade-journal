@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Inbox, ListOrdered, LogOut, MoreHorizontal, Plus, Search, Sun, X } from "lucide-react";
 
+import { useGestArkusza } from "@/components/ui/ruch";
 import { cx } from "@/lib/classes";
 
 import { czyAktywna, NAWIGACJA, USTAWIENIA, type PozycjaNawigacji } from "./nawigacja";
@@ -196,6 +197,7 @@ export function TopBar() {
 export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Promise<void>; liczniki: LicznikiNav }) {
   const pathname = usePathname();
   const [wiecej, setWiecej] = useState(false);
+  const { arkusz, uchwyt } = useGestArkusza(() => setWiecej(false));
   const liczba = liczniki.decyzje + liczniki.rozstrzygniecia;
 
   const pozycje = [
@@ -247,11 +249,15 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
 
       <Dialog.Root open={wiecej} onOpenChange={setWiecej}>
         <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-bg/70 lg:hidden" />
+          <Dialog.Overlay className="tj-tlo fixed inset-0 z-[var(--z-modal)] bg-bg/70 lg:hidden" />
           <Dialog.Content
+            ref={arkusz}
             aria-describedby={undefined}
-            className="fixed inset-x-0 bottom-0 z-[var(--z-modal)] flex max-h-[85vh] flex-col overflow-y-auto rounded-t-[var(--radius-panel)] border-t border-line-strong bg-sidebar px-3 pt-3 pb-[calc(16px+env(safe-area-inset-bottom))] lg:hidden"
+            className="tj-arkusz fixed inset-x-0 bottom-0 z-[var(--z-modal)] flex max-h-[85vh] flex-col overflow-y-auto rounded-t-[var(--radius-panel)] border-t border-line-strong bg-sidebar px-3 pt-3 pb-[calc(16px+env(safe-area-inset-bottom))] lg:hidden"
           >
+            <div {...uchwyt} data-uchwyt-arkusza className="-mt-3 flex h-8 shrink-0 cursor-grab touch-none items-center justify-center">
+              <div aria-hidden className="h-1 w-10 rounded-full bg-line-strong" />
+            </div>
             <div className="mb-3 flex items-center justify-between px-2">
               <Dialog.Title className="text-sekcja font-medium text-text">Menu</Dialog.Title>
               <Dialog.Close

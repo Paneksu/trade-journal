@@ -36,7 +36,7 @@ function Rating({
             className={cx(
               "flex h-9 w-9 items-center justify-center rounded-[var(--radius-control)]",
               "border border-line-strong bg-surface-2 text-sm text-muted",
-              "transition-colors duration-150 hover:border-faint",
+              "przejscie hover:border-faint",
               "peer-checked:border-accent peer-checked:bg-accent-dim peer-checked:text-accent",
               "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent",
             )}
@@ -101,7 +101,7 @@ export function FieldInputs({
                         className={cx(
                           "inline-flex items-center rounded-[var(--radius-control)] border",
                           "border-line-strong bg-surface-2 px-2 py-1 text-xs text-muted",
-                          "transition-colors duration-150 hover:border-faint",
+                          "przejscie hover:border-faint",
                           "peer-checked:border-accent peer-checked:bg-accent-dim peer-checked:text-accent",
                           "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent",
                         )}

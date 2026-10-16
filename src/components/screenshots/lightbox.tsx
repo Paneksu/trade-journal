@@ -82,7 +82,7 @@ export function Lightbox({
                 type="button"
                 onClick={() => przesun(-1)}
                 aria-label="Poprzedni zrzut"
-                className="rounded-[var(--radius-control)] p-1 text-faint transition-colors duration-150 hover:text-text"
+                className="rounded-[var(--radius-control)] p-1 text-faint przejscie hover:text-text"
               >
                 <ChevronLeft size={18} aria-hidden />
               </button>
@@ -100,7 +100,7 @@ export function Lightbox({
                 type="button"
                 onClick={() => przesun(1)}
                 aria-label="Następny zrzut"
-                className="rounded-[var(--radius-control)] p-1 text-faint transition-colors duration-150 hover:text-text"
+                className="rounded-[var(--radius-control)] p-1 text-faint przejscie hover:text-text"
               >
                 <ChevronRight size={18} aria-hidden />
               </button>
@@ -109,7 +109,7 @@ export function Lightbox({
               type="button"
               onClick={onClose}
               aria-label="Zamknij podgląd"
-              className="ml-1 rounded-[var(--radius-control)] border-l border-line-strong pl-2 text-faint transition-colors duration-150 hover:text-text"
+              className="ml-1 rounded-[var(--radius-control)] border-l border-line-strong pl-2 text-faint przejscie hover:text-text"
             >
               <X size={18} aria-hidden />
             </button>

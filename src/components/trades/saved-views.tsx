@@ -54,7 +54,7 @@ export function SavedViews({
           <Link
             href={linkFor(v.filters)}
             className={cx(
-              "rounded-l-[var(--radius-control)] border py-1 pl-2 pr-1.5 text-xs transition-colors duration-150",
+              "rounded-l-[var(--radius-control)] border py-1 pl-2 pr-1.5 text-xs przejscie",
               isActive(v.filters)
                 ? "border-accent bg-accent-dim text-accent"
                 : "border-line-strong bg-surface-2 text-muted hover:border-faint hover:text-text",
@@ -72,7 +72,7 @@ export function SavedViews({
                 await deleteView(v.id);
               });
             }}
-            className="rounded-r-[var(--radius-control)] border border-l-0 border-line-strong bg-surface-2 px-1.5 py-1 text-faint transition-colors duration-150 hover:text-loss"
+            className="rounded-r-[var(--radius-control)] border border-l-0 border-line-strong bg-surface-2 px-1.5 py-1 text-faint przejscie hover:text-loss"
           >
             <Trash2 size={11} aria-hidden />
           </button>

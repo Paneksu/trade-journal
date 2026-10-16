@@ -61,7 +61,7 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
               href={`/trades/${t.id}`}
               className={cx(
                 "group flex h-full overflow-hidden rounded-[var(--radius-panel)]",
-                "border bg-surface transition-colors duration-150",
+                "border bg-surface przejscie",
                 pominiety
                   ? "border-dashed border-accent/40 hover:border-accent/70"
                   : "border-line hover:border-faint",

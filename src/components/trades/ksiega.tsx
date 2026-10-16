@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ChevronRight, Lock, PanelRightOpen, Trash2, X } from "lucide-react";
 
 import { EmptyState } from "@/components/ui/base";
-import { ChipProcesu } from "@/components/ui/v2";
+import { ChipProcesu, Szkielet } from "@/components/ui/v2";
 import { cx } from "@/lib/classes";
 import { deleteMany, tagMany } from "@/lib/actions/trades";
 import { podgladTradu, type PodgladTradu } from "@/lib/actions/podglad";
@@ -42,7 +42,78 @@ export type WierszKsiegi = {
   wynik: "zysk" | "strata" | "be";
 };
 
+/**
+ * Szuflada podglądu (ruch ze wzoru Mercury, pomiar 16.10.2026: 150 ms, cubic-bezier(0.16, 1, 0.3, 1)).
+ * Powłoka (`aside`) wjeżdża raz: opacity + 24 px w poziomie; przełączenie na inny wiersz zmienia tylko zawartość
+ * (klucz), bez ponownego wjazdu. Zamknięcie odtwarza wyjście (120 ms) i dopiero po jego końcu zdejmuje węzeł.
+ * Wynik ukryty: zawartość pochodzi z `podgladTradu`, która go nie zwraca, więc ruch nie ma czego odsłonić.
+ */
 function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
+  const [zamykana, setZamykana] = useState(false);
+  const [ostatniId, setOstatniId] = useState(id);
+  if (ostatniId !== id) {
+    // Klik w inny wiersz w trakcie zamykania anuluje zamykanie.
+    setOstatniId(id);
+    setZamykana(false);
+  }
+
+  useEffect(() => {
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setZamykana(true);
+    }
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, []);
+
+  useEffect(() => {
+    if (!zamykana) return;
+    // Zabezpieczenie: gdy animacja wyjścia się nie odtworzy, szuflada i tak znika.
+    const t = window.setTimeout(onClose, 400);
+    return () => window.clearTimeout(t);
+  }, [zamykana, onClose]);
+
+  return (
+    <aside
+      role="dialog"
+      aria-modal="false"
+      aria-label={`Podgląd trade'a #${id}`}
+      data-stan={zamykana ? "zamykana" : "otwarta"}
+      onAnimationEnd={(e) => {
+        if (zamykana && e.target === e.currentTarget) onClose();
+      }}
+      className="tj-szuflada fixed top-0 right-0 bottom-0 z-[var(--z-nakladka)] karta flex w-full max-w-[420px] flex-col rounded-none border-l border-line-strong shadow-[var(--shadow-pop)] sm:top-14 sm:bottom-auto sm:max-h-[calc(100vh-56px)] sm:rounded-bl-[var(--radius-panel)]"
+    >
+      <ZawartoscSzuflady key={id} id={id} onZamknij={() => setZamykana(true)} />
+    </aside>
+  );
+}
+
+function SzkieletSzuflady() {
+  return (
+    <div role="status" aria-live="polite" className="space-y-6">
+      <span className="sr-only">Wczytuję…</span>
+      <div className="space-y-2">
+        <Szkielet className="h-9 w-32" />
+        <Szkielet className="h-4 w-56 max-w-full" />
+      </div>
+      <div className="space-y-2">
+        <Szkielet className="h-4 w-16" />
+        <div className="grid grid-cols-2 gap-2">
+          <Szkielet className="aspect-video" />
+          <Szkielet className="aspect-video" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-5">
+        <Szkielet className="h-9" />
+        <Szkielet className="h-9" />
+        <Szkielet className="h-9" />
+        <Szkielet className="h-9" />
+      </div>
+    </div>
+  );
+}
+
+function ZawartoscSzuflady({ id, onZamknij }: { id: number; onZamknij: () => void }) {
   const [dane, setDane] = useState<PodgladTradu | null | undefined>(undefined);
   const zamknij = useRef<HTMLButtonElement>(null);
 
@@ -58,20 +129,10 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
 
   useEffect(() => {
     zamknij.current?.focus();
-    function esc(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [onClose]);
+  }, []);
 
   return (
-    <aside
-      role="dialog"
-      aria-modal="false"
-      aria-label={`Podgląd trade'a #${id}`}
-      className="fixed top-0 right-0 bottom-0 z-[var(--z-nakladka)] karta flex w-full max-w-[420px] flex-col rounded-none border-l border-line-strong shadow-[var(--shadow-pop)] sm:top-14 sm:bottom-auto sm:max-h-[calc(100vh-56px)] sm:rounded-bl-[var(--radius-panel)]"
-    >
+    <>
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-line px-5">
         <p className="text-karta text-muted">
           {dane ? (
@@ -85,7 +146,7 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
         <button
           ref={zamknij}
           type="button"
-          onClick={onClose}
+          onClick={onZamknij}
           aria-label="Zamknij podgląd"
           className="przejscie flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-surface-3 hover:text-text"
         >
@@ -94,10 +155,11 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
-        {dane === undefined && <p className="text-meta text-faint">Wczytuję…</p>}
+        {dane === undefined && <SzkieletSzuflady />}
         {dane === null && <p className="text-meta text-faint">Nie ma takiego trade&apos;a.</p>}
         {dane && (
-          <div className="space-y-6">
+          // Zawartość wchodzi od przezroczystości po wczytaniu; szkielet ma ten sam kształt, więc bez skoku układu.
+          <div className="tj-tresc-wejscie space-y-6">
             <div>
               {dane.resultHidden ? (
                 <p className="flex items-center gap-2 text-karta text-muted">
@@ -190,7 +252,7 @@ function Szuflada({ id, onClose }: { id: number; onClose: () => void }) {
           Otwórz kartę trade&apos;a <ChevronRight size={15} aria-hidden />
         </Link>
       </div>
-    </aside>
+    </>
   );
 }
 
@@ -340,7 +402,7 @@ export function Ksiega({ wiersze: wszystkieWiersze, tags, lacznie }: { wiersze: 
                       }}
                       className={cx(
                         "group przejscie h-12 cursor-pointer border-b border-line",
-                        aktywny || zaznaczony ? "bg-surface-2" : "hover:bg-panel",
+                        aktywny || zaznaczony ? "bg-surface-2" : "hover:bg-panel active:bg-surface-2",
                       )}
                     >
                       <td className="hidden pr-2 pl-0.5 align-middle sm:table-cell">
@@ -428,8 +490,8 @@ export function Ksiega({ wiersze: wszystkieWiersze, tags, lacznie }: { wiersze: 
         </table>
       </div>
 
-      {/* key: nowy trade = nowa szuflada ze swiezym stanem "wczytuje". */}
-      {podglad !== null && <Szuflada key={podglad} id={podglad} onClose={() => setPodglad(null)} />}
+      {/* Zmiana wiersza podmienia zawartość szuflady (klucz w środku), powłoka wjeżdża tylko raz. */}
+      {podglad !== null && <Szuflada id={podglad} onClose={() => setPodglad(null)} />}
     </div>
   );
 }

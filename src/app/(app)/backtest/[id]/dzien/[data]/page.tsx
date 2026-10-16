@@ -106,7 +106,7 @@ export default async function DzienSesjiPage({
         <div className="flex items-center gap-2">
           <Link
             href={`/trades/new?sesja=${session.id}`}
-            className="inline-flex h-8 items-center rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-3 text-xs text-text transition-colors duration-150 hover:border-faint"
+            className="inline-flex h-8 items-center rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-3 text-xs text-text przejscie hover:border-faint"
           >
             Dodaj trade do sesji
           </Link>

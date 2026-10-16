@@ -3,6 +3,8 @@ import Link from "next/link";
 
 import { cx } from "@/lib/classes";
 
+import { PrzejscieStrony, Wejscie } from "./ruch";
+
 /*
  * Prymitywy UI v2 (faza 5). Forma ze wzoru Mercury (pomiar.json): karta r=12, ramka 1 px, padding 24,
  * pigułka akcji 32 px (główna w akcencie, reszta neutralna), nagłówek strony 28/36, nagłówek sekcji 19/28,
@@ -10,7 +12,7 @@ import { cx } from "@/lib/classes";
  */
 
 export function Strona({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("mx-auto w-full max-w-tresc", className)}>{children}</div>;
+  return <PrzejscieStrony className={cx("mx-auto w-full max-w-tresc", className)}>{children}</PrzejscieStrony>;
 }
 
 export function NaglowekStrony({
@@ -108,7 +110,8 @@ export function Pigulka({
 export function LiczbaBohater({ tekst, className }: { tekst: string; className?: string }) {
   const m = /^(.*?)([.,]\d+)(\D*)$/.exec(tekst);
   return (
-    <p className={cx("num text-liczba font-medium text-text", className)}>
+    // Zmiana liczby (np. po zmianie zakresu): sama przezroczystość 160 ms, bez licznika od zera.
+    <Wejscie as="p" klucz={tekst} className={cx("num text-liczba font-medium text-text", className)}>
       {m ? (
         <>
           {m[1]}
@@ -118,7 +121,7 @@ export function LiczbaBohater({ tekst, className }: { tekst: string; className?:
       ) : (
         tekst
       )}
-    </p>
+    </Wejscie>
   );
 }
 
@@ -210,7 +213,7 @@ export function PustyStan({
   );
 }
 
-/** Szkielet ładowania (runda r2): szare bloki w miejscu treści zamiast pustego ekranu; pulsowanie wyłącza reduced-motion. */
+/** Szkielet ładowania (runda r2): szare bloki w miejscu treści zamiast pustego ekranu; pulsowanie 1000 ms linear (pomiar Mercury), wyłącza je reduced-motion. */
 export function Szkielet({ className }: { className?: string }) {
-  return <div aria-hidden className={cx("animate-pulse rounded-[var(--radius-tab)] bg-surface-2", className)} />;
+  return <div aria-hidden className={cx("tj-szkielet rounded-[var(--radius-tab)] bg-surface-2", className)} />;
 }

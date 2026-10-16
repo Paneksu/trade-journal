@@ -24,6 +24,7 @@ import { getOceny } from "@/lib/queries/oceny";
 import { getScreenshots, getTrade } from "@/lib/queries/trades";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { PrzejscieStrony, Wejscie } from "@/components/ui/ruch";
 
 export const metadata = { title: "Trade — Dziennik tradingowy" };
 
@@ -139,7 +140,7 @@ export default async function TradePage({
   const sumaKontraktowWyjsc = trade.exits.reduce((a, e) => a + e.contracts, 0);
 
   return (
-    <div className="mx-auto w-full max-w-[1180px]">
+    <PrzejscieStrony className="mx-auto w-full max-w-[1180px]">
       {trade.status === "missed" && (
         <div className="mb-4 rounded-[var(--radius-tab)] border-l-2 border-accent bg-accent-dim px-3 py-2 text-meta text-accent-strong">
           Trade nie wzięty — wynik hipotetyczny, poza statystykami.
@@ -236,7 +237,7 @@ export default async function TradePage({
                       aria-current={jest ? "page" : undefined}
                       className={cx(
                         "przejscie inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-tab)] px-3 text-karta",
-                        jest ? "bg-accent-dim text-accent-strong" : "text-muted hover:bg-surface-2 hover:text-text",
+                        jest ? "bg-accent-dim text-accent-strong" : "text-muted hover:bg-surface-2 hover:text-text active:bg-surface-3",
                       )}
                     >
                       {z.nazwa}
@@ -249,6 +250,8 @@ export default async function TradePage({
             </ul>
           </nav>
 
+          {/* Zmiana zakładki: nowa treść wchodzi od przezroczystości 160 ms (Wejscie), bez przesunięcia. */}
+          <Wejscie klucz={aktywna}>
           {aktywna === "plan" && (
             <section aria-label="Plan" className="space-y-6">
               {plan && (
@@ -523,6 +526,7 @@ export default async function TradePage({
               {!trade.note && slowaNotatki.length === 0 && !ukryty && <p className="text-meta text-faint">Bez notatki.</p>}
             </section>
           )}
+          </Wejscie>
         </div>
 
         {/* Prawy panel „Właściwości” (wzór 3: Linear Properties ok. 280 px) = zamrożony plan. */}
@@ -592,6 +596,6 @@ export default async function TradePage({
           )}
         </aside>
       </div>
-    </div>
+    </PrzejscieStrony>
   );
 }

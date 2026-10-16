@@ -52,6 +52,8 @@ export function FilterBar({
   const router = useRouter();
   const params = useSearchParams();
   const [open, setOpen] = useState(domyslnieOtwarty && activeCount > 0);
+  // Rozwinięcie z klikiem wchodzi od przezroczystości 160 ms; panel otwarty od razu przy ładowaniu strony bez ruchu.
+  const [rozwinieto, setRozwinieto] = useState(false);
 
   const value = (key: string) => params.get(key) ?? "";
   const values = (key: string) => (params.get(key) ?? "").split(",").filter(Boolean);
@@ -93,10 +95,13 @@ export function FilterBar({
         <div className={cx("flex shrink-0 items-center gap-2", pasek ? "flex-nowrap sm:flex-wrap" : "flex-wrap")}>
         <button
           type="button"
-          onClick={() => setOpen((w) => !w)}
+          onClick={() => {
+            setRozwinieto(true);
+            setOpen((w) => !w);
+          }}
           aria-expanded={open}
           className={cx(
-            "inline-flex items-center gap-2 text-sm transition-colors duration-150",
+            "inline-flex items-center gap-2 text-sm przejscie",
             pasek
               ? "h-9 rounded-[var(--radius-tab)] border border-line bg-panel px-3 text-text hover:border-line-strong"
               : "text-muted hover:text-text",
@@ -117,7 +122,7 @@ export function FilterBar({
           <button
             type="button"
             onClick={() => router.push("?")}
-            className="inline-flex items-center gap-1 text-xs text-faint transition-colors duration-150 hover:text-text"
+            className="inline-flex items-center gap-1 text-xs text-faint przejscie hover:text-text"
           >
             <X size={12} aria-hidden />
             wyczyść wszystkie
@@ -130,7 +135,7 @@ export function FilterBar({
           e.preventDefault();
           submit(e.currentTarget);
         }}
-        className={cx(pasek ? "panel mt-3" : "border-t border-line", open ? "block" : "hidden")}
+        className={cx(pasek ? "panel mt-3" : "border-t border-line", open ? "block" : "hidden", open && rozwinieto && "tj-tresc-wejscie")}
       >
         <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5">
@@ -351,7 +356,7 @@ export function FilterBar({
                     className={cx(
                       "inline-flex items-center rounded-[var(--radius-control)] border",
                       "border-line-strong bg-surface-2 px-2 py-1 text-xs text-muted",
-                      "transition-colors duration-150 hover:border-faint",
+                      "przejscie hover:border-faint",
                       "peer-checked:border-accent peer-checked:text-text",
                       "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent",
                     )}
@@ -426,7 +431,7 @@ export function FilterBar({
                     className={cx(
                       "inline-flex items-center rounded-[var(--radius-control)] border",
                       "border-line-strong bg-surface-2 px-2 py-1 text-xs text-muted",
-                      "transition-colors duration-150 hover:border-faint",
+                      "przejscie hover:border-faint",
                       "peer-checked:border-accent peer-checked:text-text",
                       "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-accent",
                     )}

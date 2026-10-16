@@ -51,7 +51,7 @@ function Segment({
             prefetch={false}
             aria-current={selected ? "true" : undefined}
             className={cx(
-              "px-2.5 py-1.5 text-xs transition-colors duration-150",
+              "px-2.5 py-1.5 text-xs przejscie",
               selected
                 ? "bg-surface-3 font-medium text-text"
                 : "bg-surface text-muted hover:bg-surface-2 hover:text-text",

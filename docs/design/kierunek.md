@@ -63,7 +63,7 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 - Skala (pomiar 1440 i 375, Playwright): nagłówek strony 28/36 (waga u nas 500, bo Plex nie ma 380), nagłówek sekcji 19/28, etykieta karty 15/24, tekst drugorzędny 13/20 (+0.1px), etykieta grupy nav 12/20 (+0.2px), liczba bohater 28/36 z trackingiem −0.03em, grosze/ułamki R mniejsze. Przy 375 skala ta sama, margines 16.
 - Odstępy: kontener ok. 968 px, odstęp kart 24, padding kart 24, sekcja 44 px od poprzedniej, wiersz tabeli 48–51 px, wiersz nav 30 px, pigułka 32 px, wiersz-pigułka 44 px.
 - Powierzchnie: karta r=12, ramka 1 px biel 12% (u nas `--color-line`), bez cieni; sidebar o stopień ciemniejszy od tła treści; zakładka aktywna r=8 z tłem akcentu 20% (u nas `--color-accent-dim`).
-- Ruch: tylko stany hover, 160 ms ease-out (tło i kolor), linki 200 ms; brak animacji wejścia.
+- Ruch: stany hover, 160 ms ease-out (tło i kolor), linki 200 ms; brak animacji wejścia treści. Faza 2d (16.10.2026) dodaje ruch jako odpowiedź na działanie (szuflada, paleta, arkusz „+”, zakładki, kolejka, rozwijanie), wyłącznie `opacity` i `transform`, na tokenach `--czas-*` i `--ease-*` z `globals.css`; pomiar Mercury: `wzory/pomiar.json` → `ruch.pomiar_2d_16_10_2026`. Wynik ukryty do zamknięcia: ruch nigdy nie przechodzi z wartości do wartości (test e2e `e2e/ruch.spec.ts`). Reduced motion: wszystko wyłączone (`!important`).
 - Role rules: kolor akcentu #e8a44c dostają wyłącznie: główna pigułka akcji ekranu (np. „Przed sesją”, „Zatwierdź”), aktywny element nawigacji i zakładki, pasek bufora prop, `[[` linki w notatkach i kłódka zamrożonego planu. Pozostałe przyciski: tło neutralne (`--color-surface-3`). Zieleń i czerwień nigdy na przyciskach.
 
 ## Uwagi doradcze
@@ -100,6 +100,7 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 20 | Etap 4 UI v2 (Kalendarz, Backtest, Ustawienia, PWA z arkuszem „+”) przyjęty, dalej runda szlifu r2 | Słowa użytkownika: «Akceptuję» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-16 |
 | 21 | Notatki dnia z kont scalone migracją 0029 w jedną notatkę dnia bez konta (teksty z dopiskiem konta, zrzuty przepięte) | Słowa użytkownika: «Scal w migracji» | Jedna notatka dnia jak w rytuale i API; ADR-033 | 2026-10-16 |
 | 22 | Przewijanie na telefonie zostaje: dolny pasek przyklejony, /mozg mobile ma dostępność 96 w Lighthouse (pasek przykrywa wiersz przy pierwszym ekranie) | Słowa użytkownika: «Zostaw» | Przewijanie w kontenerze zmieniłoby całą aplikację i psuło zrzuty całej strony | 2026-10-16 |
+| 23 | Ruch UI v2 (faza 2d): szuflada 150 ms (pomiar Mercury), paleta 220 ms, arkusz „+” 280 ms z gestem zamknięcia, treść 160 ms opacity; reduced motion wyłącza wszystko; liczby bez liczników od zera | decyzja gustu motion-designer (do akceptacji) | Wzór Mercury ma tylko hover i szufladę 150 ms; reszta wg `ruch.md` | 2026-10-16 |
 
 ## Znak
 Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.

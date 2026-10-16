@@ -161,9 +161,9 @@ export function Paleta() {
   return (
     <Dialog.Root open={otwarta} onOpenChange={zmienOtwarcie}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[var(--z-modal)] bg-bg/70 backdrop-blur-[2px]" />
+        <Dialog.Overlay className="tj-tlo fixed inset-0 z-[var(--z-modal)] bg-bg/70 backdrop-blur-[2px]" />
         <Dialog.Content
-          className="fixed top-[12vh] left-1/2 z-[var(--z-modal)] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 karta overflow-hidden rounded-[var(--radius-panel)] border border-line-strong shadow-[var(--shadow-pop)]"
+          className="tj-paleta fixed top-[12vh] left-1/2 z-[var(--z-modal)] w-[min(560px,calc(100vw-24px))] -translate-x-1/2 karta overflow-hidden rounded-[var(--radius-panel)] border border-line-strong shadow-[var(--shadow-pop)]"
           aria-describedby={undefined}
           onKeyDown={naKlawisz}
         >

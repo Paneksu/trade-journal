@@ -110,7 +110,15 @@
 :root {
   --czas-stan: 160ms; /* wzor: background-color, color 160ms ease-out */
   --czas-link: 200ms; /* wzor: linki color 200ms ease-out */
-  --czas-warstwa: 220ms; /* szuflada i paleta; wzor milczy, ruch.md: czas stanu */
+  --czas-warstwa: 220ms; /* paleta Ctrl+K; wzor milczy, ruch.md: zmiana stanu 150-300 ms */
+  --czas-szuflada: 150ms; /* wzor Mercury (szuflada szczegolow): transition 150ms cubic-bezier(0.16, 1, 0.3, 1), pomiar 16.10.2026 */
+  --czas-wyjscie: 120ms; /* wyjscie ~75% wejscia (ruch.md) */
+  --czas-arkusz: 280ms; /* arkusz od dolu na telefonie; wzor milczy, ruch.md: nakladka */
+  --czas-arkusz-wyjscie: 200ms;
+  --czas-tresc: 160ms; /* zmiana tresci po nawigacji i po zaladowaniu: sam opacity, jak tlo i kolor we wzorze */
+  --czas-szkielet: 1000ms; /* wzor Mercury: pulsowanie szkieletu 1000 ms linear */
+  --ease-wejscie: cubic-bezier(0.16, 1, 0.3, 1); /* ruch.md: wejscie; ta sama krzywa w szufladzie Mercury */
+  --ease-wyjscie: cubic-bezier(0.7, 0, 0.84, 0); /* ruch.md: wyjscie */
 
   --z-przyklejone: 100;
   --z-dropdown: 200;
@@ -292,11 +300,120 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Stany interakcji UI v2 na tokenach czasu ze wzoru. */
+  /* Stany interakcji UI v2 na tokenach czasu ze wzoru. Tylko kolor i tlo (wzor: 160 ms ease-out). */
   .przejscie {
     transition-property: background-color, color, border-color;
     transition-duration: var(--czas-stan);
     transition-timing-function: var(--ease-wzor);
+  }
+
+  /* Ruch UI v2 (faza 2d). Zasady: sam opacity i transform, stan domyslny = tresc widoczna (klatki maja tylko `from`,
+     wiec bez animacji element jest w stanie koncowym), animacja nigdy nie zawiera wartosci liczbowych ani wyniku. */
+
+  /* Zmiana tresci: zakladka trade'a, pozycja kolejki, zakres, rozwiniecie sekcji, strona po nawigacji. */
+  .tj-tresc-wejscie,
+  details[open] > :not(summary) {
+    animation: tj-tresc-wejscie var(--czas-tresc) var(--ease-wejscie);
+  }
+  .tj-strona-wejscie {
+    animation: tj-tresc-wejscie var(--czas-tresc) var(--ease-wzor);
+  }
+
+  /* Szkielet ladowania: pulsowanie opacity 1000 ms linear (pomiar Mercury). */
+  .tj-szkielet {
+    animation: tj-szkielet var(--czas-szkielet) linear infinite;
+  }
+
+  /* Tlo warstwy (paleta, arkusz). */
+  .tj-tlo[data-state="open"] {
+    animation: tj-tresc-wejscie var(--czas-warstwa) var(--ease-wejscie);
+  }
+  .tj-tlo[data-state="closed"] {
+    animation: tj-tlo-wyjscie var(--czas-wyjscie) var(--ease-wyjscie) forwards;
+  }
+
+  /* Paleta Ctrl+K: opacity + 6 px w dol->gora. Pozycjonowanie to `translate` Tailwinda, wiec `transform` nie koliduje. */
+  .tj-paleta[data-state="open"] {
+    animation: tj-paleta-wejscie var(--czas-warstwa) var(--ease-wejscie);
+  }
+  .tj-paleta[data-state="closed"] {
+    animation: tj-paleta-wyjscie var(--czas-wyjscie) var(--ease-wyjscie) forwards;
+  }
+
+  /* Arkusz „+” od dolu; --przeciagniecie = odleglosc pociagnieta palcem w chwili puszczenia. */
+  .tj-arkusz {
+    transform: translateY(var(--przeciagniecie, 0px));
+    touch-action: pan-y;
+  }
+  .tj-arkusz[data-state="open"] {
+    animation: tj-arkusz-wejscie var(--czas-arkusz) var(--ease-wejscie);
+  }
+  .tj-arkusz[data-state="closed"] {
+    animation: tj-arkusz-wyjscie var(--czas-arkusz-wyjscie) var(--ease-wyjscie) forwards;
+  }
+  .tj-arkusz[data-wraca="true"] {
+    transition: transform var(--czas-warstwa) var(--ease-wejscie);
+  }
+
+  /* Szuflada podgladu na liscie (wzor Mercury: 150 ms, krzywa wykladnicza). */
+  .tj-szuflada {
+    animation: tj-szuflada-wejscie var(--czas-szuflada) var(--ease-wejscie);
+  }
+  .tj-szuflada[data-stan="zamykana"] {
+    animation: tj-szuflada-wyjscie var(--czas-wyjscie) var(--ease-wyjscie) forwards;
+  }
+}
+
+@keyframes tj-tresc-wejscie {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tj-tlo-wyjscie {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes tj-szkielet {
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes tj-paleta-wejscie {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes tj-paleta-wyjscie {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@keyframes tj-arkusz-wejscie {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes tj-arkusz-wyjscie {
+  from {
+    transform: translateY(var(--przeciagniecie, 0px));
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+@keyframes tj-szuflada-wejscie {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+@keyframes tj-szuflada-wyjscie {
+  to {
+    opacity: 0;
+    transform: translateX(24px);
   }
 }
 
@@ -305,8 +422,10 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }

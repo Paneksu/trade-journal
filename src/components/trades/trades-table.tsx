@@ -529,7 +529,7 @@ export function TradesTable({ trades, fields, tags, currency }: Props) {
               <tr
                 key={row.id}
                 className={cx(
-                  "border-b border-line transition-colors duration-150 hover:bg-surface-2",
+                  "border-b border-line przejscie hover:bg-surface-2",
                   row.getIsSelected() && "bg-surface-2",
                 )}
               >

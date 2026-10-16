@@ -50,7 +50,7 @@ export function ZdanieORegule({
       aria-label={`${tekst}: reguła ${ruleId}`}
       className={cx(
         "inline-flex h-7 items-center rounded-[var(--radius-control)] border px-2 text-xs whitespace-nowrap",
-        "transition-colors duration-150 disabled:opacity-60",
+        "przejscie disabled:opacity-60",
         zdanie === w
           ? zaznaczony
           : "border-line-strong bg-surface-2 text-muted hover:border-faint hover:text-text",

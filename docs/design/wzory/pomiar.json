@@ -38,7 +38,14 @@
       "zrodlo": "getComputedStyle transition na a/button/tr, 1440, Playwright",
       "przyciski_i_wiersze": "background-color, color 160ms ease-out",
       "linki": "color 200ms ease-out",
-      "uwagi": "brak animacji wejścia; ruch tylko w stanach hover. NIEPRZETESTOWANE: wykres (hover tooltip)."
+      "uwagi": "brak animacji wejścia; ruch tylko w stanach hover. NIEPRZETESTOWANE: wykres (hover tooltip).",
+      "pomiar_2d_16_10_2026": {
+        "zrodlo": "docs/audyt/robocze/pomiar-ruchu-mercury.mjs i pomiar-ruchu-mercury2.mjs (Playwright, demo.mercury.com/transactions, 1440)",
+        "szuflada_szczegolow": "aside z transition: all 150ms cubic-bezier(0.16, 1, 0.3, 1); ukrywanie animacja 400ms steps (visibility), czyli wejście i wyjście 150 ms krzywą wykładniczą",
+        "szkielet_ladowania": "pulsowanie 1000 ms linear, nieskończone",
+        "przyciski": "background-color, border-color 160ms ease-out; a: color 200ms ease-out",
+        "bez_ruchu": "brak animacji wejścia treści, brak licznika liczb od zera"
+      }
     }
   },
   "panel-prop-konto": {

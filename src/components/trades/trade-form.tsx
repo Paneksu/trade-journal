@@ -209,7 +209,7 @@ function SubmitRow({ isEdit, onStay }: { isEdit: boolean; onStay: (v: boolean) =
       )}
       <Link
         href="/trades"
-        className="px-2 text-sm text-muted transition-colors duration-150 hover:text-text"
+        className="px-2 text-sm text-muted przejscie hover:text-text"
       >
         Anuluj
       </Link>
@@ -665,7 +665,7 @@ export function TradeForm({
                       />
                       <span
                         className={cx(
-                          "flex h-9 items-center justify-center text-sm transition-colors duration-150",
+                          "flex h-9 items-center justify-center text-sm przejscie",
                           direction === d
                             ? d === "long"
                               ? "bg-profit-dim font-medium text-profit"
@@ -940,7 +940,7 @@ export function TradeForm({
                             onClick={() => usunWyjscie(w)}
                             disabled={wyjscia.length <= 1}
                             aria-label={`Usuń wyjście ${i + 1}`}
-                            className="rounded-[var(--radius-control)] border border-line-strong p-1.5 text-faint transition-colors duration-150 hover:text-loss disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded-[var(--radius-control)] border border-line-strong p-1.5 text-faint przejscie hover:text-loss disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <Trash2 size={13} aria-hidden />
                           </button>
