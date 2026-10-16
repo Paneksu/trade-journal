@@ -337,7 +337,7 @@ if (!TEST_URL) {
 
 
 
-  describe("migracje 0017-0028 na prawdziwej bazie", () => {
+  describe("migracje 0017-0032 na prawdziwej bazie", () => {
     beforeAll(async () => {
       // 1) migrator drizzle (jak `npm run db:migrate`: jedna transakcja na cala serie)
       await reset();
@@ -348,7 +348,7 @@ if (!TEST_URL) {
       // 2) scripts/migrate.mjs (jak start kontenera: transakcja na plik); to ta baza zostaje do testow
       await reset();
       const wyjscie1 = migrateSkryptem();
-      expect(wyjscie1).toContain("0028_poprawki_po_przegladzie");
+      expect(wyjscie1).toContain("0032_firmy_platformy");
       odciskSkrypt = await odcisk();
       const wyjscie2 = migrateSkryptem();
       expect(wyjscie2).toContain("nic nowego");
@@ -967,7 +967,8 @@ if (!TEST_URL) {
           SELECT id, firm, program, phase, account_size_cents::text AS account_size_cents, dd_type, max_dd_cents::text AS max_dd_cents,
                  dd_lock_cents::text AS dd_lock_cents, daily_loss_cents::text AS daily_loss_cents,
                  profit_target_cents::text AS profit_target_cents, consistency_pct::float8 AS consistency_pct,
-                 min_days, max_contracts_mini, max_contracts_micro, source_url, read_on::text AS read_on,
+                 min_days, max_contracts_mini, max_contracts_micro, fee_rt_mini_cents::text AS fee_rt_mini_cents, fee_rt_micro_cents::text AS fee_rt_micro_cents,
+                 fee_source_url, source_url, read_on::text AS read_on,
                  needs_verification, effective_from, extra, notes,
                  encode(convert_to(firm, 'UTF8'), 'hex') AS firm_hex, encode(convert_to(program, 'UTF8'), 'hex') AS program_hex,
                  encode(convert_to(source_url, 'UTF8'), 'hex') AS url_hex, encode(convert_to(coalesce(notes, ''), 'UTF8'), 'hex') AS notes_hex,
@@ -989,6 +990,10 @@ if (!TEST_URL) {
           for (const kolumna of ["consistency_pct", "min_days", "max_contracts_mini", "max_contracts_micro"]) {
             if (b[kolumna] !== w[kolumna]) oznacz(`${kolumna}: baza=${String(b[kolumna])} json=${String(w[kolumna])}`);
           }
+          for (const kolumna of ["fee_rt_mini_cents", "fee_rt_micro_cents"]) {
+            if (b[kolumna] !== liczbaLubNull(w[kolumna])) oznacz(`${kolumna}: baza=${String(b[kolumna])} json=${String(w[kolumna])}`);
+          }
+          if ((b.fee_source_url ?? null) !== ((w.fee_source_url as string | null | undefined) ?? null)) oznacz("fee_source_url");
           if (b.needs_verification !== w.needs_verification) oznacz("needs_verification");
           if (b.effective_from !== null) oznacz("effective_from nie jest NULL");
           if ((b.notes ?? null) !== (w.notes ?? null)) oznacz(`notes: baza=${String(b.notes)} json=${String(w.notes)}`);
@@ -2025,6 +2030,391 @@ if (!TEST_URL) {
       });
     });
 
+    /* ------------------------------------------------------------------ (h) */
+    describe("(h) dane brokera, wynik netto i konto dnia (0030-0032, ADR-034)", () => {
+      const migracjaSql = (nr: string) => readFileSync(path.join(ROOT, "drizzle", nr), "utf8");
+
+      /** Token z podanymi zakresami wpisany prosto do bazy; import_broker wymaga created_via = ui i terminu (CHECK). */
+      async function tokenZakresy(db: Db, scopes: string[], o: { wygasl?: boolean; uniewazniony?: boolean } = {}): Promise<number> {
+        const brokerowy = scopes.includes("import_broker");
+        const [t] = await db`
+          INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via, expires_at, revoked_at)
+          VALUES ('brk', ${"tk" + String(100000 + ++seq)}, ${sha256Node(unik("tok"))}, ${scopes}, ${brokerowy ? "ui" : "device_code"},
+                  ${brokerowy ? (o.wygasl ? new Date(Date.now() - 1000) : new Date(Date.now() + 86_400_000)) : null},
+                  ${o.uniewazniony ? new Date() : null})
+          RETURNING id`;
+        return t.id as number;
+      }
+
+      /** Konto u brokera wstawione jako uzytkownik (aktor ui; aktor zostaje ustawiony do konca transakcji). */
+      async function kontoBrokera(tx: Tx, accountId: number | null = null): Promise<number> {
+        await aktor(tx, "ui");
+        const [b] = await tx`
+          INSERT INTO broker_accounts (account_id, platform, method, external_account_hmac, label_last4)
+          VALUES (${accountId}, 'tradovate', 'export_file', ${sha256Node(unik("hmac"))}, '0042') RETURNING id`;
+        return b.id as number;
+      }
+
+      async function importUi(tx: Tx, o: { sha?: string; status?: string; origin?: string; tokenId?: number | null } = {}): Promise<number> {
+        const [i] = await tx`
+          INSERT INTO broker_imports (origin, format, file_sha256, tz, rows_total, rows_skipped, fills_new, fills_duplicate, trades_matched, trades_created, pending_decisions, status, reverted_at, created_by_token_id)
+          VALUES (${o.origin ?? "ui"}, 'tradovate_orders', ${o.sha ?? sha256Node(unik("plik"))}, 'Europe/Warsaw', 1, 0, 1, 0, 0, 0, 0, ${o.status ?? "committed"},
+                  ${o.status === "reverted" ? new Date() : null}, ${o.tokenId ?? null})
+          RETURNING id`;
+        return i.id as number;
+      }
+
+      const wstawBrokerTrade = (tx: Tx, brokerAccountId: number, importId: number | null, extra: { tradeId?: number | null; matchKind?: string | null; ref?: string } = {}) =>
+        tx`INSERT INTO broker_trades (broker_account_id, import_id, external_ref, contract, direction, max_qty, entry_time, exit_time, avg_entry_price, avg_exit_price, status,
+                                      trade_id, match_kind, match_state)
+           VALUES (${brokerAccountId}, ${importId}, ${extra.ref ?? unik("brk:tradovate:abc:t")}, 'MNQZ6', 'long', 3, now() - interval '1 hour', now(), 100, 101, 'closed',
+                   ${extra.tradeId ?? null}, ${extra.matchKind ?? null}, ${extra.tradeId ? "matched" : "unmatched"})
+           RETURNING id`;
+
+      const wstawFill = (tx: Tx, brokerAccountId: number, importId: number | null, brokerTradeId: number | null = null) =>
+        tx`INSERT INTO broker_fills (broker_account_id, import_id, external_ref, broker_trade_id, contract, side, qty, price, filled_at, raw)
+           VALUES (${brokerAccountId}, ${importId}, ${unik("tradovate:abc:f")}, ${brokerTradeId}, 'MNQZ6', 'buy', 3, 100, now(), '{}'::jsonb) RETURNING id`;
+
+      const wstawCash = (tx: Tx, brokerAccountId: number, importId: number | null) =>
+        tx`INSERT INTO broker_cash_events (broker_account_id, import_id, external_ref, kind, delta_cents, contract, occurred_at, raw)
+           VALUES (${brokerAccountId}, ${importId}, ${unik("tradovate:abc:cash:c")}, 'commission', -150, 'MNQZ6', now(), '{}'::jsonb) RETURNING id`;
+
+      it("0030: wynik netto i stawki: CHECK-i nieujemne, klasa kontraktu mini/micro, migracja klas po symbolu", async () => {
+        const k = await kontoInstr(sql);
+        const kod = async (q: PromiseLike<unknown>) => (await blad(q)).constraint_name;
+        expect(await kod(sql`UPDATE trades SET fees = -1 WHERE id = ${await tradeDla(sql, k)}`)).toBe("trades_fees");
+        expect(await kod(sql`UPDATE instruments SET size_class = 'maxi' WHERE id = ${k.instrumentId}`)).toBe("instruments_size_class");
+        expect(await kod(sql`UPDATE accounts SET fee_rt_mini_cents = -5 WHERE id = ${k.accountId}`)).toBe("accounts_fee_mini");
+        expect(await kod(sql`UPDATE accounts SET fee_rt_micro_cents = -5 WHERE id = ${k.accountId}`)).toBe("accounts_fee_micro");
+        expect(await kod(sql`UPDATE prop_firm_presets SET fee_rt_mini_cents = -1 WHERE id = (SELECT min(id) FROM prop_firm_presets)`)).toBe("prop_firm_presets_fee_mini");
+        expect(await kod(sql`UPDATE prop_firm_presets SET fee_source_url = 'http://x' WHERE id = (SELECT min(id) FROM prop_firm_presets)`)).toBe("prop_firm_presets_fee_source_url");
+        const ogr = (await sql`SELECT conname FROM pg_constraint WHERE conname IN ('prop_rules_fee_mini', 'prop_rules_fee_micro', 'prop_rules_fee_source_url')`).map((r) => r.conname).sort();
+        expect(ogr).toEqual(["prop_rules_fee_micro", "prop_rules_fee_mini", "prop_rules_fee_source_url"]);
+
+        // klasa po symbolu: instrukcja z migracji na swiezych wierszach (tabela instruments byla pusta w chwili migracji)
+        const instrukcja = migracjaSql("0030_wynik_netto.sql").split("--> statement-breakpoint").map((s) => s.trim()).find((s) => s.startsWith('UPDATE "instruments"'));
+        expect(instrukcja).toBeTruthy();
+        await wycofywalna(async (tx) => {
+          const [micro] = await tx`INSERT INTO instruments (symbol, name, tick_size, tick_value) VALUES ('MBT', 'x', 0.25, 500) RETURNING id`;
+          const [mini] = await tx`INSERT INTO instruments (symbol, name, tick_size, tick_value) VALUES ('ZZT', 'x', 0.25, 5000) RETURNING id`;
+          await tx.unsafe(instrukcja!);
+          const w = await tx`SELECT symbol, size_class FROM instruments WHERE id IN (${micro.id}, ${mini.id})`;
+          expect(Object.fromEntries(w.map((x) => [x.symbol, x.size_class]))).toEqual({ MBT: "micro", ZZT: "mini" });
+        });
+      });
+
+      it("0032: stawki oplat w presetach zgodne z JSON-em (kolumny i extra.fee), lista firm i platform jako dane z linkiem i data odczytu", async () => {
+        const json = JSON.parse(readFileSync(path.join(ROOT, "docs", "research", "prop-presety.json"), "utf8")) as Record<string, unknown>[];
+        const wBazie = await sql`SELECT fee_rt_mini_cents::text AS mini, fee_rt_micro_cents::text AS micro, fee_source_url AS url, extra->'fee' AS fee FROM prop_firm_presets ORDER BY id`;
+        expect(wBazie.length).toBe(json.length);
+        const roznice: string[] = [];
+        wBazie.forEach((b, i) => {
+          const w = json[i];
+          const liczba = (v: unknown) => (v === null || v === undefined ? null : String(v));
+          if (b.mini !== liczba(w.fee_rt_mini_cents)) roznice.push(`#${i + 1} mini: baza=${String(b.mini)} json=${String(w.fee_rt_mini_cents)}`);
+          if (b.micro !== liczba(w.fee_rt_micro_cents)) roznice.push(`#${i + 1} micro: baza=${String(b.micro)} json=${String(w.fee_rt_micro_cents)}`);
+          if ((b.url ?? null) !== ((w.fee_source_url as string | null | undefined) ?? null)) roznice.push(`#${i + 1} url`);
+          if (!isDeepStrictEqual(b.fee, (w.extra as Record<string, unknown>).fee)) roznice.push(`#${i + 1} extra.fee`);
+        });
+        expect(roznice).toEqual([]);
+        const [lucid] = await sql`SELECT fee_rt_mini_cents::int AS mini, fee_rt_micro_cents::int AS micro FROM prop_firm_presets WHERE firm = 'Lucid Trading' AND program = 'LucidPro' AND phase = 'funded' AND account_size_cents = 10000000`;
+        expect(lucid).toEqual({ mini: 350, micro: 100 }); // MNQ 1,00 USD za kontrakt w obie strony: POTWIERDZONE na probce uzytkownika
+
+        const platformy = await sql`SELECT firm, platform, methods, source_url, read_on::text AS read_on FROM prop_firm_platforms ORDER BY id`;
+        expect(platformy.length).toBe(24);
+        expect(platformy.every((p) => /^https:\/\//.test(p.source_url) && p.read_on === "2026-10-16" && p.methods.length === 1 && p.methods[0] === "export_file")).toBe(true);
+        expect(new Set(platformy.map((p) => p.firm)).size).toBe(11);
+        expect(platformy.some((p) => p.firm === "Własne konto Tradovate" && p.platform === "Tradovate")).toBe(true);
+        expect((await blad(sql`INSERT INTO prop_firm_platforms (firm, platform, methods, source_url, read_on) VALUES ('X', 'Y', ARRAY['oauth_tradovate','email'], 'https://x.pl', '2026-10-16')`)).constraint_name).toBe("prop_firm_platforms_methods");
+        expect((await blad(sql`INSERT INTO prop_firm_platforms (firm, platform, methods, source_url, read_on) VALUES ('X', 'Y', ARRAY['export_file'], 'http://x.pl', '2026-10-16')`)).constraint_name).toBe("prop_firm_platforms_source_url");
+      });
+
+      it("zakres import_broker: tylko samodzielny, tylko z UI i zawsze z terminem; kod urzadzenia go nie da", async () => {
+        const wstaw = (scopes: string[], via: string, wygasa: Date | null) =>
+          sql`INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via, expires_at)
+              VALUES ('x', ${"tk" + String(100000 + ++seq)}, ${sha256Node(unik("t"))}, ${scopes}, ${via}, ${wygasa})`;
+        const jutro = new Date(Date.now() + 86_400_000);
+        expect((await blad(wstaw(["import_broker", "read"], "ui", jutro))).constraint_name).toBe("api_tokens_scopes");
+        expect((await blad(wstaw(["import_broker", "import"], "ui", jutro))).constraint_name).toBe("api_tokens_scopes");
+        expect((await blad(wstaw(["import_broker"], "device_code", jutro))).constraint_name).toBe("api_tokens_import_broker");
+        expect((await blad(wstaw(["import_broker"], "ui", null))).constraint_name).toBe("api_tokens_import_broker");
+        await wycofywalna(async (tx) => {
+          await tx`INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via, expires_at) VALUES ('ok', 'tkokaaaa', ${sha256Node(unik("t"))}, ARRAY['import_broker'], 'ui', ${jutro})`;
+          // pozostale zakresy dzialaja jak dotad, w tym import (sejf) bez terminu
+          await tx`INSERT INTO api_tokens (name, prefix, token_sha256, scopes, created_via) VALUES ('ok2', 'tkokbbbb', ${sha256Node(unik("t"))}, ARRAY['read','write','propose','import'], 'ui')`;
+        });
+        expect(
+          (await blad(sql`INSERT INTO device_codes (device_code_sha256, user_code, client_name, requested_scopes, expires_at) VALUES (${sha256Node(unik("dc"))}, 'BCDF-GHJL', 'tj', ARRAY['import_broker'], now() + interval '10 minutes')`)).constraint_name,
+        ).toBe("device_codes_requested_scopes");
+      });
+
+      it("zapis do tabel brokera: tylko aktor ui albo token z jedynym zakresem import_broker (nie wygasly, nie uniewazniony); agent AI i brak aktora dostaja TJ403", async () => {
+        const dobry = await tokenZakresy(sql, ["import_broker"]);
+        const wygasly = await tokenZakresy(sql, ["import_broker"], { wygasl: true });
+        const uniewazniony = await tokenZakresy(sql, ["import_broker"], { uniewazniony: true });
+        const agent = await tokenZakresy(sql, ["read", "write", "propose"]);
+        type Kontekst = { konto: number; imp: number; bt: number; fill: number };
+        // fundament wstawiony jako ui, potem zmiana aktora na badanego
+        const proba = (aktorProby: string, akcja: (tx: Tx, c: Kontekst) => Promise<unknown>) => async (tx: Tx) => {
+          const konto = await kontoBrokera(tx);
+          const imp = await importUi(tx);
+          const [bt] = await wstawBrokerTrade(tx, konto, imp);
+          const [fill] = await wstawFill(tx, konto, imp, bt.id);
+          await aktor(tx, aktorProby);
+          return akcja(tx, { konto, imp, bt: bt.id, fill: fill.id });
+        };
+        const tabele: [string, string, (tx: Tx, c: Kontekst) => Promise<unknown>][] = [
+          ["broker_imports", "broker_imports_zapis", (tx, c) => tx`UPDATE broker_imports SET rows_skipped = 1 WHERE id = ${c.imp}`],
+          ["broker_fills", "broker_fills_zapis", (tx, c) => wstawFill(tx, c.konto, c.imp)],
+          ["broker_trades", "broker_trades_zapis", (tx, c) => wstawBrokerTrade(tx, c.konto, c.imp)],
+          ["broker_cash_events", "broker_cash_events_zapis", (tx, c) => wstawCash(tx, c.konto, c.imp)],
+        ];
+        for (const [tabela, nazwaTriggera, akcja] of tabele) {
+          for (const zly of [`api:${agent}`, `api:${wygasly}`, `api:${uniewazniony}`, "ingest", "api:999999999", "api:x1", ""]) {
+            await trigger(tabela, nazwaTriggera, "TJ403", proba(zly, akcja), "wymaga aktora");
+          }
+          // dobry token importu i uzytkownik przechodza
+          await wycofywalna(async (tx) => { await proba(`api:${dobry}`, akcja)(tx); });
+          await wycofywalna(async (tx) => { await proba("ui", akcja)(tx); });
+        }
+        // agent nie skasuje i nie zmieni danych brokera
+        await trigger("broker_fills", "broker_fills_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`DELETE FROM broker_fills WHERE id = ${c.fill}`));
+        await trigger("broker_trades", "broker_trades_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`UPDATE broker_trades SET match_state = 'skipped' WHERE id = ${c.bt}`));
+        await trigger("broker_cash_events", "broker_cash_events_zapis", "TJ403", proba(`api:${agent}`, async (tx, c) => {
+          await aktor(tx, "ui");
+          const [z] = await wstawCash(tx, c.konto, c.imp);
+          await aktor(tx, `api:${agent}`);
+          return tx`DELETE FROM broker_cash_events WHERE id = ${z.id}`;
+        }));
+      });
+
+      it("konto u brokera: token importu moze tylko zglosic nowe, nieprzypisane konto; przypisanie i zmiany robi wylacznie uzytkownik", async () => {
+        const dobry = await tokenZakresy(sql, ["import_broker"]);
+        const k = await kontoInstr(sql);
+        const wstawToken = (accountId: number | null) =>
+          jakoAktor(`api:${dobry}`, (tx) =>
+            tx`INSERT INTO broker_accounts (account_id, platform, method, external_account_hmac) VALUES (${accountId}, 'tradovate', 'export_file', ${sha256Node(unik("hmac"))})`);
+        await wycofywalna(async (tx) => { await wstawToken(null)(tx); });
+        await trigger("broker_accounts", "broker_accounts_zapis", "TJ403", wstawToken(k.accountId), "niedozwolony");
+        await trigger("broker_accounts", "broker_accounts_zapis", "TJ403", async (tx) => {
+          const id = await kontoBrokera(tx);
+          await aktor(tx, `api:${dobry}`);
+          return tx`UPDATE broker_accounts SET account_id = ${k.accountId} WHERE id = ${id}`;
+        });
+        await wycofywalna(async (tx) => {
+          const id = await kontoBrokera(tx);
+          await tx`UPDATE broker_accounts SET account_id = ${k.accountId} WHERE id = ${id}`; // uzytkownik przypisuje
+        });
+        // ograniczenia kolumn
+        expect((await blad(sql.begin(async (tx) => { await aktor(tx, "ui"); return tx`INSERT INTO broker_accounts (platform, method, external_account_hmac) VALUES ('tradovate', 'export_file', 'nie-hex')`; }))).constraint_name).toBe("broker_accounts_hmac");
+        expect((await blad(sql.begin(async (tx) => { await aktor(tx, "ui"); return tx`INSERT INTO broker_accounts (platform, method, external_account_hmac) VALUES ('rithmic', 'oauth_tradovate', ${sha256Node(unik("h"))})`; }))).constraint_name).toBe("broker_accounts_method_platform");
+        expect((await blad(sql.begin(async (tx) => { await aktor(tx, "ui"); return tx`INSERT INTO broker_accounts (platform, method, external_account_hmac, label_last4) VALUES ('tradovate', 'export_file', ${sha256Node(unik("h"))}, '12345')`; }))).constraint_name).toBe("broker_accounts_last4");
+      });
+
+      it("pochodzenie importu wynika z aktora: ui tylko od uzytkownika, tj_watch tylko od tokenu importu ze swoim numerem, oauth wylaczone", async () => {
+        const dobry = await tokenZakresy(sql, ["import_broker"]);
+        const inny = await tokenZakresy(sql, ["import_broker"]);
+        const probaOrigin = (aktorProby: string, o: Parameters<typeof importUi>[1]) => async (tx: Tx) => {
+          await aktor(tx, aktorProby);
+          return importUi(tx, o);
+        };
+        // tabela broker_imports_zapis przepuszcza token i uzytkownika, wiec bledy pochodza z triggera pochodzenia
+        await trigger("broker_imports", "broker_imports_origin", "TJ403", probaOrigin("ui", { origin: "tj_watch" }), "pochodzeniem");
+        await trigger("broker_imports", "broker_imports_origin", "TJ403", probaOrigin(`api:${dobry}`, { origin: "ui" }));
+        await trigger("broker_imports", "broker_imports_origin", "TJ403", probaOrigin(`api:${dobry}`, { origin: "tj_watch", tokenId: inny }));
+        await trigger("broker_imports", "broker_imports_origin", "TJ403", probaOrigin(`api:${dobry}`, { origin: "tj_watch", tokenId: null }));
+        await wycofywalna(async (tx) => {
+          await probaOrigin(`api:${dobry}`, { origin: "tj_watch", tokenId: dobry })(tx);
+          await probaOrigin("ui", { origin: "ui" })(tx);
+        });
+        const oauth = async (tx: Tx) => {
+          await aktor(tx, "ui");
+          return tx`INSERT INTO broker_imports (origin, format, file_sha256, tz, rows_total, rows_skipped, fills_new, fills_duplicate, trades_matched, trades_created, pending_decisions) VALUES ('oauth', 'x', NULL, 'UTC', 0, 0, 0, 0, 0, 0, 0)`;
+        };
+        await trigger("broker_imports", "broker_imports_origin", "TJ403", oauth);
+      });
+
+      it("ten sam plik zatwierdzony dwa razy nie przejdzie (unikalny SHA), a odrzucony i cofniety moga sie powtarzac; CHECK-i importu", async () => {
+        const sha = sha256Node(unik("plik"));
+        await wycofywalna(async (tx) => {
+          await aktor(tx, "ui");
+          await importUi(tx, { sha });
+          await importUi(tx, { sha, status: "rejected" });
+          await importUi(tx, { sha, status: "reverted" });
+          await importUi(tx, { sha, status: "rejected" });
+          const e = await blad(tx.savepoint((s) => importUi(s, { sha })));
+          expect(e.constraint_name).toBe("broker_imports_sha_committed_uq");
+        });
+        const wstawImport = (kolumny: string, wartosci: string) =>
+          sql.begin(async (tx) => {
+            await aktor(tx, "ui");
+            return tx.unsafe(
+              `INSERT INTO broker_imports (origin, format, file_sha256, tz, rows_total, rows_skipped, fills_new, fills_duplicate, trades_matched, trades_created, pending_decisions${kolumny}) VALUES ('ui', 'f', '${sha256Node(unik("s"))}', 'UTC', 1, 0, 0, 0, 0, 0, 0${wartosci})`,
+            );
+          });
+        expect((await blad(wstawImport(", status", ", 'zly'"))).constraint_name).toBe("broker_imports_status");
+        expect((await blad(wstawImport(", status", ", 'reverted'"))).constraint_name).toBe("broker_imports_reverted");
+        expect((await blad(wstawImport(", warnings", ", '{}'::jsonb"))).constraint_name).toBe("broker_imports_warnings");
+        expect(
+          (await blad(sql.begin(async (tx) => {
+            await aktor(tx, "ui");
+            return tx`INSERT INTO broker_imports (origin, format, file_sha256, tz, rows_total, rows_skipped, fills_new, fills_duplicate, trades_matched, trades_created, pending_decisions) VALUES ('ui', 'f', 'abc', 'UTC', 1, 0, 0, 0, 0, 0, 0)`;
+          }))).constraint_name,
+        ).toBe("broker_imports_sha256");
+      });
+
+      it("dopasowanie trade'u brokera: automat (token importu) moze tylko 1:1 »auto«; reczne, z sugestii AI i »created« tylko uzytkownik; odpiecie od skasowanego trade'u dziennika dziala bez aktora", async () => {
+        const dobry = await tokenZakresy(sql, ["import_broker"]);
+        const k = await kontoInstr(sql);
+        const t1 = await tradeDla(sql, k);
+        const t2 = await tradeDla(sql, k);
+        const przypnij = (aktorProby: string, rodzaj: string | null, trade: number) =>
+          wycofywalna(async (tx) => {
+            const konto = await kontoBrokera(tx, k.accountId);
+            const imp = await importUi(tx);
+            const [bt] = await wstawBrokerTrade(tx, konto, imp);
+            await aktor(tx, aktorProby);
+            await tx`UPDATE broker_trades SET trade_id = ${trade}, match_kind = ${rodzaj}, match_state = 'matched' WHERE id = ${bt.id}`;
+          });
+        await przypnij(`api:${dobry}`, "auto", t1); // automat: dopasowanie 1:1
+        for (const rodzaj of ["user", "ai_accepted", "created"]) {
+          await trigger(
+            "broker_trades",
+            "broker_trades_dopasowanie_update",
+            "TJ403",
+            async (tx) => {
+              const konto = await kontoBrokera(tx, k.accountId);
+              const imp = await importUi(tx);
+              const [bt] = await wstawBrokerTrade(tx, konto, imp);
+              await aktor(tx, `api:${dobry}`);
+              return tx`UPDATE broker_trades SET trade_id = ${t1}, match_kind = ${rodzaj}, match_state = 'matched' WHERE id = ${bt.id}`;
+            },
+            "wymaga aktora",
+          );
+          await przypnij("ui", rodzaj, t1);
+        }
+        // trade dziennika skasowany bez aktora (zwykla akcja uzytkownika): trade brokera wraca do »bez dopasowania«
+        const id = await sql.begin(async (tx) => {
+          const kb = await kontoBrokera(tx, k.accountId);
+          const imp = await importUi(tx);
+          const [bt] = await wstawBrokerTrade(tx, kb, imp, { tradeId: t2, matchKind: "user" });
+          return bt.id as number;
+        });
+        await sql`DELETE FROM trades WHERE id = ${t2}`;
+        expect((await sql`SELECT trade_id, match_kind, match_state, matched_at FROM broker_trades WHERE id = ${id}`)[0]).toEqual({ trade_id: null, match_kind: null, match_state: "unmatched", matched_at: null });
+        await sql.begin(async (tx) => {
+          await aktor(tx, "ui");
+          await tx`DELETE FROM broker_imports WHERE id IN (SELECT import_id FROM broker_trades WHERE id = ${id})`;
+          await tx`DELETE FROM broker_accounts WHERE account_id = ${k.accountId}`;
+        });
+      });
+
+      it("trade ze zrodlem »broker« tworzy i zmienia tylko uzytkownik; musi miec ref brk:", async () => {
+        const dobry = await tokenZakresy(sql, ["import_broker"]);
+        const agent = await tokenZakresy(sql, ["read", "write"]);
+        const k = await kontoInstr(sql);
+        const wstaw = (ref: string | null) => (tx: Tx) =>
+          tx`INSERT INTO trades (account_id, instrument_id, direction, entry_time, entry_price, contracts, source, external_ref)
+             VALUES (${k.accountId}, ${k.instrumentId}, 'long', now(), 100, 1, 'broker', ${ref}) RETURNING id`;
+        await wycofywalna(async (tx) => { await jakoAktor("ui", wstaw("brk:tradovate:abc:1"))(tx); });
+        for (const zly of [`api:${agent}`, `api:${dobry}`, "ingest", ""]) {
+          await trigger("trades", "trades_source_broker_insert", "TJ403", jakoAktor(zly, wstaw("brk:tradovate:abc:2")), "wymaga zatwierdzenia");
+        }
+        await wycofywalna(async (tx) => { await aktor(tx, "ui"); expect((await blad(wstaw("tv:1")(tx))).constraint_name).toBe("trades_broker_ref"); });
+        await wycofywalna(async (tx) => { await aktor(tx, "ui"); expect((await blad(wstaw(null)(tx))).constraint_name).toBe("trades_broker_ref"); });
+        const t = await tradeDla(sql, k);
+        await trigger("trades", "trades_source_broker_update", "TJ403", jakoAktor(`api:${agent}`, (tx) => tx`UPDATE trades SET source = 'broker', external_ref = 'brk:x:y:1' WHERE id = ${t}`));
+        expect((await blad(sql`UPDATE trades SET source = 'inne' WHERE id = ${t}`)).constraint_name).toBe("trades_source");
+      });
+
+      it("kaskady: skasowanie importu przez uzytkownika zabiera wypelnienia, zdarzenia i trade'y brokera; skasowanie konta dziennika zabiera konto u brokera; bezposredni DELETE bez aktora to TJ403", async () => {
+        const k = await kontoInstr(sql);
+        const { imp, konto } = await sql.begin(async (tx) => {
+          const kb = await kontoBrokera(tx, k.accountId);
+          const i = await importUi(tx);
+          const [bt] = await wstawBrokerTrade(tx, kb, i);
+          await wstawFill(tx, kb, i, bt.id);
+          await wstawCash(tx, kb, i);
+          return { imp: i, konto: kb };
+        });
+        const policz = async () =>
+          (await sql`SELECT (SELECT count(*)::int FROM broker_fills WHERE import_id = ${imp}) AS f, (SELECT count(*)::int FROM broker_cash_events WHERE import_id = ${imp}) AS c, (SELECT count(*)::int FROM broker_trades WHERE import_id = ${imp}) AS t`)[0];
+        expect(await policz()).toEqual({ f: 1, c: 1, t: 1 });
+        expect((await blad(sql`DELETE FROM broker_imports WHERE id = ${imp}`)).code).toBe("TJ403");
+        await sql.begin(async (tx) => { await aktor(tx, "ui"); await tx`DELETE FROM broker_imports WHERE id = ${imp}`; });
+        expect(await policz()).toEqual({ f: 0, c: 0, t: 0 });
+        // konto dziennika: skasowanie (zwykla akcja, bez aktora) kaskaduje do konta u brokera
+        await sql`DELETE FROM accounts WHERE id = ${k.accountId}`;
+        expect((await sql`SELECT 1 FROM broker_accounts WHERE id = ${konto}`).length).toBe(0);
+      });
+
+      it("CHECK-i trade'u brokera, wypelnienia i zdarzenia: spojnosc dopasowania, zamkniecia, zrodel kwot i znakow", async () => {
+        const k = await kontoInstr(sql);
+        const t = await tradeDla(sql, k);
+        const wTrade = async (kolumny: string, wartosci: string): Promise<string | undefined> =>
+          (
+            await blad(
+              sql.begin(async (tx) => {
+                const kb = await kontoBrokera(tx);
+                return tx.unsafe(`INSERT INTO broker_trades (broker_account_id, external_ref, contract, direction, max_qty, entry_time, avg_entry_price, status${kolumny})
+                  VALUES (${kb}, '${unik("brk:t:x")}', 'MNQZ6', 'long', 1, now(), 100, 'open'${wartosci})`);
+              }),
+            )
+          ).constraint_name;
+        expect(await wTrade(", trade_id", `, ${t}`)).toBe("broker_trades_link_kind");
+        expect(await wTrade(", match_kind", ", 'auto'")).toBe("broker_trades_link_kind");
+        expect(await wTrade(", match_state", ", 'matched'")).toBe("broker_trades_link_state");
+        expect(await wTrade(", gross_cents", ", 100")).toBe("broker_trades_gross_pair");
+        expect(await wTrade(", fees_cents, fee_source", ", -1, 'rate'")).toBe("broker_trades_fees_nonneg");
+        expect(await wTrade(", fees_cents", ", 100")).toBe("broker_trades_fees_pair");
+        expect(await wTrade(", exit_time", ", now()")).toBe("broker_trades_closed");
+        expect(await wTrade(", match_state", ", 'dziwny'")).toBe("broker_trades_match_state");
+
+        const kb = await sql.begin((tx) => kontoBrokera(tx));
+        const wFill = async (kolumny: string, wartosci: string): Promise<string | undefined> =>
+          (
+            await blad(
+              sql.begin(async (tx) => {
+                await aktor(tx, "ui");
+                return tx.unsafe(`INSERT INTO broker_fills (broker_account_id, external_ref, contract, side, qty, price, filled_at, raw${kolumny}) VALUES (${kb}, '${unik("f")}', 'X', 'buy', 1, 1, now(), '{}'::jsonb${wartosci})`);
+              }),
+            )
+          ).constraint_name;
+        expect(await wFill(", fee_cents", ", -1")).toBe("broker_fills_fee");
+        expect((await blad(sql.begin(async (tx) => { await aktor(tx, "ui"); return tx.unsafe(`INSERT INTO broker_fills (broker_account_id, external_ref, contract, side, qty, price, filled_at, raw) VALUES (${kb}, '${unik("f")}', 'X', 'hold', 1, 1, now(), '{}'::jsonb)`); }))).constraint_name).toBe("broker_fills_side");
+        expect((await blad(sql.begin(async (tx) => { await aktor(tx, "ui"); return tx.unsafe(`INSERT INTO broker_cash_events (broker_account_id, external_ref, kind, delta_cents, occurred_at, raw) VALUES (${kb}, '${unik("c")}', 'dziwne', 1, now(), '{}'::jsonb)`); }))).constraint_name).toBe("broker_cash_events_kind");
+        // unikalnosc external_ref: ponowne wgranie tych samych wypelnien nie dubluje
+        await wycofywalna(async (tx) => {
+          await aktor(tx, "ui");
+          const ref = unik("tradovate:u:1");
+          await tx`INSERT INTO broker_fills (broker_account_id, external_ref, contract, side, qty, price, filled_at, raw) VALUES (${kb}, ${ref}, 'X', 'buy', 1, 1, now(), '{}'::jsonb)`;
+          expect((await blad(tx.savepoint((s) => s`INSERT INTO broker_fills (broker_account_id, external_ref, contract, side, qty, price, filled_at, raw) VALUES (${kb}, ${ref}, 'X', 'buy', 1, 1, now(), '{}'::jsonb)`))).constraint_name).toBe("broker_fills_external_ref_uq");
+        });
+        await sql.begin(async (tx) => { await aktor(tx, "ui"); await tx`DELETE FROM broker_accounts WHERE id = ${kb}`; });
+      });
+
+      it("aktywne konta dnia sa wielokrotne (klucz dzien + konto), kasuja sie z kontem; nowe rodzaje sugestii i zdarzen sa dozwolone", async () => {
+        const k1 = await kontoInstr(sql);
+        const k2 = await kontoInstr(sql);
+        await sql`INSERT INTO day_accounts (day, account_id) VALUES ('2030-02-02', ${k1.accountId}), ('2030-02-02', ${k2.accountId})`;
+        expect((await blad(sql`INSERT INTO day_accounts (day, account_id) VALUES ('2030-02-02', ${k1.accountId})`)).code).toBe("23505");
+        await sql`DELETE FROM accounts WHERE id = ${k1.accountId}`;
+        expect((await sql`SELECT account_id FROM day_accounts WHERE day = '2030-02-02'`).map((r) => r.account_id)).toEqual([k2.accountId]);
+        await sql`DELETE FROM accounts WHERE id = ${k2.accountId}`;
+        expect((await sql`SELECT 1 FROM day_accounts WHERE day = '2030-02-02'`).length).toBe(0);
+
+        await wycofywalna(async (tx) => {
+          for (const rodzaj of ["broker_match", "broker_trade"]) {
+            await tx`INSERT INTO ai_suggestions (kind, target, payload, claim, evidence, evidence_level) VALUES (${rodzaj}, '{"type":"trade","id":1}'::jsonb, '{}'::jsonb, 'x', '[{"type":"trade"}]'::jsonb, 'partial')`;
+          }
+          for (const rodzaj of ["broker_import", "broker_import_reverted", "broker_import_rejected", "broker_account_mapped", "broker_match_reverted", "broker_history_recalculated"]) {
+            await tx`INSERT INTO auth_events (kind) VALUES (${rodzaj})`;
+          }
+        });
+        expect((await blad(sql`INSERT INTO ai_suggestions (kind, target, payload, claim, evidence, evidence_level) VALUES ('broker_zly', '{}'::jsonb, '{}'::jsonb, 'x', '[{"a":1}]'::jsonb, 'partial')`)).constraint_name).toBe("ai_suggestions_kind");
+      });
+    });
+
     /* ------------------------------------------------------------------ (c) */
     describe("(c) f_unaccent i wyszukiwanie", () => {
       it("f_unaccent('Zarządzanie łódź') = 'Zarzadzanie lodz'; IMMUTABLE PARALLEL SAFE STRICT", async () => {
@@ -2187,21 +2577,21 @@ if (!TEST_URL) {
 
       const rollback = (nr: string) => readFileSync(path.join(ROOT, "docs", "v2", "rollback", `${nr}_down.sql`), "utf8");
 
-      it("0028_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
+      it("0032_down ... 0020_down: po kazdym cofnieciu katalog bazy == katalog po poprzedniej migracji; potem 0019, 0018, 0017; ponowne migracje daja identyczny katalog i presety", async () => {
         // wzorce: stan bazy po migracjach 0000..N zbudowany od zera osobnym przebiegiem
         const wzorzec = new Map<number, string>();
-        for (let n = 19; n <= 29; n++) wzorzec.set(n, await odciskPoMigracji(n));
+        for (let n = 19; n <= 32; n++) wzorzec.set(n, await odciskPoMigracji(n));
         // 0028 zbudowane od zera osobnym migratorem to ten sam katalog, co po scripts/migrate.mjs
         await reset();
         migrateSkryptem();
         const przed = await odcisk();
-        expect(przed).toBe(wzorzec.get(29));
+        expect(przed).toBe(wzorzec.get(32));
         expect(przed).toBe(odciskSkrypt);
         expect((await sql`SELECT count(*)::int AS n FROM prop_firm_presets`)[0].n).toBe(138);
 
         const admin = postgres(url, { max: 1, onnotice: () => {} });
         try {
-          for (const n of [29, 28, 27, 26, 25, 24, 23, 22, 21, 20]) {
+          for (const n of [32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20]) {
             const nr = `00${n}`;
             await admin.begin(async (tx) => {
               await tx.unsafe(rollback(nr));
@@ -2256,7 +2646,8 @@ if (!TEST_URL) {
         // ponowne zastosowanie przez scripts/migrate.mjs
         const wyjscie = migrateSkryptem();
         for (const tag of ["0017_api_tokens", "0018_notatki", "0019_auth_events_token_fk", "0020_proces_playbook", "0021_plan_werdykt",
-          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki", "0028_poprawki_po_przegladzie", "0029_notatka_dnia_bez_konta"]) {
+          "0022_hipotezy_warianty", "0023_prop", "0024_prop_presety", "0025_przeglad_tygodnia", "0026_profil_wykres", "0027_mentor_luki", "0028_poprawki_po_przegladzie", "0029_notatka_dnia_bez_konta",
+          "0030_wynik_netto", "0031_broker_import", "0032_firmy_platformy"]) {
           expect(wyjscie).toContain(tag);
         }
         expect(await odcisk()).toBe(przed);

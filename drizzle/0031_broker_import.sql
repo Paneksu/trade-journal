@@ -376,7 +376,7 @@ ALTER TABLE "api_tokens" ADD CONSTRAINT "api_tokens_import_broker" CHECK (
 
 ALTER TABLE "trades" DROP CONSTRAINT "trades_source";--> statement-breakpoint
 ALTER TABLE "trades" ADD CONSTRAINT "trades_source" CHECK ("source" IN ('form', 'tradingview', 'fxreplay', 'broker'));--> statement-breakpoint
-ALTER TABLE "trades" ADD CONSTRAINT "trades_broker_ref" CHECK ("source" <> 'broker' OR "external_ref" ~ '^brk:');--> statement-breakpoint
+ALTER TABLE "trades" ADD CONSTRAINT "trades_broker_ref" CHECK ("source" <> 'broker' OR ("external_ref" IS NOT NULL AND "external_ref" ~ '^brk:'));--> statement-breakpoint
 CREATE TRIGGER "trades_source_broker_insert" BEFORE INSERT ON "trades"
   FOR EACH ROW WHEN (NEW."source" = 'broker')
   EXECUTE FUNCTION public.tj_require_ui_actor('source', 'broker');--> statement-breakpoint

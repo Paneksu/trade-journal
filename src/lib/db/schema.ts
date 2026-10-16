@@ -408,7 +408,7 @@ export const trades = pgTable(
       .on(t.externalRef)
       .where(sql`${t.externalRef} is not null`),
     check("trades_source", sql`${t.source} in ('form', 'tradingview', 'fxreplay', 'broker')`),
-    check("trades_broker_ref", sql`${t.source} <> 'broker' or ${t.externalRef} ~ '^brk:'`),
+    check("trades_broker_ref", sql`${t.source} <> 'broker' or (${t.externalRef} is not null and ${t.externalRef} ~ '^brk:')`),
     check("trades_fees", sql`${t.fees} is null or ${t.fees} >= 0`),
     /* Powod i potencjal maja sens wylacznie przy trafionym kierunku. Formularz
        normalizuje to wczesniej (normalizujKierunek), wiec ten warunek jest
