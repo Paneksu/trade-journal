@@ -1,6 +1,6 @@
 # Presety reguł prop firm (futures), research do modułu prop
 
-Data odczytu: **2026-10-14** (wszystkie wartości). Zlecenie: MUST 7, ADR-033, tabela `prop_firm_presets` (model-danych.md, sekcja 5.6). Seed: `prop-presety.json`, 138 wierszy, 9 firm, 28 programów.
+Data odczytu: **2026-10-14** (wszystkie wartości reguł); **opłaty transakcyjne: 2026-10-16** (sekcja „Opłaty transakcyjne”). Zlecenie: MUST 7, ADR-033, tabela `prop_firm_presets` (model-danych.md, sekcja 5.6); opłaty: ADR-034 (wynik netto). Seed: `prop-presety.json`, 138 wierszy, 9 firm, 28 programów.
 
 ## Jak czytać
 
@@ -11,7 +11,8 @@ Data odczytu: **2026-10-14** (wszystkie wartości). Zlecenie: MUST 7, ADR-033, t
 - **Consistency**: % w kolumnie. Podstawa liczenia (łączny zysk, cel, zysk od ostatniej wypłaty) i skutek (`fail`, `raise_target`, `block_payout`) w `extra`.
 - Oznaczenia: `[DO WERYFIKACJI]` = sprzeczne źródła albo tylko blog/afiliacja. `[DO WERYFIKACJI: odczyt pośredni]` = oficjalna strona zwróciła HTTP 403, wartość pochodzi z podsumowania wyszukiwarki cytującego help center. `[BEZ DATY]` = strona nie podaje daty. `[NIEAKTUALNE]` = źródło stare.
 - W JSON `verified` = `NOT needs_verification`, `read_at` = `read_on` (aliasy z prośby; kolumny modelu to `needs_verification` i `read_on`). Seed wstawia kolumny modelu, `verified` i `read_at` można zignorować.
-- Rozróżnienie: **obserwacja** = odczytana wartość. **WYWNIOSKOWANE** = wyliczone z reguły.
+- Opłaty (od 2026-10-16): `fee_rt_mini_cents`, `fee_rt_micro_cents` (round turn za kontrakt, wejście i wyjście, centy USD), `fee_source_url` i szczegóły w `extra.fee` (platforma, zakres, rodzaj źródła, data strony, pola do weryfikacji, inne koszty).
+- Rozróżnienie: **obserwacja** = odczytana wartość. **WYWNIOSKOWANE** = wyliczone z reguły. **POTWIERDZONE** = zmierzone na prawdziwym pliku użytkownika.
 
 ## Podsumowanie
 
@@ -236,28 +237,95 @@ MLL: EOD trailing na wszystkich kontach, stoi na saldzie startowym (blokada = DD
 
 ---
 
+## Opłaty transakcyjne (round turn za kontrakt, odczyt 2026-10-16)
+
+**Co to jest.** Koszt wejścia i wyjścia jednego kontraktu (prowizja + giełda + NFA + clearing, o ile firma je wlicza). Dziennik liczy `fees = stawka × zamknięte kontrakty` (ADR-034), więc potrzebna jest stawka na kontrakt, osobno dla mini (NQ, ES) i micro (MNQ, MES). Wartości w JSON: `fee_rt_mini_cents`, `fee_rt_micro_cents`, `fee_source_url`, szczegóły w `extra.fee`.
+
+**Platforma użytkownika to Tradovate**, więc tam, gdzie źródło rozróżnia platformy (Apex, Earn2Trade), w polach jest stawka Tradovate, a stawka Rithmic w `extra.fee.by_platform_rt_cents`. Żadne oficjalne źródło nie rozróżnia stawki **eval i funded** (patrz uwagi przy firmach). Cennik detaliczny Tradovate i NinjaTrader nie dotyczy kont prop: stawkę ustala firma (potwierdza wtórnie proptradingvibes.com, 2026).
+
+### Konto użytkownika: stawka POTWIERDZONA plikiem (13.10.2026)
+
+Dane z prawdziwego eksportu użytkownika (Cash History z Tradovate, 13.10.2026; plik poza repo, numeru konta nie podaję, tylko prefiks `LFE`):
+
+- Jedno zamknięcie 9 kontraktów MNQ: prowizja 4,50 USD przy wejściu i 4,50 USD przy wyjściu = **0,50 USD na kontrakt na stronę = 1,00 USD RT za MNQ**. Jedyny typ opłaty w pliku to „Commission”, opłat giełdy i NFA osobno nie ma.
+- Saldo startowe na koncie: 25 000 USD (wpis „Fund Transaction”).
+- **Mapowanie na firmę: Lucid Trading, WYWNIOSKOWANE ze stawki, nie z prefiksu.** Prefiks `LFE` nie jest opisany w żadnym źródle, które znalazłem (szukałem w help center Lucid, w poradnikach i w sieci). Stawka 0,50 USD na stronę za micro zgadza się z tabelą Lucid ("Commission (Per Side)": MES i MNQ 0,50, ES i NQ 1,75) i nie zgadza się z żadną inną firmą z listy: Apex Tradovate dałby 9 × 0,52 = 4,68 USD, Tradeify 9 × 0,91 = 8,19 USD (all-in), Topstep i Bulenox 9 × 0,61 = 5,49 USD, MFFU 9 × 0,95 = 8,55 USD, TPT (nowa stawka) 9 × 0,75 = 6,75 USD. Do tego pasuje saldo 25K i to, że Lucid obsługuje Tradovate przez CQG. Prefiks `LFE` czytam jako „Lucid Flex Evaluation” (WYWNIOSKOWANE, nazwa nie potwierdzona). Program (Flex, Pro, Daily) i faza z samego pliku nie wynikają: potwierdź w panelu Lucid.
+- **Stawka micro (MNQ) dla Lucid: POTWIERDZONE** (plik użytkownika, 13.10.2026).
+- **Stawka mini (NQ, ES) dla Lucid: 3,50 USD RT, WYWNIOSKOWANE** z tej samej oficjalnej tabeli (1,75 × 2). Niepotwierdzone na koncie, bo w pliku nie ma transakcji mini.
+- Skutek dla wcześniejszej luki: dla Lucid micro odpowiedź na pytanie „czy giełda i NFA są wliczone” brzmi: osobno ich nie doliczono, a kwota 1,00 USD RT to cała opłata. Dla Apex i Take Profit Trader pytanie dalej otwarte.
+
+### Tabela opłat
+
+| Firma | Mini (ES, NQ) RT | Micro (MES, MNQ) RT | Co zawiera | Platforma w źródle | Źródło i data | Status |
+|---|---|---|---|---|---|---|
+| Topstep | $3,78 | $1,22 | wszystko (ES: NFA 0,02 + giełda 2,76 + prowizja 1,00; MES: 0,02 + 0,70 + 0,50). NQ i MNQ tylko suma | TopstepX (jedyna w artykule) | https://help.topstep.com/en/articles/8284213-what-are-the-commissions-and-fees-in-the-trading-combine-and-express-funded-account , `[BEZ DATY]` ("Updated over 2 weeks ago"), odczyt bezpośredni | oficjalne. Combine, XFA i Live tak samo |
+| Apex Trader Funding | $3,10 (Tradovate); $3,98 (Rithmic) | $1,04 (Tradovate); $1,02 (Rithmic) | `[DO WERYFIKACJI]` czy giełda wliczona | Tradovate i Rithmic osobne strony | https://apextraderfunding.com/help-center/tradovate/tradovate-commission-instruments i .../rithmic/rithmic-commissions-instruments/ , `[BEZ DATY]`, odczyt `[DO WERYFIKACJI: odczyt pośredni]` (403); mikro Rithmic i część wierszy z epicctrader.com, akt. 2026-07-30 (wtórne) | częściowo oficjalne |
+| Tradeify | $5,76 | $1,82 | wszystko (giełda + NFA + clearing + prowizja), wg "free membership" | Tradovate, Rithmic, WealthCharts, jedna tabela | https://help.tradeify.co/en/articles/14369021-tradeify-pricing-reference (kopia https://intercom.help/tradeify/en/articles/14369021-tradeify-pricing-reference) i .../10468315-trading-commission-fees , `[BEZ DATY]` ("Updated this week") | oficjalne. Stawki mogą się zmieniać z giełdą |
+| Lucid Trading | $3,50 (WYWNIOSKOWANE z tabeli firmy, 1,75 × 2) | **$1,00 POTWIERDZONE** plikiem użytkownika 13.10.2026 (0,50 na stronę) | tylko prowizja; w Cash History brak osobnych opłat giełdy i NFA | Tradovate (konto użytkownika); źródło firmy platformy nie podaje | https://support.lucidtrading.com/en/articles/11508978-approved-products-and-commissions , 2026-08-26 + plik użytkownika | oficjalne + potwierdzone (micro) |
+| MyFundedFutures | $4,68 | $1,90 | "Total Cost Round Trip", bez rozkładu | nie podano | https://help.myfundedfutures.com/en/articles/9735811-futures-instrument-list , 2026-08-24 | oficjalne. Faza (eval, sim funded, live) nie rozróżniona |
+| Take Profit Trader | $4,50 | $1,50 | `[DO WERYFIKACJI]` nieznane | Tradovate i nowe Rithmic (po 2026-08-08) | zmiana od 2026-08-09: https://propfirmmatch.com/futures/industry-news/take-profit-trader-updates-futures-commissions (2026-08-21, **wtórne**). Oficjalny help center (starszy, bez daty): $5,00 i $0,50, https://takeprofittrader.crunch.help/en/faq-s/commissions-on-test-and-pro | `[DO WERYFIKACJI]`: sprzeczne, brak komunikatu firmy |
+| Alpha Futures | $4,78 | $1,32 | wszystko (NFA 0,02 + giełda 1,38 / 0,35 + prowizja 0,99 / 0,29 per side) | `[DO WERYFIKACJI]` plik "Alpha Trader Commission and Fees", recenzje wspominają AlphaTrader | PDF dołączony do https://help.alpha-futures.com/en/articles/9492096-what-and-when-you-can-trade (artykuł 2026-07-17; PDF `[BEZ DATY]`, link podpisany, wygasa) | oficjalne, platforma niejasna |
+| Bulenox | $4,18 | $1,22 | wszystko ("exchange and clearing fees are already included") | nie podano | https://bulenox.com/legal/Bulenox-Rates.pdf , 2026-08-11 | oficjalne |
+| Earn2Trade | $5,76 (Tradovate, eval); $4,08 (Rithmic) | **brak** (MES i MNQ nie ma na wykresie). Wskazówka WYWNIOSKOWANA: MYM i M2K $1,90 (Tradovate), $1,86 (Rithmic) | "Total Per Side" × 2, zakładamy wszystko | Tradovate, Rithmic, Black Arrow (osobne obrazy) | https://help.earn2trade.com/en/articles/2425493-what-is-the-commission-on-earn2trade-evaluations , `[BEZ DATY]` ("Updated this week"), wartości z obrazów | oficjalne dla ES i NQ. Konto LiveSim (funded) płaci realne prowizje FCM: w JSON `null` |
+
+Uwagi:
+- Przeliczenie: źródła z kolumną "per side" (Lucid, Bulenox, Alpha, E2T, Apex) przemnożono przez 2. Alpha: 2 × (0,02 + 1,38 + 0,99) = 4,78 i 2 × (0,02 + 0,35 + 0,29) = 1,32. Bulenox 2 × 2,09 = 4,18 i 2 × 0,61 = 1,22.
+- Rozrzut: mini od $3,10 do $5,76, micro od $1,00 do $1,90. Stawki nie da się przyjąć jednej na wszystkie konta, stąd stawka per preset (ADR-034). Dla 10 MES Tradeify to $18,20, a 1 ES kosztuje $5,76 (przykład z samej strony Tradeify), więc koszt micro zjada przewagę mniejszego ryzyka.
+- Żadne źródło nie rozdziela eval i funded. U Topstep strona mówi wprost, że stawki obowiązują w Combine, XFA i Live Funded. U Earn2Trade funded to LiveSim z realnymi prowizjami FCM.
+- Zmiany w czasie: Topstep wprowadził prowizje na TopstepX od 2026-04-12 (wtórnie NexusFi; wcześniej tylko opłaty giełdy i NFA), Take Profit Trader zmienił stawki 2026-08-09, Alpha PDF bez daty. `prop_rules.valid_from` powinno obejmować stawki.
+- Topstep: poprzednia (luty 2025) wersja help center pokazywała TopstepX bez prowizji, tylko $0,04 NFA RT. Wygrywa bieżąca ($3,78 i $1,22).
+- Topstep: starsza wersja artykułu (intercom.help, bez daty, odczyt pośredni) podawała stawki dla Tradovate (ES $4,28 RT, MES $1,34 RT) `[NIEAKTUALNE?]`. Obecny artykuł opisuje wyłącznie TopstepX. Czy Topstep dopuszcza dziś Tradovate, nie potwierdziłem `[DO WERYFIKACJI]`.
+
+### Opłaty platformy i danych, osobno
+
+| Firma | Opłata platformy / danych obciążająca konto | Źródło |
+|---|---|---|
+| Topstep | W Combine Topstep pokrywa opłaty platformy dla wielu obsługiwanych platform (artykuł o kosztach, bez listy). Level 2: $38/mies. (z wcześniejszego odczytu). Artykuł o TopstepX: "Cannot connect to external platforms like TradingView" | https://www.topstep.com/en/articles/14434175-topstepx (odczyt pośredni), https://help.topstep.com/en/articles/8284229-what-are-the-costs-in-the-live-funded-account |
+| Apex | Nie znaleziono osobnej opłaty platformy. Miesięczna subskrypcja evalu to cena evalu (Rithmic $137-$677, Tradovate ok. $20-$30 taniej na poziom). Aktywacja PA jednorazowa, kwoty sprzeczne `[DO WERYFIKACJI]` | https://blog.traderspost.io/article/apex-trader-funding-pricing-evaluation-guide (2026-03-03, wtórne) |
+| Tradeify | Brak opłaty platformy (Tradovate, Rithmic, WealthCharts). Tradovate: **$300/mies.** za dane profesjonalne, jeśli nie podpiszesz umowy Non-Professional przy pierwszym logowaniu. Level 2 opcjonalnie płatny u Tradovate. TradingView opcjonalnie od $12,95/mies. | https://intercom.help/tradeify/en/articles/14369021-tradeify-pricing-reference |
+| Lucid | Brak subskrypcji i auto-odnowień. Brak opłat platformy i danych w artykułach. Reset płatny (kwota nieopublikowana) | https://support.lucidtrading.com/en/articles/11404620-simulated-account-fees |
+| MyFundedFutures | Nie znaleziono w oficjalnych źródłach `[DO WERYFIKACJI]` | |
+| Take Profit Trader | PRO: jednorazowo $130 aktywacji wg źródeł wtórnych; osobnej opłaty danych nie znaleziono `[DO WERYFIKACJI]` | https://blog.traderspost.io/article/take-profit-trader-pricing-evaluation-guide (wtórne) |
+| Alpha Futures | Miesięczna subskrypcja = cena evalu. Osobnych opłat nie znaleziono | https://help.alpha-futures.com/en/articles/11632512-standard-account-overview |
+| Bulenox | Nie znaleziono `[DO WERYFIKACJI]` | |
+| Earn2Trade | LiveSim: aktywacja $139 jednorazowo, pobierana z pierwszej wypłaty (Non-Professional), albo $140/mies. za giełdę (Professional); opłaty miesięczne danych CME nie są proporcjonalne | https://help.earn2trade.com/en/articles/1795200-what-costs-am-i-responsible-for-once-i-become-funded-with-a-live-livesim-account |
+
+### Luki w opłatach
+
+1. **Apex, Take Profit Trader** (403/404): stawki z odczytu pośredniego albo wtórnego; Apex NQ i MNQ/MES Rithmic nie widziane wprost.
+2. **Apex, Take Profit Trader**: nie wiadomo, czy podana kwota zawiera opłaty giełdy i NFA. Dla Lucid micro rozstrzygnięte plikiem użytkownika (wliczone w 1,00 USD, osobnych opłat brak). Dla pozostałych: kwota z Cash History po jednej transakcji.
+3. **Lucid mini (NQ)**: 3,50 USD niepotwierdzone na koncie (WYWNIOSKOWANE z tabeli). Prefiks `LFE` i program Lucid: wnioskowane, do potwierdzenia w panelu firmy.
+4. **Alpha**: nie wiadomo, czy konto jest na Tradovate czy na AlphaTrader. **MyFundedFutures, Bulenox**: platforma w dokumencie nie podana.
+5. **Earn2Trade**: brak MES i MNQ (obrazy ucięte), brak stawki LiveSim.
+6. **Opłaty platformy i danych**: brak w oficjalnych źródłach dla MyFundedFutures, Bulenox, Take Profit Trader.
+7. Nie czytałem cennika Tradovate ani NinjaTrader dla kont prop: oba nie dotyczą kont prop (stawkę ustala firma), a Tradovate "All-In Rates" to cennik detaliczny.
+
+---
+
 ## Wnioski dla projektu
 
 **Przyjmujemy jako standard (sprawdzone, wszystkie firmy):**
 - Każdy program ma DD jako trailing z blokadą na saldzie startowym (lub +$100) albo EOD bez blokady; czyste `static` w tej próbie nie występuje. Model `dd_type` + `dd_lock_cents` pokrywa wszystkie 138 wierszy.
 - Cel zysku, max DD i limit kontraktów istnieją w każdym evalu. DLL jest bardzo często opcjonalny albo miękki (blokada dnia), więc UI ma go pokazywać jako ostrzeżenie, nie blokadę (zgodnie z założeniem planu: AI nie składa zleceń).
+- Opłaty to stała pozycja kosztu przy każdej transakcji i wchodzą do salda, DD i DLL (Bulenox mówi to wprost). Wynik netto (ADR-034) jest więc zgodny z praktyką firm.
 
 **Robimy inaczej niż wynika z samego modelu (warstwa trzecia):**
 - Konta funded różnią się od evali znacząco, więc preset to **para** (program, faza), jak w modelu. Szczególnie: ta sama firma ma różny typ DD w evalu i na funded (MFFU Rapid, Lucid Daily, Apex), a consistency w evalu i na funded to inna reguła z innym skutkiem. Dziennik nie powinien pokazywać jednej liczby "consistency" bez `consistency_effect` (oblewa / podnosi cel / blokuje wypłatę) i podstawy liczenia.
 - Wiek presetu i data zakupu konta są ważniejsze od samych wartości: reguły zależą od daty zakupu (Lucid 2025-11-28, Tradeify 2025-09-12 i 2026-09-01, Apex 2026-03-01, Topstep 2026-01-12, Earn2Trade 2026-07-06). `prop_rules.valid_from` powinno domyślnie przyjmować datę zakupu konta, nie dzień dodania w dzienniku.
 - Dla Apex, Tradeify i Take Profit Trader (47 wierszy) pierwsze potwierdzenie ma wymagać otwarcia regulaminu: stąd `needs_verification = true`.
+- **Stawka opłat jest per konto, nie per firma ani globalna** (rozrzut mini $3,10 do $5,76, micro $1,00 do $1,90). Wszystkie stawki w seedzie traktuj jako domyślne do potwierdzenia: pierwsza transakcja z Cash History ma je uzgodnić (ADR-034 już to przewiduje), a rozbieżność dzienna ma być widoczna. Stawkę, której `extra.fee.scope` nie mówi jasno `all_in` albo `commission_only` z potwierdzeniem, UI powinien oznaczać "opłaty wg stawki, do potwierdzenia". Przykład z prawdziwego pliku: Lucid micro 1,00 USD RT zgadza się z tabelą firmy co do centa, więc pomiar z Cash History działa jako uzgodnienie.
 
 **Rekomendacje dla modelu (decyzja `web-architect` i backendu, modelu nie zmieniałem):**
-1. Kontrakt kluczy w `extra` dla `lib/domain/prop.ts`: `trail_basis` (`eod` | `intraday`), `consistency_basis` (`total_profit` | `profit_target` | `since_last_payout`), `consistency_effect` (`fail` | `raise_target` | `block_payout`), `dll_optional_usd`. W seedzie są one dziś zapisane jako wolny tekst; jeśli `prop.ts` ma je liczyć, trzeba je ujednolicić.
+1. Kontrakt kluczy w `extra` dla `lib/domain/prop.ts`: `trail_basis` (`eod` | `intraday`), `consistency_basis` (`total_profit` | `profit_target` | `since_last_payout`), `consistency_effect` (`fail` | `raise_target` | `block_payout`), `dll_optional_usd`. W seedzie są one dziś zapisane jako wolny tekst; jeśli `prop.ts` ma je liczyć, trzeba je ujednolicić. To samo dla `extra.fee.scope` (dziś tekst: `all_in`, `commission_only` albo opis niewiadomej), `extra.fee.platform` i `extra.fee.confirmed`.
 2. `phase` ma tylko `eval` i `funded`. Live (Topstep LFA, MFFU Live, Alpha Live, Earn2Trade Live) i etapy pośrednie (PRO+, Master) są poza seedem. Jeśli Szymon będzie handlował na live, potrzebna czwarta wartość albo osobne programy.
-3. UNIQUE `(firm, program, phase, account_size_cents, read_on)`: seed ma jedną datę odczytu; ponowny odczyt = nowe wiersze, stare zostają.
+3. UNIQUE `(firm, program, phase, account_size_cents, read_on)`: seed ma jedną datę odczytu; ponowny odczyt = nowe wiersze, stare zostają. Opłaty mają osobną datę odczytu (`extra.fee.read_on` 2026-10-16).
 4. Pokazywać `read_on` i ostrzegać o wieku presetu po 30 dniach (Tradeify, Apex i Alpha zmieniały reguły w ostatnich 8 tygodniach).
 
-**Do uzupełnienia przez Szymona:** które konta prop faktycznie ma (firma, program, rozmiar, data zakupu, ścieżka wypłat Topstep, wybór Option 1/2 w Bulenox, DLL przy zakupie w Topstep/Lucid). Bez tego preset nie da się przypiąć poprawnie.
+**Do uzupełnienia przez Szymona:** które konta prop faktycznie ma (firma, program, rozmiar, data zakupu, ścieżka wypłat Topstep, wybór Option 1/2 w Bulenox, DLL przy zakupie w Topstep/Lucid) oraz **na jakiej platformie** (Tradovate, Rithmic, TopstepX, AlphaTrader): od tego zależy stawka opłat. Dla konta o prefiksie `LFE`: potwierdzić w panelu Lucid program (Flex, Pro, Daily) i fazę. Bez tego preset nie da się przypiąć poprawnie.
 
-**Do zebrania w kolejnym przebiegu (nie zgadywałem):** Topstep XFA Scaling Plan (obraz), Bulenox Master/Funded (zwijane sekcje), Earn2Trade GAU100/150/200 i TCP50/100 (obrazy), ceny evali Apex, Lucid i MFFU per rozmiar, DLL w Apex PA dla 25K/100K/150K, Tradeify Select Daily 25K/100K/150K, Alpha Standard/Premium.
+**Do zebrania w kolejnym przebiegu (nie zgadywałem):** Topstep XFA Scaling Plan (obraz), Bulenox Master/Funded (zwijane sekcje), Earn2Trade GAU100/150/200 i TCP50/100 (obrazy), ceny evali Apex, Lucid i MFFU per rozmiar, DLL w Apex PA dla 25K/100K/150K, Tradeify Select Daily 25K/100K/150K, Alpha Standard/Premium; opłaty: luki z sekcji "Luki w opłatach".
 
 ## Zapisane pliki
 
 - R:\PROJEKTY\web_developer\projekty\trade-journal\docs\research\prop-presety.md
-- R:\PROJEKTY\web_developer\projekty\trade-journal\docs\research\prop-presety.json
+- R:\PROJEKTY\web_developer\projekty\trade-journal\docs\research\prop-presety.json (pola `fee_rt_*` dopisuje skrypt `dodaj-oplaty.mjs` z sesji 2026-10-16; sprawdź obecność `fee_rt_mini_cents` w pliku)
