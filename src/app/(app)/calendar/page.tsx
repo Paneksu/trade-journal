@@ -19,6 +19,7 @@ import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
 import { getNotatkiDnia, getZrzutyDnia } from "@/lib/queries/journal";
+import { POLA_KALENDARZA, podpisPol } from "@/lib/trades/podpis-notatki";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { longDate, money, monthName, percent, plural, pnlClass, rValue, tradesCount } from "@/lib/format";
 
@@ -225,8 +226,8 @@ export default async function CalendarPage({
               <DayNoteForm
                 key={day}
                 day={day}
-                accountId={null}
-                wersja={note && note.accountId === null ? note.updatedAt.toISOString() : ""}
+                // Wersja = skrót pól formularza (review B1); starszy wpis na koncie liczy się jak brak notatki bez konta.
+                wersja={podpisPol(note && note.accountId === null ? note : null, POLA_KALENDARZA)}
                 hasTrades={dayRealne.length > 0}
                 values={{
                   preSession: note?.preSession,

@@ -17,6 +17,14 @@ test("CSP z nonce na stronach i bez naruszeń w konsoli", async ({ page }) => {
     expect(csp.split(";").find((d) => d.trim().startsWith("script-src")) ?? "", adres).not.toContain("'unsafe-inline'");
     await page.waitForLoadState("networkidle");
   }
+  // Strony spoza renderu dynamicznego: plik statyczny strony offline i 404 (review potwierdzające, B2).
+  for (const adres of ["/offline.html", "/nie-ma-takiej-strony-csp"]) {
+    const odp = await page.goto(adres);
+    expect(odp?.headers()["content-security-policy"] ?? "", adres).toContain("script-src");
+    await page.waitForLoadState("networkidle");
+  }
+  await expect(page.getByRole("heading", { level: 1, name: "Nie ma takiej strony" })).toBeVisible();
+  await page.goto("/");
   // Hydratacja działa: paleta otwiera się skrótem (komponent kliencki).
   await page.keyboard.press("Control+k");
   await expect(page.getByRole("dialog")).toBeVisible();

@@ -1,0 +1,149 @@
+=== tekstUzytkownika: bez sprawdzenia NUL (mutacja w src/lib/actions/walidacja.ts)
+ ❯ src/lib/actions/walidacja.test.ts (2 tests | 1 failed) 10ms
+     × tekstUzytkownika: NUL, samotny surogat i za dużo bajtów to błąd; zwykły polski tekst przechodzi 6ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/lib/actions/walidacja.test.ts > walidacja akcji UI > tekstUzytkownika: NUL, samotny surogat i za dużo bajtów to błąd; zwykły polski tekst przechodzi
+AssertionError: expected true to be false // Object.is equality
+- Expected
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+
+=== bezpiecznyAdres: stary regex przepuszczajacy //host (mutacja w src/components/trade/markdown.tsx)
+ ❯ src/components/trade/markdown.test.ts (2 tests | 1 failed) 7ms
+     × odrzuca adresy bez protokołu i obce protokoły 4ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/components/trade/markdown.test.ts > bezpiecznyAdres (linki w markdownie) > odrzuca adresy bez protokołu i obce protokoły
+AssertionError: expected '//zly.pl/x' to be '' // Object.is equality
+- Expected
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+
+=== CSP: 'unsafe-inline' w script-src (mutacja w src/lib/csp.ts)
+  2 passed (9.9s)
+
+=== dzien.ts: brak odmowy przy konflikcie (mutacja w src/lib/decyzje/dzien.ts)
+ ❯ src/lib/decyzje/dzien.db.test.ts (2 tests | 2 failed) 523ms
+     × zmiana tych samych pól w tle: odmowa i nic nie nadpisane; scal zachowuje oba teksty; inne pola nie są konfliktem 477ms
+     × dwa pierwsze zapisy naraz: jeden przechodzi, drugi dostaje konflikt; dopiski równoległe nie giną 20ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/lib/decyzje/dzien.db.test.ts > notatka dnia: wersja pól formularza i dopisek atomowy (baza lokalna) > zmiana tych samych pól w tle: odmowa i nic nie nadpisane; scal zachowuje oba teksty; inne pola nie są konfliktem
+AssertionError: expected true to be false // Object.is equality
+- Expected
++ Received
+ FAIL  src/lib/decyzje/dzien.db.test.ts > notatka dnia: wersja pól formularza i dopisek atomowy (baza lokalna) > dwa pierwsze zapisy naraz: jeden przechodzi, drugi dostaje konflikt; dopiski równoległe nie giną
+AssertionError: expected [ { ok: true }, { ok: true } ] to have a length of 1 but got 2
+- Expected
++ Received
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+
+=== dni.ts: accountId przyjmowany (bez 422) (mutacja w src/lib/api-v2/dni.ts)
+ ❯ src/lib/api-v2/dzien-bez-konta.db.test.ts (1 test | 1 failed) 772ms
+     × PUT z accountId: 422 day_note_has_no_account i żadnego wiersza; bez konta: jeden wiersz dnia; sesja osobno 700ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/lib/api-v2/dzien-bez-konta.db.test.ts > notatka dnia bez konta w API v2 (baza lokalna) > PUT z accountId: 422 day_note_has_no_account i żadnego wiersza; bez konta: jeden wiersz dnia; sesja osobno
+AssertionError: {"id":1039,"date":"1981-09-14","created":true}: expected 201 to be 422 // Object.is equality
+- Expected
++ Received
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+
+=== logowanie: karta szersza niz ekran i tekst o zlym kontrascie (mutacja w src/app/login/page.tsx)
+  3 passed (24.4s)
+
+koniec
+--- druga tura (CSP i logowanie: przeładowanie proxy i mutacja bez overflow-hidden) ---
+=== CSP: 'unsafe-inline' w script-src (mutacja w src/lib/csp.ts)
+  2 passed (11.2s)
+
+=== logowanie: karta szersza niz ekran i tekst o zlym kontrascie (mutacja w src/app/login/page.tsx)
+    Error: /login
+    Expected: <= 375
+    Received:    398
+    test-results\logowanie-wyglad-logowanie-aae0f-ne-axe-i-szerokość-przy-375-dziennik\test-failed-1.png
+  1 failed
+  2 passed (8.6s)
+
+koniec
+--- trzecia tura (CSP: mutacja w kodzie; logowanie: pole hasla bez etykiety = naruszenie axe) ---
+1
+=== CSP: 'unsafe-inline' w script-src (mutacja w src/lib/csp.ts)
+    Error: /
+    Expected substring: not "'unsafe-inline'"
+    Received string:        " script-src 'self' 'nonce-Sahc+4Ay0meHjyKF5iZWVg==' 'strict-dynamic' 'unsafe-inline' 'unsafe-eval'"
+    test-results\csp-CSP-z-nonce-na-stronach-i-bez-naruszeń-w-konsoli-dziennik\test-failed-1.png
+    Error Context: test-results\csp-CSP-z-nonce-na-stronach-i-bez-naruszeń-w-konsoli-dziennik\error-context.md
+  1 failed
+  1 passed (5.7s)
+=== logowanie: pole hasla bez etykiety (mutacja w src/app/login/login-form.tsx)
+    Error: locator.fill: Test timeout of 45000ms exceeded.
+    test-results\logowanie.setup.ts-logowanie-hasłem-logowanie\test-failed-1.png
+    Error Context: test-results\logowanie.setup.ts-logowanie-hasłem-logowanie\error-context.md
+  1 failed
+koniec
+=== logowanie: pole hasla bez etykiety, --no-deps (mutacja w src/app/login/login-form.tsx)
+    Error: /login
+    - Expected  - 1
+    + Received  + 3
+    +   "label: #haslo",
+    test-results\logowanie-wyglad-logowanie-e73f7-e-axe-i-szerokość-przy-1440-dziennik\test-failed-1.png
+    Error Context: test-results\logowanie-wyglad-logowanie-e73f7-e-axe-i-szerokość-przy-1440-dziennik\error-context.md
+    Error: /login
+    - Expected  - 1
+    + Received  + 3
+    +   "label: #haslo",
+--- czwarta tura (slepa-ui: edycja z wyjsciem, notatka z dopiskiem i zalacznikiem po wejsciu) ---
+ e2e/slepa-ui.spec.ts                      | 28 +++++++++++++++++++--
+ public/offline.html                       |  3 +++
+ src/app/(app)/calendar/page.tsx           |  5 ++--
+ src/app/(app)/page.tsx                    |  5 ++--
+ src/app/(app)/trades/[id]/edit/page.tsx   |  2 +-
+ src/app/login/login-form.tsx              |  5 +++-
+ src/app/login/page.tsx                    |  8 +++---
+ src/components/calendar/day-note-form.tsx | 17 ++++++-------
+ src/components/dzis/formularze.tsx        | 21 ++++++++--------
+ src/lib/actions/journal.ts                |  7 ++++--
+ src/lib/actions/rytual.ts                 | 10 ++++----
+ src/lib/actions/settings.ts               |  3 ++-
+ src/lib/api-v2/dni.ts                     |  3 ++-
+ src/lib/api-v2/dzien-bez-konta.db.test.ts | 13 +++++++++-
+ src/lib/api-v2/mentor.ts                  |  4 +--
+ src/lib/decyzje/dzien.db.test.ts          | 42 ++++++++++++++++++-------------
+ src/lib/decyzje/dzien.ts                  | 39 ++++++++++++++++++++--------
+ src/lib/queries/mozg.ts                   |  2 +-
+ 18 files changed, 146 insertions(+), 71 deletions(-)
+    Error: expect(received).toEqual(expected) // deep equality
+    +   "/trades/4245/edit HTML: „20777.75”",
+    +   "/trades/4245/edit RSC: „20777.75”",
+    +   "/mozg/notatki/2664 HTML: „Dopisek po wejściu mvb4q5qy”",
+    +   "/mozg/notatki/2664 HTML: „nota-e2e/po-wejsciu-mvb4q5qy.webp”",
+    +   "/mozg/notatki/2664 RSC: „Dopisek po wejściu mvb4q5qy”",
+    +   "/mozg/notatki/2664 RSC: „nota-e2e/po-wejsciu-mvb4q5qy.webp”",
+    test-results\slepa-ui-Ślepa-ocena-wynik-e14fc-kwoty-R-i-treści-po-wejściu-dziennik\test-failed-1.png
+    Error Context: test-results\slepa-ui-Ślepa-ocena-wynik-e14fc-kwoty-R-i-treści-po-wejściu-dziennik\error-context.md
+    Error Context: test-results\slepa-ui-Ślepa-ocena-wynik-e14fc-kwoty-R-i-treści-po-wejściu-dziennik\error-context.md
+  1 failed
+  1 passed (7.2s)
+koniec
+--- piata tura (narzedzia/bramka-designu.mjs, kopia: faza5-zrzuty/bramka-designu.mjs.przed-mutacja) ---
+=== mutacja A: pomija tekst przy kazdym przodku sticky (takze w samym pasku)
+# Subtest: tekst o złym kontraście W przyklejonym pasku dalej blokuje; treść pod paskiem trafia do nieoznaczalnych
+not ok 1 - tekst o złym kontraście W przyklejonym pasku dalej blokuje; treść pod paskiem trafia do nieoznaczalnych
+      - kontrast: sprawdzono 58 elementów z tekstem na jednolitym tle, 3 nieoznaczalnych (tło niejednolite: obraz, gradient, wzór; pod paskiem: 3) — sprawdź okiem:
+          main > p:nth-of-type(16) „Wiersz treści 16 o dobrym kontraście.” (pod paskiem)
+          main > p:nth-of-type(17) „Wiersz treści 17 o dobrym kontraście.” (pod paskiem)
+=== mutacja B: wersja sprzed 16.10 (bez reguly paska, kopia bramka-designu.mjs.kopia)
+# Subtest: tekst o złym kontraście W przyklejonym pasku dalej blokuje; treść pod paskiem trafia do nieoznaczalnych
+not ok 1 - tekst o złym kontraście W przyklejonym pasku dalej blokuje; treść pod paskiem trafia do nieoznaczalnych
+  error: 'tekst treści przykryty paskiem ma być policzony jako „pod paskiem”'
+# pass 0
+# fail 1
+--- szosta tura (0029: flaga bez transakcji mimo trade'ow dnia)
+     × dwa konta w tym samym dniu: jeden wiersz bez konta z obiema treściami i przepiętymi zrzutami; cofnięcie przywraca 88ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+AssertionError: expected [ true, 'no_setup' ] to deeply equal [ false, null ]
+- Expected
++ Received
+      Tests  1 failed (1)

@@ -14,7 +14,7 @@ import { bladWalidacji, poleLf, tekstUzytkownika } from "./walidacja";
  * Rytuał dnia na ekranie „Dziś” (MUST 11). Zapis w tym samym miejscu co `PUT /api/v2/days/:date`: jedna notatka dnia
  * bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»), jako aktor `ui` przez `lib/decyzje/dzien.ts`
  * (code review fazy 5, P3). Pola walidowane tym samym schematem co API (`DzienZapisSchema`, audyt pkt 5).
- * Formularz wysyła `wersja` (updatedAt z chwili otwarcia): zmiana w międzyczasie = odmowa, nie nadpisanie (P1).
+ * Formularz wysyła `wersja` = skrót SWOICH pól z chwili otwarcia: zmiana tych pól w tle = odmowa z opcją „scal” (P1, B1).
  * Unieważnienie dnia to Twoje słowa (`user_words`, rola `day.invalidation`), zapisane bajt w bajt; zmiana = nowy wpis
  * wskazujący poprzedni (`supersedes_id`), stary zostaje.
  */
@@ -79,8 +79,8 @@ export async function zapiszPrzedSesja(_p: ActionState, d: FormData): Promise<Ac
   }
 
   const { bias, maxTrades, sleep, energy, preSession } = pola.data;
-  const w = await zapiszNotatkeDniaUi(dzien, { bias, maxTrades, sleep, energy, preSession }, wersja(d), uniew);
-  if (!w.ok) return { error: w.komunikat };
+  const w = await zapiszNotatkeDniaUi(dzien, { bias, maxTrades, sleep, energy, preSession }, wersja(d), uniew, d.get("scal") === "1");
+  if (!w.ok) return { error: w.komunikat, konflikt: w.konflikt };
   revalidatePath("/");
   return { ok: true };
 }
@@ -100,8 +100,8 @@ export async function zapiszPoSesji(_p: ActionState, d: FormData): Promise<Actio
     if (!t.success) return { error: bladWalidacji(t.error, { "": NAZWY.postSession }) };
   }
   const { postSession, dayRating, mood } = pola.data;
-  const w = await zapiszNotatkeDniaUi(dzien, { postSession, dayRating, mood }, wersja(d));
-  if (!w.ok) return { error: w.komunikat };
+  const w = await zapiszNotatkeDniaUi(dzien, { postSession, dayRating, mood }, wersja(d), null, d.get("scal") === "1");
+  if (!w.ok) return { error: w.komunikat, konflikt: w.konflikt };
   revalidatePath("/");
   return { ok: true };
 }

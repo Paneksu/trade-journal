@@ -8,7 +8,8 @@ import { db } from "@/lib/db";
 import { accounts, instruments, settings } from "@/lib/db/schema";
 import { walidujFazeProp } from "@/lib/domain/kategorie";
 
-export type ActionState = { ok?: boolean; error?: string };
+/** `konflikt`: zapis notatki dnia odrzucony, bo te same pola zmieniły się w tle (formularz pokazuje „scal” i „odśwież”). */
+export type ActionState = { ok?: boolean; error?: string; konflikt?: boolean };
 
 function text(d: FormData, k: string): string | null {
   const w = d.get(k);

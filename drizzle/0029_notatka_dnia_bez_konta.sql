@@ -45,6 +45,7 @@ DECLARE
   v_bias text;
   v_no_trade boolean;
   v_reason no_trade_reason;
+  v_ma_trady boolean;
   v_created timestamptz;
   v_updated timestamptz;
 BEGIN
@@ -57,6 +58,8 @@ BEGIN
       CONTINUE;
     END IF;
 
+    -- Niezmiennik API (409 day_has_trades): dzien z trade'ami nie jest dniem bez transakcji.
+    v_ma_trady := EXISTS (SELECT 1 FROM "trades" t WHERE t."trading_day" = v_day AND t."backtest_session_id" IS NULL AND t."status"::text <> 'missed');
     v_pierwszy := true;
     v_pre := NULL; v_post := NULL; v_dopiski := NULL;
     FOR r IN
@@ -90,9 +93,15 @@ BEGIN
         v_mood := coalesce(v_mood, r."mood"); v_energy := coalesce(v_energy, r."energy");
         v_rating := coalesce(v_rating, r."day_rating"); v_sleep := coalesce(v_sleep, r."sleep");
         v_max := coalesce(v_max, r."max_trades"); v_bias := coalesce(v_bias, r."bias");
-        -- Dzien bez transakcji: flaga jest true, jesli mial ja ktorykolwiek scalany wpis (decyzja sesji glownej 16.10.2026);
-        -- powod z pierwszego wpisu, ktory go podal, inne powody trafiaja linia do "Po sesji" (wyzej).
-        IF r."no_trade" AND NOT v_no_trade THEN v_no_trade := true; v_reason := coalesce(v_reason, r."no_trade_reason"); END IF;
+        -- Dzien bez transakcji: flaga jest true, jesli mial ja ktorykolwiek scalany wpis, CHYBA ZE dzien ma trade'y
+        -- (decyzje sesji glownej 16.10.2026: OR; niezmiennik API wygrywa). Wtedy flaga z wpisu trafia linia do "Po sesji".
+        IF r."no_trade" AND NOT v_no_trade THEN
+          IF v_ma_trady THEN
+            v_dopiski := concat_ws(E'\n', v_dopiski, 'Ten wpis oznaczal dzien bez transakcji' || coalesce(' (' || r."no_trade_reason"::text || ')', '') || ', ale dzien ma trade''y' || v_et);
+          ELSE
+            v_no_trade := true; v_reason := coalesce(v_reason, r."no_trade_reason");
+          END IF;
+        END IF;
         v_created := least(v_created, r."created_at"); v_updated := greatest(v_updated, r."updated_at");
       END IF;
     END LOOP;

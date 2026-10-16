@@ -32,6 +32,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
     const DZIEN = "1977-03-07";
     const SAM = "1977-03-08";
     const MIESZANY = "1977-03-09";
+    const Z_TRADEM = "1977-03-10";
     await sql
       .begin(async (tx) => {
         await tx.unsafe(cofniecie);
@@ -46,6 +47,12 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
         const [nsesja] = await tx`insert into day_notes (day, backtest_session_id, post_session) values (${DZIEN}, ${s.id}, 'Sesja') returning id`;
         await tx`insert into screenshots (file, day_note_id, sort_order) values ('dzien-x/a0.webp', ${na.id}, 0), ('dzien-x/b0.webp', ${nb.id}, 0), ('dzien-x/b1.webp', ${nb.id}, 1)`;
         await tx`insert into screenshots (file, day_note_id, sort_order) values ('dzien-x/s0.webp', ${nsesja.id}, 0)`;
+        // Dzień z trade'em: wpis z flagą „bez transakcji” nie może jej przenieść (niezmiennik API, decyzja 16.10.2026).
+        const [instr] = await tx`select id from instruments order by id limit 1`;
+        await tx`insert into trades (account_id, instrument_id, direction, status, entry_time, entry_price, contracts, trading_day)
+          values (${a.id}, ${instr.id}, 'long', 'closed', ${`${Z_TRADEM}T14:30:00Z`}, 100, 1, ${Z_TRADEM})`;
+        await tx`insert into day_notes (day, account_id, post_session) values (${Z_TRADEM}, ${a.id}, 'Grałem')`;
+        await tx`insert into day_notes (day, account_id, no_trade, no_trade_reason) values (${Z_TRADEM}, ${b.id}, true, 'no_setup')`;
         // Notatka bez konta (rytuał/AI) i wpis na koncie (stary kalendarz) w tym samym dniu.
         const [nbez] = await tx`insert into day_notes (day, account_id, pre_session, mood, bias) values (${MIESZANY}, null, 'Plan z rytuału', 2, 'long') returning id`;
         const [nkonto] = await tx`insert into day_notes (day, account_id, post_session, mood, energy) values (${MIESZANY}, ${a.id}, 'Wniosek z kalendarza', 4, 3) returning id`;
@@ -85,6 +92,9 @@ describe.skipIf(!MOZNA_NA_BAZIE)("migracja 0029: jedna notatka dnia bez konta (b
           ["dzien-x/m-bez.webp", nbez.id, 0],
           ["dzien-x/m-konto.webp", nbez.id, 1],
         ]);
+        const [zt] = await tx`select no_trade, no_trade_reason, post_session from day_notes where day = ${Z_TRADEM} and backtest_session_id is null`;
+        expect([zt.no_trade, zt.no_trade_reason]).toEqual([false, null]);
+        expect(zt.post_session).toContain("Ten wpis oznaczal dzien bez transakcji (no_setup), ale dzien ma trade'y — [Konto B 0029]");
         // Notatka sesji backtestu bez zmian.
         const [sesja] = await tx`select account_id, backtest_session_id, post_session from day_notes where id = ${nsesja.id}`;
         expect([sesja.backtest_session_id, sesja.post_session]).toEqual([s.id, "Sesja"]);

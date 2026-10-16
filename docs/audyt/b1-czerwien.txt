@@ -1,0 +1,102 @@
+
+Running 3 tests using 1 worker
+
+[1/3] [logowanie] › e2e\logowanie.setup.ts:6:6 › logowanie hasłem
+[2/3] [dziennik] › e2e\notatka-tlo.spec.ts:33:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › kalendarz: wpisz tekst, wklej zrzut dnia, tekst dalej jest w polu i zapisuje się bez konfliktu
+  1) [dziennik] › e2e\notatka-tlo.spec.ts:33:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › kalendarz: wpisz tekst, wklej zrzut dnia, tekst dalej jest w polu i zapisuje się bez konfliktu 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator:  locator('#postSession')
+    Expected: "Po sesji w toku mvb4gjx9"
+    Received: ""
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 5000ms
+      - waiting for locator('#postSession')
+        14 × locator resolved to <textarea rows="3" id="postSession" name="postSession" placeholder="Co się wydarzyło, co powtórzyć, czego nie robić jutro." class="w-full rounded-[var(--radius-control)] border border-line-strong bg-surface-2 px-2.5 py-2 text-sm text-text placeholder:text-faint przejscie hover:border-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50 aria-[invalid=true]:border-loss min-h-24 resize-y"></textarea>
+           - unexpected value ""
+
+
+      44 |     await expect(page.getByAltText(new RegExp(`Zrzut \\d+ z \\d+ — dzień ${DZIEN}`))).toHaveCount(1);
+      45 |     await page.waitForLoadState("networkidle");
+    > 46 |     await expect(page.locator("#postSession")).toHaveValue(tekst);
+         |                                                ^
+      47 |
+      48 |     await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+      49 |     await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+        at R:\PROJEKTY\tj-wt\faza5\e2e\notatka-tlo.spec.ts:46:48
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\notatka-tlo-Notatka-dnia-t-aaa90--zapisuje-się-bez-konfliktu-dziennik\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\notatka-tlo-Notatka-dnia-t-aaa90--zapisuje-się-bez-konfliktu-dziennik\error-context.md
+
+    Error Context: test-results\notatka-tlo-Notatka-dnia-t-aaa90--zapisuje-się-bez-konfliktu-dziennik\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\notatka-tlo-Notatka-dnia-t-aaa90--zapisuje-się-bez-konfliktu-dziennik\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\notatka-tlo-Notatka-dnia-t-aaa90--zapisuje-się-bez-konfliktu-dziennik\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[3/3] [dziennik] › e2e\notatka-tlo.spec.ts:56:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › Dziś: wpisz „Po sesji”, zapisz „Przed sesją”; tekst „Po sesji” zostaje w polu i zapisuje się
+  1 failed
+    [dziennik] › e2e\notatka-tlo.spec.ts:33:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › kalendarz: wpisz tekst, wklej zrzut dnia, tekst dalej jest w polu i zapisuje się bez konfliktu 
+  1 did not run
+  1 passed (11.6s)
+
+Running 2 tests using 1 worker
+
+[1/2] [logowanie] › e2e\logowanie.setup.ts:6:6 › logowanie hasłem
+[2/2] [dziennik] › e2e\notatka-tlo.spec.ts:56:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › Dziś: wpisz „Po sesji”, zapisz „Przed sesją”; tekst „Po sesji” zostaje w polu i zapisuje się
+  1) [dziennik] › e2e\notatka-tlo.spec.ts:56:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › Dziś: wpisz „Po sesji”, zapisz „Przed sesją”; tekst „Po sesji” zostaje w polu i zapisuje się 
+
+    Error: expect(locator).toHaveValue(expected) failed
+
+    Locator:  locator('#rytual-po')
+    Expected: "Wniosek w toku mvb4h1wx"
+    Received: ""
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveValue" with timeout 5000ms
+      - waiting for locator('#rytual-po')
+        14 × locator resolved to <textarea rows="5" id="rytual-po" name="postSession" class="przejscie w-full rounded-[var(--radius-tab)] border border-line-strong bg-surface-2 px-3 py-2 text-karta text-text placeholder:text-faint hover:border-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-y"></textarea>
+           - unexpected value ""
+
+
+      68 |       await expect(formPrzed.getByText("Zapisano.")).toBeVisible();
+      69 |       await page.waitForLoadState("networkidle");
+    > 70 |       await expect(po).toHaveValue(tekstPo);
+         |                        ^
+      71 |
+      72 |       const formPo = page.locator("form").filter({ has: po });
+      73 |       await formPo.getByRole("button", { name: "Zapisz po sesji" }).click();
+        at R:\PROJEKTY\tj-wt\faza5\e2e\notatka-tlo.spec.ts:70:24
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results\notatka-tlo-Notatka-dnia-t-45213-staje-w-polu-i-zapisuje-się-dziennik\test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results\notatka-tlo-Notatka-dnia-t-45213-staje-w-polu-i-zapisuje-się-dziennik\error-context.md
+
+    Error Context: test-results\notatka-tlo-Notatka-dnia-t-45213-staje-w-polu-i-zapisuje-się-dziennik\error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results\notatka-tlo-Notatka-dnia-t-45213-staje-w-polu-i-zapisuje-się-dziennik\trace.zip
+    Usage:
+
+        npx playwright show-trace test-results\notatka-tlo-Notatka-dnia-t-45213-staje-w-polu-i-zapisuje-się-dziennik\trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    [dziennik] › e2e\notatka-tlo.spec.ts:56:7 › Notatka dnia: tekst w polu przeżywa zmiany w tle › Dziś: wpisz „Po sesji”, zapisz „Przed sesją”; tekst „Po sesji” zostaje w polu i zapisuje się 
+  1 passed (13.0s)

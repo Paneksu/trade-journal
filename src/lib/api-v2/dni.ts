@@ -152,7 +152,8 @@ export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSch
     tx
     .insert(dayNotes)
     .values({ day: data, accountId: sessionId ? null : accountId, backtestSessionId: sessionId, ...podane, updatedAt: teraz })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, sessionId), set: { ...podane, updatedAt: teraz } })
+    // Bez podanych pól (np. załącznik dnia zakłada notatkę) treść się nie zmienia, więc updatedAt też nie (review B1).
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, sessionId), set: { ...podane, updatedAt: Object.keys(podane).length > 0 ? teraz : sql`${dayNotes.updatedAt}` } })
     .returning({ id: dayNotes.id, utworzono: sql<boolean>`(xmax = 0)` }),
   );
   return { ok: true, id: wiersz.id, utworzono: wiersz.utworzono };
