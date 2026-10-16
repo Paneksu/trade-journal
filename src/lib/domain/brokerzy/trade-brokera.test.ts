@@ -8,7 +8,7 @@ import { parsujPlikBrokera } from "./tradovate";
 import type { Wypelnienie } from "./typy";
 import { uzgodnij } from "./uzgodnienie";
 import { wynikTraduBrokera } from "./wynik";
-import { bajty, CASH, ORDERS, TERAZ } from "./testowe";
+import { bajty, CASH, ORDERS, TERAZ } from "@/lib/brokerzy/testowe";
 
 const MNQ: InstrumentSpec = { tickSize: 0.25, tickValue: 500, rthFrom: "09:30", rthTo: "16:00", exchangeTimezone: "America/New_York" };
 const NQ: InstrumentSpec = { ...MNQ, tickValue: 5000 };

@@ -2291,3 +2291,30 @@ Testy wyłącznie na bazie lokalnej (`127.0.0.1:55433`), nigdy na produkcji.
 - Automat stosuje dopasowania 1:1 bez dodatkowego kliknięcia, z „Cofnij”. Słowa użytkownika: «Tak, akceptuję» (po opisie ryzyka sfałszowanego pliku w Pobranych).
 - Przeliczenie historii na netto: przycisk z podglądem, tylko trade'y bez kwoty z rachunku. Słowa użytkownika: «Przycisk z podglądem».
 - Aktywne konto dnia jest wielokrotne (handel kilkoma kontami naraz). Słowa użytkownika: «Kilka naraz».
+
+### ADR-034, wykonanie etapu A: odstępstwa od szkicu i decyzje wykonawcy (2026-10-16)
+
+Etap A zbudowany na gałęzi `feat/broker-import` (migracje 0030-0032, `lib/domain/brokerzy`, `lib/brokerzy`, trasy `/api/v2/broker/**`, UI Prop → Połączenia,
+łącznik `tj` na gałęzi `feat/broker-watch`). Zmiany względem tekstu ADR i `docs/v2/model-danych.md` 5.10 (klasa gustu albo mechaniczna; do wglądu użytkownika):
+
+1. **Podział migracji.** `day_accounts` jest w `0031` (zlecenie wykonawcze), nie w `0030`; `prop_firm_platforms` (tabela) w `0031`, jej wiersze i stawki z presetów w `0032`
+   (dane generuje `scripts/generuj-seed-oplat.mjs` z `docs/research/prop-presety.json`; `extra.fee` dopisane do istniejącego `extra`, więc test „presety zgodne z JSON-em” przechodzi).
+2. **Dodatkowa tabela `broker_cash_events`** (Cash History). Plik Cash History może przyjść przed Orders albo po nich, więc prowizje i wynik brutto par (`Trade Paired`) są osobnymi zdarzeniami
+   łączonymi z wypełnieniami po sekundzie i kontrakcie przy każdym przeliczeniu okna (`broker_fills.fee_cents` jest pochodną). Plik, jak w ADR, nie jest przechowywany.
+3. **`broker_accounts.account_id` może być NULL.** Konto zgłoszone przez automat czeka na przypisanie w UI (inbox nie przypisuje kont). Trigger pozwala tokenowi importu wyłącznie WSTAWIĆ konto bez przypisania.
+4. **`broker_imports.status` ma też `rejected`** (plik rozpoznany, ale z błędnymi wierszami; automat go nie stosuje, zostaje u klienta, powód widać w „Do decyzji”). `warnings jsonb` i `note` na imporcie.
+5. **Token `import_broker`:** ważność **90 dni** (decyzja gustu; ADR nie podaje), osobny wiersz `api_tokens` z CHECK-iem: tylko samodzielny, tylko `created_via = 'ui'`, zawsze z terminem.
+   Baza sprawdza zakres wprost (funkcja `tj_broker_aktor_import`: token istnieje, ma dokładnie `{import_broker}`, nie jest uniewazniony ani wygasly) w triggerach tabel brokera.
+6. **Przeliczanie okna:** trade brokera = grupa wypelnien od ostatniego punktu płaskiej pozycji; klucz trade'a = id pierwszego wypelnienia wejscia (`brk:<platforma>:<skrot konta 12 zn.>:<id>`),
+   dzięki czemu zachodzący plik zachowuje powiązanie z dziennikiem. Opłaty z pliku, gdy znane dla KAŻDEGO wypelnienia trade'a (źródło `broker`), inaczej stawka x zamkniete kontrakty (`rate`); bez stawki netto jest NULL (nie udajemy wyniku).
+7. **Dopasowanie** działa tylko dla trade'ów dziennika zamkniętych (`status = closed`, bez sesji backtestu), bo tylko zamknięty trade przyjmie `broker_amount` (walidacja `persistTrade`). Dopasowanie 1:1 wymaga także tej samej liczby kontraktów.
+   Cofnięte dopasowanie dostaje stan `skipped` (decyzja użytkownika: kolejny plik nie dopasuje go ponownie). Dopasowanie oznacza trade dziennika jako „poprawiony w aplikacji” (`updated_at > ingested_at`),
+   więc synchronizacja z TradingView nie nadpisze kwoty z rachunku (zwróci `conflict`).
+8. **Podgląd importu w UI = pełny import w transakcji, która zawsze się wycofuje** (zero dryfu między podglądem a zapisem). Zapis wymaga SHA-256 z podglądu.
+9. **Sugestie `broker_match` / `broker_trade`:** `broker_match` ma cel `trade` i `payload.brokerTradeId`; `broker_trade` ma cel `{type: broker_trade, id}` i `payload {noteId?, wordsIds[]}`.
+   Cofnięcie `broker_trade` kasuje utworzony trade BEZ nagrobka. Trade z `source = 'broker'` tworzy i zmienia wyłącznie aktor `ui` (trigger).
+10. **Faza z presetu:** przypięcie presetu przez UI ustawia pustą fazę konta; preset dla innej fazy to 409 `phase_mismatch` (także przez API).
+11. **Odrzucone w kodzie, nie w UI:** gdy `BROKER_ID_HMAC_KEY` nie jest ustawiony, import odpowiada 503 `broker_not_configured` (nie zapisuje numeru konta w innej postaci).
+12. **Strumień CSV z dziennika:** w repo nie ma dziś żadnego eksportu CSV; funkcja ucieczki formuł (`lib/domain/brokerzy/csv-eksport.ts`) jest gotowa i przetestowana na każdy znak z ADR, do użycia przy pierwszym eksporcie.
+
+Pytania klasy trzeciej zostawione w raporcie wykonawcy (nie rozstrzygnięte tutaj).

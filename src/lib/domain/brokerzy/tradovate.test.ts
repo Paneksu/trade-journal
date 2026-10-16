@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { parsujPlikBrokera, rodzajZdarzeniaCash } from "./tradovate";
-import { bajty, CASH, NAGLOWEK_CASH, NAGLOWEK_ORDERS, ORDERS, plikCash, plikOrders, TERAZ, wierszCash, wierszOrders } from "./testowe";
+import { bajty, CASH, NAGLOWEK_CASH, NAGLOWEK_ORDERS, ORDERS, plikCash, plikOrders, TERAZ, wierszCash, wierszOrders } from "@/lib/brokerzy/testowe";
 
 const opcje = { strefa: "Europe/Warsaw", teraz: TERAZ };
 

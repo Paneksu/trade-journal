@@ -6,7 +6,7 @@ import { parsujCzasBrokera } from "./czas";
 import { FORMATY, rozpoznajFormat } from "./formaty";
 import { klasaKontraktu, rdzenKontraktu } from "./kontrakty";
 import { parsujCenty, parsujLiczbe } from "./liczby";
-import { bajty, NAGLOWEK_CASH, NAGLOWEK_ORDERS } from "./testowe";
+import { bajty, NAGLOWEK_CASH, NAGLOWEK_ORDERS } from "@/lib/brokerzy/testowe";
 
 describe("liczby z plikow brokera", () => {
   it("czyta kropke dziesietna i przecinek tysiecy", () => {

@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 
 import { wyczyscLimiter } from "@/lib/api-v2/limiter";
 import { MOZNA_NA_BAZIE, nowyToken, polacz, zadanie, type Par, type Sql } from "@/lib/api-v2/test/db-pomocnik";
-import { ORDERS, CASH, plikOrders, plikCash } from "@/lib/domain/brokerzy/testowe";
+import { ORDERS, CASH, plikOrders } from "@/lib/brokerzy/testowe";
 
 vi.mock("server-only", () => ({}));
 

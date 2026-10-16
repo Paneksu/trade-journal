@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-export const KATALOG_FIKSTUR = path.join(__dirname, "fixtures");
+export const KATALOG_FIKSTUR = path.join(__dirname, "..", "domain", "brokerzy", "fixtures");
 
 export const wczytajFiksture = (nazwa: string): string => readFileSync(path.join(KATALOG_FIKSTUR, nazwa), "utf8");
 export const bajty = (tekst: string): Uint8Array => new TextEncoder().encode(tekst);

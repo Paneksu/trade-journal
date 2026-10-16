@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { wyczyscLimiter } from "./limiter";
 import { MOZNA_NA_BAZIE, nowyToken, polacz, sprzatnijPoTokenach, zadanie, type Par, type Sql } from "./test/db-pomocnik";
 import { PARAMS, sprzatnijNowe, wywolaj, zgodneZKontraktem } from "./test/pomocnik-2b";
-import { CASH, ORDERS, wierszOrders } from "@/lib/domain/brokerzy/testowe";
+import { CASH, ORDERS, wierszOrders } from "@/lib/brokerzy/testowe";
 import type { TradeDraft } from "@/lib/domain/trade-draft";
 
 vi.mock("server-only", () => ({}));

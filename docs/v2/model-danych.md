@@ -1069,9 +1069,9 @@ reguł i setupów użytych w werdyktach nie da się skasować.
 | `0025_przeglad_tygodnia.sql` | 2b | `weekly_reviews` | 0018 |
 | `0026_profil_wykres.sql` | 2b (potrzebne fazie 3) | `chart_annotations`, `profile_terms`, `profile_term_sources`, `interpretation_corrections` | 0018 |
 | `0027_mentor_luki.sql` | 2b (przed fazą 4b) | `mentor_sources`, `mentor_claims`, `note_additions.mentor_claim_id`, `strategy_gaps` | 0020 |
-| `0030_wynik_netto.sql` | ADR-034, etap A | `trades.fees`, `trades.pnl_estimate`, `instruments.size_class`, stawki opłat w presetach, regułach i kontach, `day_accounts` (numeracja wg journala `feat/ui-v2`) | 0029 |
-| `0031_broker_import.sql` | ADR-034, etap A | tabele brokera z sekcji 5.10, zakres `import_broker`, rozszerzone CHECK-i | 0030 |
-| `0032_firmy_platformy.sql` | ADR-034, etap A | tylko dane: `prop_firm_platforms` | 0031 |
+| `0030_wynik_netto.sql` | ADR-034, etap A | `trades.fees`, `trades.pnl_estimate`, `instruments.size_class`, stawki opłat w presetach, regułach i kontach (numeracja wg journala `feat/ui-v2`) | 0029 |
+| `0031_broker_import.sql` | ADR-034, etap A | tabele brokera z sekcji 5.10 (+ `broker_cash_events`, `day_accounts`, `prop_firm_platforms`), `broker_accounts.account_id` NULL, status importu `rejected`, zakres `import_broker`, triggery `tj_broker_*`, rozszerzone CHECK-i | 0030 |
+| `0032_firmy_platformy.sql` | ADR-034, etap A | tylko dane: `prop_firm_platforms` (24 wiersze) i stawki opłat w 138 presetach (generator `scripts/generuj-seed-oplat.mjs`) | 0031 |
 
 Każde wydanie: kopia bazy w Coolify przed scaleniem (STOP z planu), migracje sprawdzone oboma
 migratorami na świeżej bazie lokalnej (`127.0.0.1:55433`), test „migracje od zera vs `schema.ts`”.
@@ -1196,3 +1196,11 @@ oraz decyzje koordynatora z zadania fazy 2b.
 - Słów użytkownika przywiązanych do trade'u (`user_words.trade_id`) **nie wolno** podpinać do wierszy, które mają przeżyć kasowanie trade'u i nie są odroczone: `weekly_reviews.*_words_id`, `strategy_gaps.answer_words_id` (`profile_term_sources` i `interpretation_corrections.words_id` kaskadują, więc są bezpieczne). Takie słowa kotwicz dniem (`day`) albo wcale, inaczej kasowanie trade'u padnie na `23503`.
 - `prop_rules`: najnowsza reguła z `valid_from <= dzień`; `preset_id` bywa NULL po skasowaniu presetu. `needs_verification` zostaje w presetach i ma być widoczne.
 - Kolumny generowane (`trades.search`, `profile_terms.term_norm`) nie wchodzą do `INSERT` ani `UPDATE`.
+
+## 15. Odstępstwa od szkicu sekcji 5.10 w migracjach 0030-0032 (etap A, 16.10.2026)
+
+Pełna lista z uzasadnieniami: `docs/decyzje.md`, „ADR-034, wykonanie etapu A”. Skrót zmian w modelu: `day_accounts` w 0031 (nie 0030); nowa tabela
+`broker_cash_events` (kind `commission` / `fee` / `trade_paired` / `deposit` / `other`, kwota ze znakiem w centach); `broker_accounts.account_id` NULL (konto zgłoszone
+przez automat, przypisuje UI); `broker_imports.status` + `rejected`, kolumny `warnings` i `note`; unikalny częściowy indeks `broker_imports (file_sha256) WHERE status = 'committed'`;
+`api_tokens`: CHECK `api_tokens_import_broker` (tylko UI, zawsze z terminem); `trades`: CHECK `trades_broker_ref` i triggery `trades_source_broker_*` (źródło `broker` tylko aktor `ui`),
+`trades_odepnij_broker` (skasowanie trade'u dziennika odpina trade brokera); `tj_broker_aktor_import()` sprawdza token w `api_tokens` wprost w bazie.
