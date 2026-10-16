@@ -128,8 +128,9 @@ describe.skipIf(!MOZNA_NA_BAZIE)("kazdy zapis v2 niesie tj.actor (baza lokalna)"
 
   it("PUT /days/:date", async () => {
     const { PUT } = await import("@/app/api/v2/days/[date]/route");
-    const res = await PUT(zadanie(`/days/${DZIEN}`, { metoda: "PUT", token: rw.token, cialo: { accountId: kontoId, preSession: "plan" } }), parametry({ date: DZIEN }));
-    expect(res.status, await res.clone().text()).toBe(201);
+    const res = await PUT(zadanie(`/days/${DZIEN}`, { metoda: "PUT", token: rw.token, cialo: { preSession: "plan" } }), parametry({ date: DZIEN }));
+    // Notatka dnia jest jedna i bez konta (ADR-033, «Tak, zawsze jedna»): 201 przy nowej, 200 przy istniejącej.
+    expect([200, 201], await res.clone().text()).toContain(res.status);
   });
 
   it("stare trasy /api/ingest tez piszą z aktorem 'ingest' (nie z pustym)", async () => {

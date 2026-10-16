@@ -286,6 +286,7 @@ export default async function DzisPage() {
             <Rozwijane etykieta="Uzupełnij rytuał">
             <FormularzPrzedSesja
               dzien={d.dzis}
+              wersja={notatka?.updatedAt ?? ""}
               bias={notatka?.bias ?? null}
               maxTrades={notatka?.maxTrades ?? null}
               sleep={notatka?.sleep ?? null}
@@ -305,7 +306,7 @@ export default async function DzisPage() {
             </section>
           ) : (
             <Karta id="po-sesji" tytul="Po sesji">
-              <FormularzPoSesji dzien={d.dzis} postSession={notatka?.postSession ?? null} dayRating={notatka?.dayRating ?? null} mood={notatka?.mood ?? null} />
+              <FormularzPoSesji dzien={d.dzis} wersja={notatka?.updatedAt ?? ""} postSession={notatka?.postSession ?? null} dayRating={notatka?.dayRating ?? null} mood={notatka?.mood ?? null} />
             </Karta>
           )}
         </div>

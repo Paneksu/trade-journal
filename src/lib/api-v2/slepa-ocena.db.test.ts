@@ -74,7 +74,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
       },
     });
     expect(adn.status, JSON.stringify(adn.json)).toBe(201);
-    const pd = await wywolaj(import("@/app/api/v2/days/[date]/route"), "PUT", `/days/${DZIEN}`, { token: rw.token, cialo: { accountId: kontoId, preSession: "Rano", postSession: `Review po sesji ${TOKEN}: wygrana` } }, PARAMS({ date: DZIEN }));
+    const pd = await wywolaj(import("@/app/api/v2/days/[date]/route"), "PUT", `/days/${DZIEN}`, { token: rw.token, cialo: { preSession: "Rano", postSession: `Review po sesji ${TOKEN}: wygrana` } }, PARAMS({ date: DZIEN }));
     expect(pd.status, JSON.stringify(pd.json)).toBeLessThan(300);
     const o = await ocena(id);
     expect(o.status, JSON.stringify(o.json)).toBe(201);
@@ -399,7 +399,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("slepa ocena we wszystkich odczytach (baza loka
       expect(lista).not.toContain(dzienPo);
 
       // --- mood i dayRating dnia ---
-      const zapis = await wywolaj(import("@/app/api/v2/days/[date]/route"), "PUT", `/days/${DZIEN}`, { token: rw.token, cialo: { accountId: kontoId, mood: 4, dayRating: 5 } }, PARAMS({ date: DZIEN }));
+      const zapis = await wywolaj(import("@/app/api/v2/days/[date]/route"), "PUT", `/days/${DZIEN}`, { token: rw.token, cialo: { mood: 4, dayRating: 5 } }, PARAMS({ date: DZIEN }));
       expect(zapis.status, JSON.stringify(zapis.json)).toBeLessThan(300);
       const dzien2 = await get(import("@/app/api/v2/days/[date]/route"), `/days/${DZIEN}?accountId=${kontoId}`, PARAMS({ date: DZIEN }));
       expect(dzien2.json.dayNote).toMatchObject({ mood: null, dayRating: null, postSession: null });

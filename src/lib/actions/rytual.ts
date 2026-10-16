@@ -1,48 +1,54 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, isNull } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
-import { db } from "@/lib/db";
-import { dayNotes, userWords } from "@/lib/db/schema";
 import { dzienHandlowyTeraz } from "@/lib/api-v2/prop-konta";
-import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
+import { DzienZapisSchema } from "@/lib/api-v2/contract/v2";
+import { zapiszNotatkeDniaUi } from "@/lib/decyzje/dzien";
 
 import type { ActionState } from "./settings";
+import { bladWalidacji, poleLf, tekstUzytkownika } from "./walidacja";
 
 /*
- * Rytuał dnia na ekranie „Dziś” (MUST 11). Zapis w tym samym miejscu co `PUT /api/v2/days/:date`
- * bez konta (notatka dnia z accountId = null): to, co wpisze AI w rytuale, i to, co wpiszesz tu,
- * jest jednym wpisem. Unieważnienie dnia to Twoje słowa (`user_words`, role `day.invalidation`),
- * zapisane bajt w bajt; zmiana = nowy wpis wskazujący poprzedni (`supersedes_id`), stary zostaje.
+ * Rytuał dnia na ekranie „Dziś” (MUST 11). Zapis w tym samym miejscu co `PUT /api/v2/days/:date`: jedna notatka dnia
+ * bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»), jako aktor `ui` przez `lib/decyzje/dzien.ts`
+ * (code review fazy 5, P3). Pola walidowane tym samym schematem co API (`DzienZapisSchema`, audyt pkt 5).
+ * Formularz wysyła `wersja` (updatedAt z chwili otwarcia): zmiana w międzyczasie = odmowa, nie nadpisanie (P1).
+ * Unieważnienie dnia to Twoje słowa (`user_words`, rola `day.invalidation`), zapisane bajt w bajt; zmiana = nowy wpis
+ * wskazujący poprzedni (`supersedes_id`), stary zostaje.
  */
 
 const RYTUAL_DZIEN = /^\d{4}-\d{2}-\d{2}$/;
 
-function pole(d: FormData, k: string): string | null {
-  const w = d.get(k);
-  return typeof w === "string" ? w : null;
-}
-
-function skala(d: FormData, k: string): number | null {
-  const n = Number(d.get(k));
-  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
-}
+const NAZWY: Record<string, string> = {
+  preSession: "Plan na sesję",
+  postSession: "Jeden wniosek z sesji",
+  bias: "Bias dnia",
+  maxTrades: "Maks. trade'ów",
+  sleep: "Sen",
+  energy: "Energia",
+  mood: "Nastrój",
+  dayRating: "Ocena dnia",
+};
 
 function dzienZFormularza(d: FormData): string | null {
-  const dzien = pole(d, "day");
-  if (!dzien || !RYTUAL_DZIEN.test(dzien)) return null;
+  const dzien = d.get("day");
+  if (typeof dzien !== "string" || !RYTUAL_DZIEN.test(dzien)) return null;
   // Rytuał piszemy tylko na dzisiejszy dzień handlowy: wstecz to już dopisek po fakcie.
   return dzien === dzienHandlowyTeraz() ? dzien : null;
 }
 
-async function zapiszNotatke(dzien: string, wartosci: Partial<typeof dayNotes.$inferInsert>) {
-  const teraz = new Date();
-  await db
-    .insert(dayNotes)
-    .values({ day: dzien, accountId: null, backtestSessionId: null, ...wartosci, updatedAt: teraz })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, null), set: { ...wartosci, updatedAt: teraz } });
+/** Skala 1–5 albo puste pole (null); inna wartość przechodzi dalej, żeby schemat odrzucił ją z komunikatem. */
+function skala(d: FormData, k: string): number | null {
+  const w = d.get(k);
+  if (w === null || w === "") return null;
+  return Number(w);
+}
+
+function wersja(d: FormData): string {
+  const w = d.get("wersja");
+  return typeof w === "string" ? w : "";
 }
 
 export async function zapiszPrzedSesja(_p: ActionState, d: FormData): Promise<ActionState> {
@@ -50,45 +56,31 @@ export async function zapiszPrzedSesja(_p: ActionState, d: FormData): Promise<Ac
   const dzien = dzienZFormularza(d);
   if (!dzien) return { error: "Rytuał zapisuje się tylko na dzisiejszy dzień handlowy. Odśwież stronę." };
 
-  const biasSurowy = pole(d, "bias");
-  const bias = biasSurowy === "long" || biasSurowy === "short" || biasSurowy === "neutral" ? biasSurowy : null;
-  const max = Number(d.get("maxTrades"));
-  const maxTrades = Number.isInteger(max) && max >= 1 && max <= 20 ? max : null;
-  if (d.get("maxTrades") && maxTrades === null) {
-    return { error: `Maks. trade'ów: »${String(d.get("maxTrades"))}« - wpisz liczbę od 1 do 20.` };
-  }
-
-  await zapiszNotatke(dzien, {
-    bias,
-    maxTrades,
+  const biasSurowy = d.get("bias");
+  const maxSurowy = d.get("maxTrades");
+  const pola = DzienZapisSchema.safeParse({
+    bias: biasSurowy === "" || biasSurowy === null ? null : biasSurowy,
+    maxTrades: maxSurowy === "" || maxSurowy === null ? null : Number(maxSurowy),
     sleep: skala(d, "sleep"),
     energy: skala(d, "energy"),
-    preSession: pole(d, "preSession")?.trim() || null,
+    preSession: poleLf(d, "preSession")?.trim() || null,
   });
-
-  // Unieważnienie: dosłownie, bez trim (słowa użytkownika bajt w bajt). Pusty tekst nic nie zapisuje.
-  // Formularz HTML wysyła nowe linie z <textarea> jako CRLF (specyfikacja form-data), choć w polu
-  // użytkownik ma LF. Cofamy tylko tę zamianę przeglądarki, żeby zapisać dokładnie to, co było w polu.
-  const tekst = pole(d, "invalidation")?.replace(/\r\n/g, "\n") ?? null;
-  if (tekst !== null && tekst.trim().length > 0) {
-    const [poprzednie] = await db
-      .select({ id: userWords.id, text: userWords.text })
-      .from(userWords)
-      .where(and(eq(userWords.day, dzien), eq(userWords.role, "day.invalidation"), isNull(userWords.tradeId)))
-      .orderBy(desc(userWords.id))
-      .limit(1);
-    if (!poprzednie || poprzednie.text !== tekst) {
-      await db.insert(userWords).values({
-        text: tekst,
-        source: "ui",
-        role: "day.invalidation",
-        day: dzien,
-        capturedAt: new Date(),
-        supersedesId: poprzednie?.id ?? null,
-      });
-    }
+  if (!pola.success) return { error: bladWalidacji(pola.error, NAZWY) };
+  if (pola.data.preSession) {
+    const t = tekstUzytkownika(20_000).safeParse(pola.data.preSession);
+    if (!t.success) return { error: bladWalidacji(t.error, { "": NAZWY.preSession }) };
   }
 
+  // Unieważnienie: dosłownie, bez trim (słowa użytkownika bajt w bajt). Pusty tekst nic nie zapisuje.
+  const uniew = poleLf(d, "invalidation");
+  if (uniew !== null && uniew.trim().length > 0) {
+    const t = tekstUzytkownika(20_000).safeParse(uniew);
+    if (!t.success) return { error: bladWalidacji(t.error, { "": "Unieważnienie" }) };
+  }
+
+  const { bias, maxTrades, sleep, energy, preSession } = pola.data;
+  const w = await zapiszNotatkeDniaUi(dzien, { bias, maxTrades, sleep, energy, preSession }, wersja(d), uniew);
+  if (!w.ok) return { error: w.komunikat };
   revalidatePath("/");
   return { ok: true };
 }
@@ -97,11 +89,19 @@ export async function zapiszPoSesji(_p: ActionState, d: FormData): Promise<Actio
   await requireSession();
   const dzien = dzienZFormularza(d);
   if (!dzien) return { error: "Notatka po sesji zapisuje się tylko na dzisiejszy dzień handlowy. Odśwież stronę." };
-  await zapiszNotatke(dzien, {
-    postSession: pole(d, "postSession")?.trim() || null,
+  const pola = DzienZapisSchema.safeParse({
+    postSession: poleLf(d, "postSession")?.trim() || null,
     dayRating: skala(d, "dayRating"),
     mood: skala(d, "mood"),
   });
+  if (!pola.success) return { error: bladWalidacji(pola.error, NAZWY) };
+  if (pola.data.postSession) {
+    const t = tekstUzytkownika(20_000).safeParse(pola.data.postSession);
+    if (!t.success) return { error: bladWalidacji(t.error, { "": NAZWY.postSession }) };
+  }
+  const { postSession, dayRating, mood } = pola.data;
+  const w = await zapiszNotatkeDniaUi(dzien, { postSession, dayRating, mood }, wersja(d));
+  if (!w.ok) return { error: w.komunikat };
   revalidatePath("/");
   return { ok: true };
 }

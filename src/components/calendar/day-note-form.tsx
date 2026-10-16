@@ -22,10 +22,14 @@ export function DayNoteForm({
   accountId,
   hasTrades = false,
   values,
+  wersja,
 }: {
   day: string;
-  accountId: number | null;
+  /** Pole zostaje dla zgodności wywołań; notatka dnia jest jedna i bez konta (ADR-033, «Tak, zawsze jedna»). */
+  accountId?: number | null;
   hasTrades?: boolean;
+  /** updatedAt notatki z chwili otwarcia ("" gdy jej nie ma): serwer odmawia zapisu, gdy ktoś zmienił ją w międzyczasie. */
+  wersja: string;
   values: {
     preSession?: string | null;
     postSession?: string | null;
@@ -41,7 +45,7 @@ export function DayNoteForm({
   return (
     <form action={formAction} className="space-y-3 p-4">
       <input type="hidden" name="day" value={day} />
-      {accountId && <input type="hidden" name="accountId" value={accountId} />}
+      <input type="hidden" name="wersja" value={wersja} />
 
       <div className="space-y-2 rounded-[var(--radius-control)] border border-line bg-surface-2 p-3">
         <Checkbox
@@ -52,7 +56,7 @@ export function DayNoteForm({
               ? "Tego dnia są już zapisane trade'y."
               : "Świadomie odpuszczony dzień też jest wpisem w dzienniku."
           }
-          defaultChecked={Boolean(values.noTrade)}
+          key={wersja} defaultChecked={Boolean(values.noTrade)}
           disabled={hasTrades}
         />
 
@@ -63,7 +67,7 @@ export function DayNoteForm({
           <Select
             id="noTradeReason"
             name="noTradeReason"
-            defaultValue={values.noTradeReason ?? ""}
+            key={wersja} defaultValue={values.noTradeReason ?? ""}
             disabled={hasTrades}
           >
             <option value="">—</option>
@@ -82,7 +86,7 @@ export function DayNoteForm({
           id="preSession"
           name="preSession"
           rows={3}
-          defaultValue={values.preSession ?? ""}
+          key={wersja} defaultValue={values.preSession ?? ""}
           placeholder="Plan na dziś: co gram, czego nie ruszam, jakie dane wychodzą."
         />
       </div>
@@ -93,7 +97,7 @@ export function DayNoteForm({
           id="postSession"
           name="postSession"
           rows={3}
-          defaultValue={values.postSession ?? ""}
+          key={wersja} defaultValue={values.postSession ?? ""}
           placeholder="Co się wydarzyło, co powtórzyć, czego nie robić jutro."
         />
       </div>
@@ -106,7 +110,7 @@ export function DayNoteForm({
         ].map((f) => (
           <div key={f.name} className="space-y-1.5">
             <Label htmlFor={f.name}>{f.label}</Label>
-            <Select id={f.name} name={f.name} defaultValue={f.value ?? ""}>
+            <Select id={f.name} name={f.name} key={wersja} defaultValue={f.value ?? ""}>
               <option value="">—</option>
               {[5, 4, 3, 2, 1].map((n) => (
                 <option key={n} value={n}>

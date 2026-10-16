@@ -303,10 +303,12 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
   });
 
   it("zalacznik dnia: zaklada notatke dnia, kolejne wchodza na ta sama; token tylko do odczytu = 403", async () => {
+    // Notatka dnia jest jedna i bez konta: sprzątamy jej poprzednie przebiegi, żeby limit 8 załączników nie przeszkadzał.
+    await sql`delete from day_notes where day = ${DZIEN} and backtest_session_id is null`;
     const wyslij = async (token: string, kolor: number) => {
       const form = new FormData();
       form.append("shot", plik(await png(kolor), "dzien.png", "image/png"));
-      return wywolajMultipart(import("@/app/api/v2/days/[date]/attachments/route"), `/days/${DZIEN}/attachments?accountId=${kontoId}`, token, form, PARAMS({ date: DZIEN }));
+      return wywolajMultipart(import("@/app/api/v2/days/[date]/attachments/route"), `/days/${DZIEN}/attachments`, token, form, PARAMS({ date: DZIEN }));
     };
     const pierwszy = await wyslij(rw.token, 3);
     expect(pierwszy.status, JSON.stringify(pierwszy.json)).toBe(201);
@@ -315,7 +317,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
     expect(drugi.json.owner.dayNoteId).toBe(pierwszy.json.owner.dayNoteId);
     const [{ ile }] = await sql`select count(*)::int as ile from screenshots where day_note_id = ${pierwszy.json.owner.dayNoteId}`;
     expect(ile).toBe(2);
-    const [{ notatek }] = await sql`select count(*)::int as notatek from day_notes where day = ${DZIEN} and account_id = ${kontoId}`;
+    const [{ notatek }] = await sql`select count(*)::int as notatek from day_notes where day = ${DZIEN} and account_id is null and backtest_session_id is null`;
     expect(notatek).toBe(1);
     expect((await wyslij(ro.token, 5)).status).toBe(403);
     const zlaData = await wywolajMultipart(import("@/app/api/v2/days/[date]/attachments/route"), "/days/jutro/attachments", rw.token, new FormData(), PARAMS({ date: "jutro" }));

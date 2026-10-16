@@ -4231,7 +4231,7 @@
     "/days/{date}": {
       "get": {
         "operationId": "getDaysDate",
-        "summary": "Dzien: notatka dnia (z rytualem przed sesja), liczba trade'ow, slowa uzytkownika i notatki przypiete do dnia.",
+        "summary": "Dzien: notatka dnia (jedna, bez konta; z rytualem przed sesja), liczba trade'ow (accountId zaweza tylko trade'y), slowa uzytkownika i notatki przypiete do dnia. sessionId: dzien sesji backtestu.",
         "security": [
           {
             "bearer": []
@@ -4688,7 +4688,7 @@
       },
       "put": {
         "operationId": "putDaysDate",
-        "summary": "Zapis notatki dnia (nadpisuje podane pola, takze bias, maxTrades i sleep; konto albo sesja backtestu wskazane w ciele).",
+        "summary": "Zapis notatki dnia (nadpisuje podane pola, takze bias, maxTrades i sleep). Notatka dnia jest jedna i bez konta (ADR-033, 16.10.2026); sessionId w ciele wskazuje dzien sesji backtestu.",
         "security": [
           {
             "bearer": []
@@ -4774,6 +4774,32 @@
           },
           "409": {
             "description": "Dzien ma trade'y, wiec nie moze byc oznaczony jako bez transakcji.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "day_note_has_no_account: podano accountId, a notatka dnia nie nalezy do konta.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4955,7 +4981,7 @@
     "/days/{date}/attachments": {
       "post": {
         "operationId": "postDaysDateAttachments",
-        "summary": "Zalaczniki dnia (multipart: shot, interval, caption, capturedAt, chartState, origin; query accountId albo sessionId). PNG, JPG, WebP, AVIF, HEIC -> WebP + miniatura. Tylko dopisywanie, do 8.",
+        "summary": "Zalaczniki dnia (multipart: shot, interval, caption, capturedAt, chartState, origin; query sessionId dla dnia sesji backtestu; accountId odrzucany 422, bo notatka dnia jest bez konta). PNG, JPG, WebP, AVIF, HEIC -> WebP + miniatura. Tylko dopisywanie, do 8.",
         "security": [
           {
             "bearer": []

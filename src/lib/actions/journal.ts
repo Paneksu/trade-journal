@@ -12,6 +12,9 @@ import { czyInterwal } from "@/lib/domain/interwaly";
 import { bladLimitu } from "@/lib/screenshots-limit";
 import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 import { countTradesOnDay, countSessionTradesOnDay } from "@/lib/queries/journal";
+import { DzienZapisSchema } from "@/lib/api-v2/contract/v2";
+import { zapiszNotatkeDniaUi } from "@/lib/decyzje/dzien";
+import { bladWalidacji, poleLf, tekstUzytkownika } from "./walidacja";
 import type { ActionState } from "./settings";
 
 function text(d: FormData, k: string): string | null {
@@ -19,11 +22,6 @@ function text(d: FormData, k: string): string | null {
   if (w === null) return null;
   const s = String(w).trim();
   return s === "" ? null : s;
-}
-
-function rating(d: FormData, k: string): number | null {
-  const n = Number(d.get(k));
-  return Number.isInteger(n) && n >= 1 && n <= 5 ? n : null;
 }
 
 function reason(d: FormData, k: string): NoTradeReason | null {
@@ -41,38 +39,48 @@ function positiveInt(d: FormData, k: string): number | null {
 export async function saveDayNote(_p: ActionState, d: FormData): Promise<ActionState> {
   await requireSession();
   const day = text(d, "day");
-  if (!day) return { error: "Brak daty." };
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: "Brak daty." };
 
-  const accountId = positiveInt(d, "accountId");
+  // Notatka dnia jest jedna i bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»): pole accountId
+  // z formularza jest ignorowane. Dzień sesji backtestu ma osobną akcję (saveBacktestDayNote).
   const noTrade = d.get("noTrade") !== null;
 
-  // Dwa zrodla prawdy o dniu nie moga sobie przeczyc: albo sa trade'y,
-  // albo dzien byl bez transakcji.
+  // Dwa źródła prawdy o dniu nie mogą sobie przeczyć: albo są trade'y, albo dzień był bez transakcji.
   if (noTrade && (await countTradesOnDay(day)) > 0) {
     return {
       error: "Tego dnia są zapisane trade'y — nie można oznaczyć go jako dnia bez transakcji.",
     };
   }
 
-  const values = {
-    day,
-    accountId,
-    preSession: text(d, "preSession"),
-    postSession: text(d, "postSession"),
-    mood: rating(d, "mood"),
-    energy: rating(d, "energy"),
-    dayRating: rating(d, "dayRating"),
+  // Walidacja tym samym schematem co PUT /api/v2/days/:date (audyt pkt 5) i teksty bez NUL.
+  const skala = (k: string) => {
+    const w = d.get(k);
+    return w === null || w === "" ? null : Number(w);
+  };
+  const pola = DzienZapisSchema.safeParse({
+    preSession: poleLf(d, "preSession")?.trim() || null,
+    postSession: poleLf(d, "postSession")?.trim() || null,
+    mood: skala("mood"),
+    energy: skala("energy"),
+    dayRating: skala("dayRating"),
     noTrade,
     // Odznaczenie flagi nie zostawia osieroconego powodu.
     noTradeReason: noTrade ? reason(d, "noTradeReason") : null,
-    updatedAt: new Date(),
-  };
-
-  // Jeden wpis na dzien i konto - powtorny zapis nadpisuje poprzedni.
-  await db
-    .insert(dayNotes)
-    .values(values)
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, null), set: values });
+  });
+  if (!pola.success) return { error: bladWalidacji(pola.error, { preSession: "Przed sesją", postSession: "Po sesji", mood: "Nastrój", energy: "Energia", dayRating: "Ocena dnia" }) };
+  for (const [nazwa, t] of [["Przed sesją", pola.data.preSession], ["Po sesji", pola.data.postSession]] as const) {
+    if (!t) continue;
+    const s = tekstUzytkownika(20_000).safeParse(t);
+    if (!s.success) return { error: bladWalidacji(s.error, { "": nazwa }) };
+  }
+  const { preSession, postSession, mood, energy, dayRating, noTradeReason } = pola.data;
+  const wersja = d.get("wersja");
+  const w = await zapiszNotatkeDniaUi(
+    day,
+    { preSession, postSession, mood, energy, dayRating, noTrade, noTradeReason: noTradeReason as NoTradeReason | null | undefined },
+    typeof wersja === "string" ? wersja : "",
+  );
+  if (!w.ok) return { error: w.komunikat };
 
   revalidatePath("/", "layout");
   return { ok: true };
@@ -89,8 +97,9 @@ async function ensureDayNote(
 ): Promise<number> {
   const [row] = await db
     .insert(dayNotes)
-    .values({ day, accountId: sessionId ? null : accountId, backtestSessionId: sessionId })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(accountId, sessionId), set: { updatedAt: new Date() } })
+    // Notatka dnia dziennika jest bez konta (ADR-033, «Tak, zawsze jedna»); accountId nie wchodzi do klucza.
+    .values({ day, accountId: null, backtestSessionId: sessionId })
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, sessionId), set: { updatedAt: new Date() } })
     .returning({ id: dayNotes.id });
   return row.id;
 }

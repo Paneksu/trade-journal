@@ -1,16 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import { desc, eq, isNull } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
-import { dayNotes, instruments, trades } from "@/lib/db/schema";
+import { instruments, trades } from "@/lib/db/schema";
 import { dzienHandlowyTeraz } from "@/lib/api-v2/prop-konta";
-import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
+import { dopiszDoPoSesjiUi } from "@/lib/decyzje/dzien";
 
 import { addDayScreenshots } from "./journal";
 import { addTradeScreenshots } from "./trades";
+import { bladWalidacji, poleLf, tekstUzytkownika } from "./walidacja";
 
 /*
  * Szybkie wpisy z telefonu (UI v2, etap 4, PWA): arkusz „+” w dolnym pasku. Notatka DOPISUJE się do „Po sesji”
@@ -23,29 +24,15 @@ export type SzybkiStan = { ok?: boolean; komunikat?: string; error?: string };
 
 export async function szybkaNotatka(_p: SzybkiStan, d: FormData): Promise<SzybkiStan> {
   await requireSession();
-  const surowy = d.get("tekst");
-  // Słowa bajt w bajt: cofamy tylko zamianę LF -> CRLF, którą robi formularz HTML.
-  const tekst = typeof surowy === "string" ? surowy.replace(/\r\n/g, "\n") : "";
+  // Słowa bajt w bajt (LF zamiast CRLF formularza); walidacja jak w API: bez NUL, do 20 000 bajtów (audyt pkt 5).
+  const tekst = poleLf(d, "tekst") ?? "";
   if (tekst.trim().length === 0) return { error: "Wpisz choć jedno zdanie." };
-  const dzien = dzienHandlowyTeraz();
-  // Jedna notatka dnia bez konta (r2): gdy jej jeszcze nie ma, a dzień ma starszy wpis na koncie z kalendarza,
-  // nowa notatka przejmuje jego treść, żeby dopisek nie ukrył tego, co już było zapisane.
-  const wpisy = await db
-    .select()
-    .from(dayNotes)
-    .where(and(eq(dayNotes.day, dzien), isNull(dayNotes.backtestSessionId)))
-    .orderBy(asc(dayNotes.id));
-  const bezKonta = wpisy.find((w) => w.accountId === null);
-  const baza = bezKonta ?? wpisy[0];
-  const po = baza?.postSession?.trim() ? `${baza.postSession}\n\n${tekst}` : tekst;
-  const przejete = !bezKonta && baza
-    ? { preSession: baza.preSession, mood: baza.mood, energy: baza.energy, dayRating: baza.dayRating, noTrade: baza.noTrade, noTradeReason: baza.noTradeReason }
-    : {};
-  const teraz = new Date();
-  await db
-    .insert(dayNotes)
-    .values({ day: dzien, accountId: null, backtestSessionId: null, ...przejete, postSession: po, updatedAt: teraz })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, null), set: { postSession: po, updatedAt: teraz } });
+  const t = tekstUzytkownika(20_000).safeParse(tekst);
+  if (!t.success) return { error: bladWalidacji(t.error, { "": "Notatka dnia" }) };
+  // Jedna notatka dnia bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»). Dopisanie atomowe
+  // w SQL (code review P1): dwa równoległe wpisy nie nadpisują się nawzajem.
+  const w = await dopiszDoPoSesjiUi(dzienHandlowyTeraz(), tekst);
+  if (!w.ok) return { error: w.komunikat };
   revalidatePath("/", "layout");
   return { ok: true, komunikat: "Dopisano do notatki dnia." };
 }

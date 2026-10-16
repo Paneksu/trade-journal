@@ -3,7 +3,7 @@ import { and, asc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { z } from "zod";
 
 import { db } from "@/lib/db";
-import { accounts, backtestSessions, dayNotes, notes, trades, userWords } from "@/lib/db/schema";
+import { backtestSessions, dayNotes, notes, trades, userWords } from "@/lib/db/schema";
 import { isNoTradeReason } from "@/lib/domain/day-log";
 import { countSessionTradesOnDay, countTradesOnDay } from "@/lib/queries/journal";
 import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
@@ -26,11 +26,11 @@ function zakres(q: { accountId?: number | null; sessionId?: number | null }) {
 export async function odczytajDzien(data: string, q: z.output<typeof DzienQuery>) {
   const { accountId, sessionId } = zakres(q);
 
+  // Notatka dnia dziennika jest jedna i bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»).
+  // accountId w zapytaniu zawęża tylko trade'y dnia; notatka sesji backtestu zostaje osobna.
   const warunekNotatki: SQL = sessionId
     ? and(eq(dayNotes.day, data), eq(dayNotes.backtestSessionId, sessionId))!
-    : accountId
-      ? and(eq(dayNotes.day, data), eq(dayNotes.accountId, accountId), isNull(dayNotes.backtestSessionId))!
-      : and(eq(dayNotes.day, data), isNull(dayNotes.accountId), isNull(dayNotes.backtestSessionId))!;
+    : and(eq(dayNotes.day, data), isNull(dayNotes.accountId), isNull(dayNotes.backtestSessionId))!;
   const [notatkaDnia] = await db.select().from(dayNotes).where(warunekNotatki).limit(1);
 
   const warunekTradow: SQL[] = [eq(trades.tradingDay, data)];
@@ -94,15 +94,18 @@ export type WynikZapisuDnia =
   | { ok: false; status: 404 | 409 | 422; kod: string; komunikat: string };
 
 export async function zapiszDzien(data: string, d: z.output<typeof DzienZapisSchema>, zapis: Zapis): Promise<WynikZapisuDnia> {
-  const accountId = d.accountId ?? null;
+  // Notatka dnia jest jedna i bez konta (ADR-033; Słowa użytkownika 16.10.2026: «Tak, zawsze jedna»): próba przypisania
+  // jej do konta jest odrzucana z komunikatem, zamiast po cichu tworzyć drugi wpis tego samego dnia.
+  if (d.accountId) {
+    return {
+      ok: false,
+      status: 422,
+      kod: "day_note_has_no_account",
+      komunikat: "pole accountId: notatka dnia jest jedna i nie należy do konta. Usuń accountId z żądania (dzień sesji backtestu wskazuje sessionId).",
+    };
+  }
+  const accountId = null;
   const sessionId = d.sessionId ?? null;
-  if (accountId && sessionId) {
-    return { ok: false, status: 422, kod: "ambiguous_scope", komunikat: "Podaj accountId albo sessionId, nie oba naraz: dzień należy do konta albo do sesji backtestu." };
-  }
-  if (accountId) {
-    const [k] = await db.select({ id: accounts.id }).from(accounts).where(eq(accounts.id, accountId)).limit(1);
-    if (!k) return { ok: false, status: 404, kod: "account_not_found", komunikat: `pole accountId: »${accountId}« - nie ma takiego konta.` };
-  }
   if (sessionId) {
     const [s] = await db.select({ id: backtestSessions.id }).from(backtestSessions).where(eq(backtestSessions.id, sessionId)).limit(1);
     if (!s) return { ok: false, status: 404, kod: "session_not_found", komunikat: `pole sessionId: »${sessionId}« - nie ma takiej sesji.` };

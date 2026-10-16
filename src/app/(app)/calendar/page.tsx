@@ -226,6 +226,7 @@ export default async function CalendarPage({
                 key={day}
                 day={day}
                 accountId={null}
+                wersja={note && note.accountId === null ? note.updatedAt.toISOString() : ""}
                 hasTrades={dayRealne.length > 0}
                 values={{
                   preSession: note?.preSession,
