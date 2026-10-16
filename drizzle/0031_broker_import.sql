@@ -12,6 +12,8 @@
 --   * broker_fills         - wypelnienia (zlecenia z Orders) z `raw` BEZ numeru konta;
 --   * broker_cash_events   - zdarzenia Cash History (prowizje, wynik brutto pary, wplaty); osobna tabela, bo Cash
 --                            History moze przyjsc przed Orders albo po nich (odstepstwo od szkicu w model-danych 5.10);
+--   * broker_import_rows   - co zawieral KAZDY zatwierdzony import (wypelnienia i zdarzenia: nowe i duplikaty); bez tego cofniecie
+--                            importu kasowaloby wiersze wspolne z innym, nakladajacym sie importem (audyt bezpieczenstwa S2);
 --   * day_accounts        - aktywne konta dnia, wielokrotne (przeniesione z 0030 wg zlecenia: model-danych 5.10 mialo je w 0030);
 --   * triggery: zapis do tabel brokera TYLKO z aktorem `ui` albo `api:<id>` tokenu, ktorego jedynym zakresem jest
 --     `import_broker` (agent z `read`/`write`/`propose` dostaje TJ403); trade z source = 'broker' tylko z aktorem `ui`;
@@ -183,6 +185,15 @@ CREATE TABLE "broker_cash_events" (
 CREATE INDEX "broker_cash_events_account_time_idx" ON "broker_cash_events" ("broker_account_id", "occurred_at");--> statement-breakpoint
 CREATE INDEX "broker_cash_events_import_idx" ON "broker_cash_events" ("import_id");--> statement-breakpoint
 
+CREATE TABLE "broker_import_rows" (
+  "import_id" integer NOT NULL REFERENCES "broker_imports" ("id") ON DELETE CASCADE,
+  "kind" text NOT NULL,
+  "row_id" integer NOT NULL,
+  PRIMARY KEY ("import_id", "kind", "row_id"),
+  CONSTRAINT "broker_import_rows_kind" CHECK ("kind" IN ('fill', 'cash'))
+);--> statement-breakpoint
+CREATE INDEX "broker_import_rows_row_idx" ON "broker_import_rows" ("kind", "row_id");--> statement-breakpoint
+
 CREATE TABLE "day_accounts" (
   "day" date NOT NULL,
   "account_id" integer NOT NULL REFERENCES "accounts" ("id") ON DELETE CASCADE,
@@ -194,7 +205,7 @@ CREATE TABLE "day_accounts" (
 -- Aktor `ui` (uzytkownik w aplikacji) albo `api:<id>` tokenu, ktorego JEDYNYM zakresem jest import_broker, nieuniewazniony
 -- i niewygasly. Reszta (token read/write/propose, brak aktora) dostaje TJ403. Sprawdzanie zakresow wprost w bazie to druga
 -- warstwa za brama API: nawet blad w trasie nie otworzy tych tabel agentowi.
-CREATE FUNCTION public.tj_broker_aktor_import() RETURNS boolean
+CREATE FUNCTION public.tj_broker_token_importu() RETURNS integer
   LANGUAGE plpgsql
   STABLE
   AS $$
@@ -204,11 +215,11 @@ DECLARE
 BEGIN
   v_actor := nullif(current_setting('tj.actor', true), '');
   IF v_actor IS NULL OR v_actor !~ '^api:[0-9]{1,9}$' THEN
-    RETURN false;
+    RETURN NULL;
   END IF;
   v_id := substring(v_actor from 5)::integer;
-  RETURN EXISTS (
-    SELECT 1 FROM api_tokens t
+  RETURN (
+    SELECT t.id FROM api_tokens t
     WHERE t.id = v_id
       AND t.scopes = ARRAY['import_broker']::text[]
       AND t.revoked_at IS NULL
@@ -217,19 +228,48 @@ BEGIN
 END
 $$;--> statement-breakpoint
 
+CREATE FUNCTION public.tj_broker_aktor_import() RETURNS boolean
+  LANGUAGE sql
+  STABLE
+  AS $$
+  SELECT public.tj_broker_token_importu() IS NOT NULL
+$$;--> statement-breakpoint
+
+-- Token importu ma tylko tyle, ile potrzebuje przyjecie pliku: wstawia wiersze, uaktualnia wypelnienia (oplaty, trade) i trade'y brokera,
+-- kasuje WYLACZNIE trade'y brokera (przeliczenie okna) i uaktualnia licznik WLASNEGO, zatwierdzonego importu. Nie kasuje importow,
+-- wypelnien, zdarzen ani powiazan i nie zmienia statusu importu. Reszta (cofniecie, kasowanie, zmiana statusu) tylko aktor `ui`.
 CREATE FUNCTION public.tj_broker_zapis() RETURNS trigger
   LANGUAGE plpgsql
   AS $$
 DECLARE
   v_actor text;
+  v_token integer;
 BEGIN
   -- Kaskada z FK (usuniecie konta albo importu) idzie z kontekstu wyzwalacza RI, nie od aktora.
   IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
     RETURN OLD;
   END IF;
   v_actor := nullif(current_setting('tj.actor', true), '');
-  IF v_actor = 'ui' OR public.tj_broker_aktor_import() THEN
+  IF v_actor = 'ui' THEN
     RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+  END IF;
+  v_token := public.tj_broker_token_importu();
+  IF v_token IS NOT NULL THEN
+    IF TG_OP = 'INSERT' THEN
+      RETURN NEW;
+    ELSIF TG_OP = 'DELETE' THEN
+      IF TG_TABLE_NAME = 'broker_trades' THEN
+        RETURN OLD;
+      END IF;
+    ELSIF TG_TABLE_NAME = 'broker_imports' THEN
+      IF OLD.status = 'committed' AND NEW.status = 'committed' AND OLD.created_by_token_id = v_token THEN
+        RETURN NEW;
+      END IF;
+    ELSIF TG_TABLE_NAME = 'broker_import_rows' THEN
+      NULL;
+    ELSE
+      RETURN NEW;
+    END IF;
   END IF;
   -- Odpiecie trade'u brokera od skasowanego trade'u dziennika (trigger trades_odepnij_broker) i zerowanie klucza obcego
   -- przy kasowaniu wiersza nadrzednego: to ruch w kontekscie wyzwalacza, ktory niczego nie dopisuje. Osobne IF-y na tabele,
@@ -245,7 +285,7 @@ BEGIN
       END IF;
     END IF;
   END IF;
-  RAISE EXCEPTION 'Zapis do tabeli % (%) wymaga aktora "ui" albo tokenu z jedynym zakresem import_broker, a przyszedl od aktora "%". Powod: dane brokera moze wprowadzac tylko uzytkownik w aplikacji albo jego automat z folderu Pobrane; agent AI ma wylacznie odczyt. Naprawa: zaimportuj plik w aplikacji (Prop -> Polaczenia).', TG_TABLE_NAME, TG_OP, coalesce(v_actor, '(nieustawiony)')
+  RAISE EXCEPTION 'Zapis do tabeli % (%) wymaga aktora "ui" albo tokenu z jedynym zakresem import_broker (i tylko w zakresie przyjecia pliku), a przyszedl od aktora "%". Powod: dane brokera moze wprowadzac tylko uzytkownik w aplikacji albo jego automat z folderu Pobrane; agent AI ma wylacznie odczyt, a automat nie cofa ani nie kasuje importow. Naprawa: zaimportuj plik w aplikacji (Prop -> Polaczenia).', TG_TABLE_NAME, TG_OP, coalesce(v_actor, '(nieustawiony)')
     USING ERRCODE = 'TJ403', TABLE = TG_TABLE_NAME;
 END
 $$;--> statement-breakpoint
@@ -304,6 +344,8 @@ CREATE TRIGGER "broker_trades_zapis" BEFORE INSERT OR UPDATE OR DELETE ON "broke
 CREATE TRIGGER "broker_fills_zapis" BEFORE INSERT OR UPDATE OR DELETE ON "broker_fills"
   FOR EACH ROW EXECUTE FUNCTION public.tj_broker_zapis();--> statement-breakpoint
 CREATE TRIGGER "broker_cash_events_zapis" BEFORE INSERT OR UPDATE OR DELETE ON "broker_cash_events"
+  FOR EACH ROW EXECUTE FUNCTION public.tj_broker_zapis();--> statement-breakpoint
+CREATE TRIGGER "broker_import_rows_zapis" BEFORE INSERT OR UPDATE OR DELETE ON "broker_import_rows"
   FOR EACH ROW EXECUTE FUNCTION public.tj_broker_zapis();--> statement-breakpoint
 
 -- Dopasowanie inne niz automatyczne 1:1 (reczne, z zatwierdzonej sugestii AI, trade utworzony z danych brokera) tylko od

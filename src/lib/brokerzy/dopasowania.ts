@@ -146,7 +146,9 @@ export async function odswiezKwoteDopasowania(tx: Transakcja, bt: WierszTradu): 
   if (bt.tradeId === null || bt.netCents === null || bt.matchKind === "created") return;
   const [t] = await tx.select({ kwota: trades.brokerAmount }).from(trades).where(eq(trades.id, bt.tradeId)).limit(1);
   if (!t || t.kwota === bt.netCents) return;
-  await wpiszKwote(tx, bt.tradeId, bt.netCents);
+  const w = await wpiszKwote(tx, bt.tradeId, bt.netCents);
+  // Zmiana kwoty dopasowanego trade'a ma byc WIDOCZNA na liscie »Uzgodnione z rachunku« (było -> jest, z »Cofnij«), takze dla starego dopasowania.
+  if (w.ok) await tx.update(brokerTrades).set({ matchedAt: new Date(), updatedAt: new Date() }).where(eq(brokerTrades.id, bt.id));
 }
 
 export type PrzebiegDopasowania = {
@@ -182,8 +184,16 @@ export async function przebiegDopasowania(
   if (wiersze.length === 0) return { zastosowane: [], niejednoznaczne: 0, bez: 0, bledy: [], dopasowania: [] };
 
   const konta = [...new Set(wiersze.map((w) => w.kontoDziennika as number))];
-  const minCzas = new Date(Math.min(...wiersze.map((w) => w.bt.entryTime.getTime())) - (OKNO_DOPASOWANIA_S + 1) * 1000);
-  const maxCzas = new Date(Math.max(...wiersze.map((w) => w.bt.entryTime.getTime())) + (OKNO_DOPASOWANIA_S + 1) * 1000);
+  // reduce zamiast Math.min(...tablica): rozwiniecie tablicy rzuca RangeError przy ~120 tys. elementow (audyt N2)
+  let najwczesniej = Infinity;
+  let najpozniej = -Infinity;
+  for (const w of wiersze) {
+    const t = w.bt.entryTime.getTime();
+    if (t < najwczesniej) najwczesniej = t;
+    if (t > najpozniej) najpozniej = t;
+  }
+  const minCzas = new Date(najwczesniej - (OKNO_DOPASOWANIA_S + 1) * 1000);
+  const maxCzas = new Date(najpozniej + (OKNO_DOPASOWANIA_S + 1) * 1000);
   const dziennik = await tx
     .select({ id: trades.id, accountId: trades.accountId, instrumentId: trades.instrumentId, direction: trades.direction, entryTime: trades.entryTime, contracts: trades.contracts })
     .from(trades)

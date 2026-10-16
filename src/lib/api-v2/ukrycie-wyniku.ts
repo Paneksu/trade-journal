@@ -3,6 +3,7 @@ import { and, inArray, sql, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { trades } from "@/lib/db/schema";
+import { OKNO_DOPASOWANIA_S } from "@/lib/domain/brokerzy/dopasowanie";
 
 import type { Transakcja } from "./zapis";
 
@@ -80,7 +81,11 @@ export function sqlSlowaUkryte(a: { tradeId: SQL; day: SQL; capturedAt: SQL; not
  * Warunek SQL: trade BROKERA jest ukryty w odczytach AI (ADR-034 pkt 7; ten sam mechanizm slepej oceny, bez drugiego):
  *  - dopasowany do trade'a dziennika z ukrytym wynikiem, albo
  *  - niedopasowany, z konta i dnia, w ktorym jest trade z ukrytym wynikiem, a jego wejscie jest PO najwczesniejszym wejsciu
- *    takiego trade'a (fail-closed: nie wiemy, czy to nie ten sam trade).
+ *    takiego trade'a MINUS okno dopasowania (fail-closed: nie wiemy, czy to nie ten sam trade). Okno ±120 s jest to samo, w ktorym
+ *    dopasowujemy: czas w dzienniku pochodzi z formularza albo z TradingView (dokladnosc do minuty), wiec ten sam trade u brokera
+ *    moze miec wejscie kilkadziesiat sekund PRZED wejsciem z dziennika (audyt bezpieczenstwa W1);
+ *  - niedopasowany z konta u brokera BEZ przypisania do konta dziennika, gdy tego dnia na jakimkolwiek koncie jest trade z ukrytym
+ *    wynikiem (nie wiemy, czyj to trade, wiec fail-closed; audyt S1).
  * Argumenty to wyrazenia SQL (kolumny broker_trades albo aliasy).
  */
 export function sqlBrokerUkryty(a: { tradeId: SQL; brokerAccountId: SQL; tradingDay: SQL; entryTime: SQL }): SQL {
@@ -88,10 +93,10 @@ export function sqlBrokerUkryty(a: { tradeId: SQL; brokerAccountId: SQL; trading
     or (${a.tradeId} is null and exists (
       select 1 from trades uw_b
         join broker_accounts uw_ba on uw_ba.id = ${a.brokerAccountId}
-       where uw_b.account_id = uw_ba.account_id
+       where (uw_ba.account_id is null or uw_b.account_id = uw_ba.account_id)
          and uw_b.trading_day = ${a.tradingDay}
          and ${sqlWynikUkryty(sql`uw_b.id`)}
-         and ${a.entryTime} > ${sqlWejscieTradu(sql`uw_b.id`)})))`;
+         and ${a.entryTime} > ${sqlWejscieTradu(sql`uw_b.id`)} - (${OKNO_DOPASOWANIA_S}::int * interval '1 second'))))`;
 }
 
 /** Podzbior `ids`, ktorych wynik jest ukryty (otwarty trade z werdyktem). */

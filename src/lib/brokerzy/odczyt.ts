@@ -278,11 +278,16 @@ export async function statusBrokera(tx: Db, dzien?: string) {
        where i.status = 'committed'
          and (exists (select 1 from broker_fills f where f.import_id = i.id and f.broker_account_id = ${ba.id})
               or exists (select 1 from broker_cash_events e where e.import_id = i.id and e.broker_account_id = ${ba.id}))`);
-    const [fill] = await tx.select({ at: sql<Date | string | null>`max(${brokerFills.filledAt})` }).from(brokerFills).where(eq(brokerFills.brokerAccountId, ba.id));
+    // Slepa ocena: czas ostatniego wypelnienia i licznik pochodza tylko z trade'ow brokera, ktorych wynik NIE jest ukryty
+    // (czas wyjscia razem z wykresem pozwolilby odtworzyc SL albo TP trade'a z werdyktem; audyt N1).
+    const [fill] = await tx
+      .select({ at: sql<Date | string | null>`max(coalesce(${brokerTrades.exitTime}, ${brokerTrades.entryTime}))` })
+      .from(brokerTrades)
+      .where(and(eq(brokerTrades.brokerAccountId, ba.id), sql`not ${warunekUkryty}`));
     const [{ n: bezDopasowania }] = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(brokerTrades)
-      .where(and(eq(brokerTrades.brokerAccountId, ba.id), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), eq(brokerTrades.status, "closed")));
+      .where(and(eq(brokerTrades.brokerAccountId, ba.id), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), eq(brokerTrades.status, "closed"), sql`not ${warunekUkryty}`));
     let dziennikBez = 0;
     let ostatniTradeDziennika: Date | null = null;
     let tradowDnia = 0;

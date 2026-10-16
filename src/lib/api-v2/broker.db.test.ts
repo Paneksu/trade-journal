@@ -398,10 +398,13 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       expect(r2.json.trades.matched).toBe(0);
       expect((await wiersz(a)).broker_amount).toBeNull();
 
-      // cofniecie calego importu: kasuje wypelnienia i trade'y brokera tego importu
+      // cofniecie calego importu kasuje tylko wiersze WYLACZNIE jego (audyt W1/S1): drugi plik zawiera te same wypelnienia, wiec zostaja
       const cofniety = await cofnijImportUi(r1.json.importId);
       expect(cofniety.ok, JSON.stringify(cofniety)).toBe(true);
-      expect((await sql`select count(*)::int as n from broker_fills where import_id = ${r1.json.importId}`)[0].n).toBe(0);
+      expect((await sql`select count(*)::int as n from broker_fills`)[0].n).toBeGreaterThan(0);
+      expect((await sql`select count(*)::int as n from broker_import_rows where import_id = ${r2.json.importId} and kind = 'fill'`)[0].n).toBe(
+        (await sql`select count(*)::int as n from broker_fills`)[0].n,
+      );
       expect((await sql`select status from broker_imports where id = ${r1.json.importId}`)[0].status).toBe("reverted");
       // drugi import cofniety odtwarza trade'y z pozostalych danych: po cofnieciu obu nic nie zostaje
       const cofniety2 = await cofnijImportUi(r2.json.importId);
@@ -421,6 +424,45 @@ describe.skipIf(!MOZNA_NA_BAZIE)("dane brokera: granica tokenu, automat 1:1, sle
       const po = await wiersz(a);
       expect([po.broker_amount, Number(po.pnl), Number(po.pnl_estimate)]).toEqual([null, 7200, 7200]);
       expect((await sql`select count(*)::int as n from broker_trades`)[0].n).toBe(0);
+    });
+
+    it("automat nie zmienia juz dopasowanego trade'a: plik z wypelnieniem sprzed wejscia A (zmienia klucz trade'a) to 422 would_alter_matched i nic nie zostaje zapisane (audyt W2)", async () => {
+      const a = await tradeA();
+      const r1 = await inbox(ORDERS);
+      expect(r1.json.trades.matched).toBe(1);
+      const przed = {
+        wyp: (await sql`select count(*)::int as n from broker_fills`)[0].n,
+        bt: await sql`select id, external_ref, trade_id, match_state from broker_trades order by id`,
+        imp: (await sql`select count(*)::int as n from broker_imports where status = 'committed'`)[0].n,
+      };
+      const wczesniej = ORDERS.trimEnd() + String.fromCharCode(10) + wierszOrders({ id: "698000000777", strona: "Buy", cena: "20090", ilosc: 1, czas: "10/14/2026 14:00:00", konto: KONTO_PLIKU });
+      const r2 = await inbox(wczesniej);
+      expect(r2.status, JSON.stringify(r2.json)).toBe(422);
+      expect(JSON.stringify(r2.json)).toContain("would_alter_matched");
+      expect((await sql`select count(*)::int as n from broker_fills`)[0].n).toBe(przed.wyp);
+      expect(await sql`select id, external_ref, trade_id, match_state from broker_trades order by id`).toEqual(przed.bt);
+      expect((await sql`select count(*)::int as n from broker_imports where status = 'committed'`)[0].n).toBe(przed.imp);
+      expect(Number((await wiersz(a)).pnl)).toBe(7050);
+    });
+
+    it("POST /trades z externalRef »brk:« jest odrzucany: trade z danych brokera powstaje tylko z zatwierdzonej sugestii albo importu w UI", async () => {
+      const { POST } = await import("@/app/api/v2/trades/route");
+      const res = await POST(
+        zadanie("/trades", {
+          metoda: "POST",
+          token: rw.token,
+          cialo: {
+            trades: [
+              { accountId: kontoId, symbol: "MNQ", direction: "long", entryTime: `${DZIEN}T13:30:35Z`, entryPrice: 20100, contracts: 1, exits: [{ time: `${DZIEN}T13:34:50Z`, price: 20101 }], externalRef: "brk:tradovate:abcdefabcdef:1" },
+            ],
+          },
+        }),
+        undefined,
+      );
+      const odp = JSON.stringify(await res.json());
+      expect(odp).toContain('"error":1');
+      expect(odp).toContain("tv:<id> albo fxr:<id>");
+      expect((await sql`select count(*)::int as n from trades where external_ref like 'brk:%'`)[0].n).toBe(0);
     });
 
     it("ten sam plik drugi raz: 200 duplicate z tym samym SHA i bez zmian w bazie; konto nieprzypisane z nowego pliku zostaje nieprzypisane", async () => {

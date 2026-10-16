@@ -2549,6 +2549,23 @@ export const brokerCashEvents = pgTable(
   ],
 );
 
+/* Co zawieral kazdy zatwierdzony import (nowe wiersze i duplikaty): cofniecie importu kasuje tylko to, czego nie ma w zadnym innym imporcie. */
+export const brokerImportRows = pgTable(
+  "broker_import_rows",
+  {
+    importId: integer()
+      .notNull()
+      .references(() => brokerImports.id, { onDelete: "cascade" }),
+    kind: text().$type<"fill" | "cash">().notNull(),
+    rowId: integer().notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.importId, t.kind, t.rowId] }),
+    check("broker_import_rows_kind", sql`${t.kind} in ('fill', 'cash')`),
+    index("broker_import_rows_row_idx").on(t.kind, t.rowId),
+  ],
+);
+
 /* Aktywne konta dnia (rytual przed sesja), wielokrotne (Slowa uzytkownika 16.10.2026: «Kilka naraz»). */
 export const dayAccounts = pgTable(
   "day_accounts",

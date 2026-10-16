@@ -2064,6 +2064,18 @@ if (!TEST_URL) {
         return i.id as number;
       }
 
+      /** Import nalezacy do tokenu: pochodzenie tj_watch wstawia sam token, potem aktor wraca do ui. Bez tokenu: zwykly import ui. */
+      async function importTokenu(tx: Tx, tokenId: number | null): Promise<number> {
+        if (tokenId === null) {
+          await aktor(tx, "ui");
+          return importUi(tx);
+        }
+        await aktor(tx, `api:${tokenId}`);
+        const id = await importUi(tx, { origin: "tj_watch", tokenId });
+        await aktor(tx, "ui");
+        return id;
+      }
+
       const wstawBrokerTrade = (tx: Tx, brokerAccountId: number, importId: number | null, extra: { tradeId?: number | null; matchKind?: string | null; ref?: string } = {}) =>
         tx`INSERT INTO broker_trades (broker_account_id, import_id, external_ref, contract, direction, max_qty, entry_time, exit_time, avg_entry_price, avg_exit_price, status,
                                       trade_id, match_kind, match_state)
@@ -2157,7 +2169,9 @@ if (!TEST_URL) {
         // fundament wstawiony jako ui, potem zmiana aktora na badanego
         const proba = (aktorProby: string, akcja: (tx: Tx, c: Kontekst) => Promise<unknown>) => async (tx: Tx) => {
           const konto = await kontoBrokera(tx);
-          const imp = await importUi(tx);
+          // import nalezy do dobrego tokenu: UPDATE importu token moze tylko na wlasnym
+          const wlasciciel = aktorProby === `api:${dobry}` ? dobry : null; // pozostale tokeny nie moga nawet zalozyc importu (trigger pochodzenia)
+          const imp = await importTokenu(tx, wlasciciel);
           const [bt] = await wstawBrokerTrade(tx, konto, imp);
           const [fill] = await wstawFill(tx, konto, imp, bt.id);
           await aktor(tx, aktorProby);
@@ -2177,6 +2191,22 @@ if (!TEST_URL) {
           await wycofywalna(async (tx) => { await proba(`api:${dobry}`, akcja)(tx); });
           await wycofywalna(async (tx) => { await proba("ui", akcja)(tx); });
         }
+        // token importu nie ruszy CUDZEGO importu ani nie zmieni jego statusu (audyt W1: cofanie i kasowanie to wylacznie UI)
+        await trigger("broker_imports", "broker_imports_zapis", "TJ403", async (tx) => {
+          const imp = await importTokenu(tx, null);
+          await aktor(tx, `api:${dobry}`);
+          return tx`UPDATE broker_imports SET rows_skipped = 1 WHERE id = ${imp}`;
+        }, "wymaga aktora");
+        await trigger("broker_imports", "broker_imports_zapis", "TJ403", async (tx) => {
+          const imp = await importTokenu(tx, dobry);
+          await aktor(tx, `api:${dobry}`);
+          return tx`UPDATE broker_imports SET status = 'reverted', reverted_at = now() WHERE id = ${imp}`;
+        }, "wymaga aktora");
+        await trigger("broker_imports", "broker_imports_zapis", "TJ403", async (tx) => {
+          const imp = await importTokenu(tx, dobry);
+          await aktor(tx, `api:${dobry}`);
+          return tx`DELETE FROM broker_imports WHERE id = ${imp}`;
+        }, "wymaga aktora");
         // agent nie skasuje i nie zmieni danych brokera
         await trigger("broker_fills", "broker_fills_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`DELETE FROM broker_fills WHERE id = ${c.fill}`));
         await trigger("broker_trades", "broker_trades_zapis", "TJ403", proba(`api:${agent}`, (tx, c) => tx`UPDATE broker_trades SET match_state = 'skipped' WHERE id = ${c.bt}`));

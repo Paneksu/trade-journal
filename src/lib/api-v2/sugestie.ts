@@ -20,6 +20,7 @@ import { czyInterwal } from "@/lib/domain/interwaly";
 
 import type { SugestiaUtworzSchema, SugestieListaQuery } from "./contract/funkcje";
 import { KINDY_ZARZADZANE } from "./notatki";
+import { ukryteTradyBrokera } from "@/lib/brokerzy/odczyt";
 import { wejscieTradu } from "./ukrycie-wyniku";
 import { wersjaSetupuNaChwile } from "./wersje-setupu";
 import type { KontekstApi, Transakcja } from "./with-api";
@@ -79,6 +80,8 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
         .where(eq(brokerTrades.id, d.payload.brokerTradeId))
         .limit(1);
       if (!bt) return odrzuc(422, "unknown_reference", `pole payload.brokerTradeId: »${d.payload.brokerTradeId}« - nie ma takiego trade'a brokera (lista: GET /api/v2/broker/trades?unmatched=true).`);
+      // Slepa ocena: o trade'ach z ukrytym wynikiem nie mowimy niczego, co zdradza ich stan (otwarty / zamkniety / dopasowany).
+      if ((await ukryteTradyBrokera(tx, [bt.id])).has(bt.id)) return odrzuc(422, "result_hidden", `Trade brokera #${bt.id} jest teraz niedostępny dla AI (ślepa ocena). Zgłoś propozycję po zamknięciu trade'a z werdyktem.`);
       if (bt.tradeId !== null) return odrzuc(409, "already_present", `Trade brokera #${bt.id} jest już dopasowany do trade'a #${bt.tradeId}; nic do zatwierdzania.`);
       if (bt.status !== "closed") return odrzuc(422, "broker_trade_open", `Trade brokera #${bt.id} jest jeszcze otwarty, więc nie ma wyniku do wpisania. Zgłoś dopasowanie po kolejnym eksporcie.`);
       if (bt.konto === null) return odrzuc(422, "broker_account_unmapped", `Konto u brokera trade'a #${bt.id} nie jest przypisane do konta dziennika. Przypisanie robi użytkownik w aplikacji (Prop → Połączenia).`);
@@ -151,6 +154,7 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
       .where(eq(brokerTrades.id, d.target.id))
       .limit(1);
     if (!bt) return odrzuc(422, "unknown_reference", `pole target.id: »${d.target.id}« - nie ma takiego trade'a brokera.`);
+    if ((await ukryteTradyBrokera(tx, [bt.id])).has(bt.id)) return odrzuc(422, "result_hidden", `Trade brokera #${bt.id} jest teraz niedostępny dla AI (ślepa ocena). Zgłoś propozycję po zamknięciu trade'a z werdyktem.`);
     if (bt.tradeId !== null) return odrzuc(409, "already_present", `Trade brokera #${bt.id} ma już trade w dzienniku (#${bt.tradeId}).`);
     if (bt.status !== "closed") return odrzuc(422, "broker_trade_open", `Trade brokera #${bt.id} jest jeszcze otwarty; trade w dzienniku powstaje z zamkniętej pozycji.`);
     if (bt.konto === null) return odrzuc(422, "broker_account_unmapped", `Konto u brokera trade'a #${bt.id} nie jest przypisane do konta dziennika (przypisuje użytkownik w Prop → Połączenia).`);

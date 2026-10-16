@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, sql } from "drizzle-orm";
 
 import type { Transakcja } from "@/lib/api-v2/zapis";
 import {
@@ -7,6 +7,7 @@ import {
   brokerAccounts,
   brokerCashEvents,
   brokerFills,
+  brokerImportRows,
   brokerImports,
   brokerTrades,
   ingestSkips,
@@ -26,6 +27,7 @@ import { ukryteTradyBrokera } from "./odczyt";
 import { przebiegDopasowania, type ZastosowaneDopasowanie } from "./dopasowania";
 import { skrotKonta, sha256Hex } from "./klucz";
 import {
+  BladAutomatu,
   poczatekOkna,
   prefiksWypelnien,
   przeliczOkno,
@@ -285,292 +287,312 @@ export async function zastosujPlikBrokera(tx: Transakcja, o: OpcjeImportu): Prom
     return { ok: false, status: 422, kod: "rows_invalid", komunikat, bledy: p.bledy, sha256: sha, importId };
   }
 
+  // Zapis wlasciwy. Automat (tj_watch) dziala w punkcie zapisu (savepoint): gdy plik zmieniłby strukture juz dopasowanych trade'ow,
+  // cofamy wszystko i zapisujemy tylko odrzucenie (»Do decyzji«), zamiast po cichu zmieniac wyniki.
+  const zapisz = async (tx: Transakcja): Promise<SukcesImportu> => {
   // --- wiersz importu (liczniki uzupelniamy na koncu) ---
-  const [imp] = await tx
-    .insert(brokerImports)
-    .values({
-      origin: o.pochodzenie,
-      format: p.format,
-      fileSha256: sha,
-      fileBytes: o.bajty.length,
-      tz: strefa,
-      rowsTotal: p.wierszy,
-      rowsSkipped: p.pominiete + p.bledy.length,
-      fillsNew: 0,
-      fillsDuplicate: 0,
-      tradesMatched: 0,
-      tradesCreated: 0,
-      pendingDecisions: 0,
-      status: "committed",
-      warnings: [],
-      createdByTokenId: o.tokenId,
-    })
-    .returning({ id: brokerImports.id });
-
-  // --- konta u brokera ---
-  const kontaWPliku: KontoWPliku[] = [];
-  const konteksty = new Map<string, KontoBrokeraKontekst>();
-  for (const [raw, skrot] of skroty) {
-    let [ba] = await tx
-      .select()
-      .from(brokerAccounts)
-      .where(and(eq(brokerAccounts.platform, platforma), eq(brokerAccounts.externalAccountHmac, skrot.hmac)))
-      .limit(1);
-    let nowe = false;
-    const zadane = o.pochodzenie === "ui" ? (o.przypisania?.[skrot.hmac] ?? null) : null;
-    if (!ba) {
-      if (zadane !== null) {
-        const [zajete] = await tx.select({ id: brokerAccounts.id }).from(brokerAccounts).where(eq(brokerAccounts.accountId, zadane)).limit(1);
-        if (zajete) {
-          throw new BladImportu(409, "account_taken", `Konto dziennika #${zadane} jest już przypisane do innego konta u brokera (#${zajete.id}). Jedno konto dziennika ma co najwyżej jedno konto u brokera. Wybierz inne konto albo najpierw odepnij to.`);
+    const [imp] = await tx
+      .insert(brokerImports)
+      .values({
+        origin: o.pochodzenie,
+        format: p.format,
+        fileSha256: sha,
+        fileBytes: o.bajty.length,
+        tz: strefa,
+        rowsTotal: p.wierszy,
+        rowsSkipped: p.pominiete + p.bledy.length,
+        fillsNew: 0,
+        fillsDuplicate: 0,
+        tradesMatched: 0,
+        tradesCreated: 0,
+        pendingDecisions: 0,
+        status: "committed",
+        warnings: [],
+        createdByTokenId: o.tokenId,
+      })
+      .returning({ id: brokerImports.id });
+  
+    // --- konta u brokera ---
+    const kontaWPliku: KontoWPliku[] = [];
+    const konteksty = new Map<string, KontoBrokeraKontekst>();
+    for (const [raw, skrot] of skroty) {
+      let [ba] = await tx
+        .select()
+        .from(brokerAccounts)
+        .where(and(eq(brokerAccounts.platform, platforma), eq(brokerAccounts.externalAccountHmac, skrot.hmac)))
+        .limit(1);
+      let nowe = false;
+      const zadane = o.pochodzenie === "ui" ? (o.przypisania?.[skrot.hmac] ?? null) : null;
+      if (!ba) {
+        if (zadane !== null) {
+          const [zajete] = await tx.select({ id: brokerAccounts.id }).from(brokerAccounts).where(eq(brokerAccounts.accountId, zadane)).limit(1);
+          if (zajete) {
+            throw new BladImportu(409, "account_taken", `Konto dziennika #${zadane} jest już przypisane do innego konta u brokera (#${zajete.id}). Jedno konto dziennika ma co najwyżej jedno konto u brokera. Wybierz inne konto albo najpierw odepnij to.`);
+          }
+        }
+        [ba] = await tx
+          .insert(brokerAccounts)
+          .values({ accountId: zadane, platform: platforma, method: "export_file", externalAccountHmac: skrot.hmac, labelLast4: skrot.ostatnie4 })
+          .returning();
+        nowe = true;
+        if (zadane !== null) await tx.insert(authEvents).values({ kind: "broker_account_mapped", detail: { brokerAccountId: ba.id, accountId: zadane, via: "import" } });
+      } else if (zadane !== null && ba.accountId !== zadane) {
+        if (ba.accountId !== null) {
+          ostrzezenia.push({ code: "konto_juz_przypisane", message: `Konto u brokera …${skrot.ostatnie4} jest już przypisane do konta dziennika #${ba.accountId}; zmiana przypisania nie jest częścią importu (odepnij konto w Połączeniach).` });
+        } else {
+          const [zajete] = await tx.select({ id: brokerAccounts.id }).from(brokerAccounts).where(eq(brokerAccounts.accountId, zadane)).limit(1);
+          if (zajete) {
+            throw new BladImportu(409, "account_taken", `Konto dziennika #${zadane} jest już przypisane do innego konta u brokera (#${zajete.id}). Wybierz inne konto.`);
+          }
+          [ba] = await tx.update(brokerAccounts).set({ accountId: zadane }).where(eq(brokerAccounts.id, ba.id)).returning();
+          await tx.insert(authEvents).values({ kind: "broker_account_mapped", detail: { brokerAccountId: ba.id, accountId: zadane, via: "import" } });
         }
       }
-      [ba] = await tx
-        .insert(brokerAccounts)
-        .values({ accountId: zadane, platform: platforma, method: "export_file", externalAccountHmac: skrot.hmac, labelLast4: skrot.ostatnie4 })
-        .returning();
-      nowe = true;
-      if (zadane !== null) await tx.insert(authEvents).values({ kind: "broker_account_mapped", detail: { brokerAccountId: ba.id, accountId: zadane, via: "import" } });
-    } else if (zadane !== null && ba.accountId !== zadane) {
-      if (ba.accountId !== null) {
-        ostrzezenia.push({ code: "konto_juz_przypisane", message: `Konto u brokera …${skrot.ostatnie4} jest już przypisane do konta dziennika #${ba.accountId}; zmiana przypisania nie jest częścią importu (odepnij konto w Połączeniach).` });
-      } else {
-        const [zajete] = await tx.select({ id: brokerAccounts.id }).from(brokerAccounts).where(eq(brokerAccounts.accountId, zadane)).limit(1);
-        if (zajete) {
-          throw new BladImportu(409, "account_taken", `Konto dziennika #${zadane} jest już przypisane do innego konta u brokera (#${zajete.id}). Wybierz inne konto.`);
-        }
-        [ba] = await tx.update(brokerAccounts).set({ accountId: zadane }).where(eq(brokerAccounts.id, ba.id)).returning();
-        await tx.insert(authEvents).values({ kind: "broker_account_mapped", detail: { brokerAccountId: ba.id, accountId: zadane, via: "import" } });
-      }
+      konteksty.set(raw, { id: ba.id, platforma, krotki: skrot.krotki, kontoDziennikaId: ba.accountId });
+      kontaWPliku.push({ hmac: skrot.hmac, ostatnie4: skrot.ostatnie4, brokerAccountId: ba.id, kontoDziennikaId: ba.accountId, nowe });
     }
-    konteksty.set(raw, { id: ba.id, platforma, krotki: skrot.krotki, kontoDziennikaId: ba.accountId });
-    kontaWPliku.push({ hmac: skrot.hmac, ostatnie4: skrot.ostatnie4, brokerAccountId: ba.id, kontoDziennikaId: ba.accountId, nowe });
-  }
-
-  // --- wypelnienia i zdarzenia ---
-  const nowe = { wyp: 0, zd: 0, dupWyp: 0, dupZd: 0 };
-  const najwczesniej = new Map<string, { konto: KontoBrokeraKontekst; kontrakt: string; czas: Date }>();
-  const dotknij = (k: KontoBrokeraKontekst, kontrakt: string, czas: Date): void => {
-    const klucz = `${k.id}|${kontrakt}`;
-    const jest = najwczesniej.get(klucz);
-    if (!jest || czas.getTime() < jest.czas.getTime()) najwczesniej.set(klucz, { konto: k, kontrakt, czas });
-  };
-
-  const ROZMIAR_PACZKI = 500;
-  for (let i = 0; i < p.wypelnienia.length; i += ROZMIAR_PACZKI) {
-    const paczka = p.wypelnienia.slice(i, i + ROZMIAR_PACZKI);
-    const wiersze = paczka.map((w: Wypelnienie) => {
-      const k = konteksty.get(w.konto)!;
-      return {
-        brokerAccountId: k.id,
-        importId: imp.id,
-        externalRef: refWypelnienia(k, w.idZrodla),
-        contract: w.kontrakt,
-        side: w.strona,
-        qty: String(w.ilosc),
-        price: String(w.cena),
-        filledAt: w.czas,
-        orderRef: w.zlecenie,
-        raw: w.raw,
-      };
-    });
-    const wstawione = await tx.insert(brokerFills).values(wiersze).onConflictDoNothing({ target: brokerFills.externalRef }).returning({ ref: brokerFills.externalRef });
-    const nowych = new Set(wstawione.map((x) => x.ref));
-    nowe.wyp += nowych.size;
-    nowe.dupWyp += paczka.length - nowych.size;
-    for (const w of paczka) {
-      const k = konteksty.get(w.konto)!;
-      if (nowych.has(refWypelnienia(k, w.idZrodla))) dotknij(k, w.kontrakt, w.czas);
-    }
-  }
-  for (let i = 0; i < p.zdarzenia.length; i += ROZMIAR_PACZKI) {
-    const paczka = p.zdarzenia.slice(i, i + ROZMIAR_PACZKI);
-    const wiersze = paczka.map((z: ZdarzenieCash) => {
-      const k = konteksty.get(z.konto)!;
-      return {
-        brokerAccountId: k.id,
-        importId: imp.id,
-        externalRef: refZdarzenia(k, z.idZrodla),
-        kind: z.rodzaj,
-        deltaCents: z.deltaCenty,
-        contract: z.kontrakt,
-        occurredAt: z.czas,
-        raw: z.raw,
-      };
-    });
-    const wstawione = await tx.insert(brokerCashEvents).values(wiersze).onConflictDoNothing({ target: brokerCashEvents.externalRef }).returning({ ref: brokerCashEvents.externalRef });
-    const nowych = new Set(wstawione.map((x) => x.ref));
-    nowe.zd += nowych.size;
-    nowe.dupZd += paczka.length - nowych.size;
-    for (const z of paczka) {
-      const k = konteksty.get(z.konto)!;
-      if (z.kontrakt !== null && nowych.has(refZdarzenia(k, z.idZrodla))) dotknij(k, z.kontrakt, z.czas);
-    }
-  }
-
-  // --- przeliczenie trade'ow brokera ---
-  const skutki: Awaited<ReturnType<typeof przeliczOkno>>[] = [];
-  for (const { konto, kontrakt, czas } of najwczesniej.values()) {
-    skutki.push(await przeliczOkno(tx, konto, kontrakt, czas, imp.id));
-  }
-  const dotkniete = skutki.flatMap((s) => s.trade);
-  const idyTrade = new Set(dotkniete.map((t) => t.wiersz.id));
-
-  // --- dopasowanie 1:1 (UI: zaznaczone na podgladzie, automat: od razu z "Cofnij") ---
-  const kontaDoDopasowania = [...new Set([...konteksty.values()].filter((k) => k.kontoDziennikaId !== null).map((k) => k.id))];
-  const przebieg = await przebiegDopasowania(tx, {
-    kontaBrokera: kontaDoDopasowania,
-    rodzaj: o.pochodzenie === "ui" ? "user" : "auto",
-    odznaczone: new Set(o.odznaczone ?? []),
-  });
-  for (const z of przebieg.zastosowane) idyTrade.add(z.brokerTradeId);
-  for (const b of przebieg.bledy) {
-    ostrzezenia.push({ code: "dopasowanie_nieudane", message: `Dopasowanie trade'a brokera #${b.brokerTradeId} nie przeszło: ${b.komunikat}.` });
-  }
-
-  // --- tworzenie trade'ow dziennika z danych brokera (tylko UI, tylko zaznaczone) ---
-  const utworzone: { brokerTradeId: number; tradeId: number }[] = [];
-  if (o.pochodzenie === "ui" && (o.utworz?.length ?? 0) > 0) {
-    const zadane = new Set(o.utworz);
-    for (const { wiersz, domena } of dotkniete) {
-      if (!zadane.has(wiersz.externalRef)) continue;
-      const [swiezy] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, wiersz.id)).limit(1);
-      if (!swiezy || swiezy.tradeId !== null || swiezy.status !== "closed") continue;
-      const ctx = [...konteksty.values()].find((k) => k.id === swiezy.brokerAccountId);
-      if (!ctx || ctx.kontoDziennikaId === null) {
-        ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: konto u brokera nie jest przypisane do konta dziennika.` });
-        continue;
-      }
-      if (swiezy.instrumentId === null) {
-        ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: kontrakt ${swiezy.contract} nie ma instrumentu w dzienniku (dodaj go w Ustawieniach).` });
-        continue;
-      }
-      const [nagrobek] = await tx.select({ id: ingestSkips.id }).from(ingestSkips).where(eq(ingestSkips.externalRef, swiezy.externalRef)).limit(1);
-      if (nagrobek) {
-        ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: został wcześniej skasowany w aplikacji (nagrobek).` });
-        continue;
-      }
-      const w = await utworzTradeZDanychBrokera(tx, swiezy, ctx.kontoDziennikaId, domena);
-      if (w.ok) {
-        utworzone.push({ brokerTradeId: swiezy.id, tradeId: w.tradeId });
-        idyTrade.add(swiezy.id);
-      } else {
-        ostrzezenia.push({ code: "utworzenie_nieudane", message: `Trade z ${wiersz.externalRef} nie powstał: ${w.komunikat}.` });
-      }
-    }
-  }
-
-  // --- ostrzezenie o mozliwym przesunieciu strefy (nie przesuwamy sami) ---
-  const przesuniecie = await podejrzeniePrzesuniecia(tx, kontaDoDopasowania);
-  if (przesuniecie) {
-    ostrzezenia.push({
-      code: "strefa_podejrzana",
-      message: `Po przesunięciu czasów w pliku o ${przesuniecie.godziny > 0 ? "+" : ""}${przesuniecie.godziny} h dopasowałoby się ${przesuniecie.dopasowan} trade'ów dziennika 1:1 (bez przesunięcia: ${przesuniecie.bazowo}). Plik nie podaje strefy, więc to możliwa pomyłka: wgraj plik ponownie z inną strefą. Niczego nie przesunięto.`,
-    });
-  }
-
-  // --- pozycje do raportu ---
-  const finalne = idyTrade.size === 0 ? [] : await tx.select().from(brokerTrades).where(inArray(brokerTrades.id, [...idyTrade])).orderBy(asc(brokerTrades.entryTime));
-  const ukryte = await ukryteTradyBrokera(tx, finalne.map((t) => t.id));
-  const ostatnie4 = new Map(kontaWPliku.map((k) => [k.brokerAccountId, k]));
-  const poId = new Map(dotkniete.map((t) => [t.wiersz.id, t]));
-  const dop = new Map<number, Dopasowanie>(przebieg.dopasowania.map((d) => [d.brokerTradeId, d]));
-  const zast = new Map(przebieg.zastosowane.map((z) => [z.brokerTradeId, z]));
-  const utw = new Set(utworzone.map((u) => u.brokerTradeId));
-  const pozycje: PozycjaImportu[] = finalne.map((bt) => {
-    const k = ostatnie4.get(bt.brokerAccountId);
-    const d = dop.get(bt.id);
-    const z = zast.get(bt.id);
-    const u = ukryte.has(bt.id);
-    return {
-      id: bt.id,
-      externalRef: bt.externalRef,
-      kontrakt: bt.contract,
-      kierunek: bt.direction,
-      ilosc: Number(bt.maxQty),
-      wejscie: bt.entryTime.toISOString(),
-      wyjscie: u ? null : (bt.exitTime?.toISOString() ?? null),
-      cenaWejscia: Number(bt.avgEntryPrice),
-      cenaWyjscia: u || bt.avgExitPrice === null ? null : Number(bt.avgExitPrice),
-      status: bt.status,
-      bruttoCenty: u ? null : bt.grossCents,
-      oplatyCenty: u ? null : bt.feesCents,
-      zrodloOplat: u ? null : bt.feeSource,
-      nettoCenty: u ? null : bt.netCents,
-      zrodloBrutto: u ? null : bt.grossSource,
-      kontoOstatnie4: k?.ostatnie4 ?? null,
-      kontoDziennikaId: k?.kontoDziennikaId ?? null,
-      stanDopasowania: bt.matchState,
-      rodzajDopasowania: bt.matchKind,
-      tradeId: bt.tradeId,
-      kandydaci: d?.kandydaci ?? [],
-      powod: d?.powod ?? null,
-      pnlPrzed: u ? null : (z?.pnlPrzed ?? null),
-      pnlPo: u ? null : (z?.pnlPo ?? null),
-      nowy: poId.get(bt.id)?.nowy ?? false,
-      utworzony: utw.has(bt.id),
-      wynikUkryty: u,
+  
+    // --- wypelnienia i zdarzenia ---
+    const nowe = { wyp: 0, zd: 0, dupWyp: 0, dupZd: 0 };
+    const najwczesniej = new Map<string, { konto: KontoBrokeraKontekst; kontrakt: string; czas: Date }>();
+    const dotknij = (k: KontoBrokeraKontekst, kontrakt: string, czas: Date): void => {
+      const klucz = `${k.id}|${kontrakt}`;
+      const jest = najwczesniej.get(klucz);
+      if (!jest || czas.getTime() < jest.czas.getTime()) najwczesniej.set(klucz, { konto: k, kontrakt, czas });
     };
-  });
-
-  // --- liczniki importu ---
-  const [{ doDecyzji }] = await tx
-    .select({ doDecyzji: sql<number>`count(*)::int` })
-    .from(brokerTrades)
-    .where(
-      and(
-        inArray(brokerTrades.brokerAccountId, [...konteksty.values()].map((k) => k.id)),
-        eq(brokerTrades.status, "closed"),
-        inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]),
-        isNull(brokerTrades.tradeId),
-      ),
-    );
-  const otwarte = finalne.filter((t) => t.status === "open").length;
-  await tx
-    .update(brokerImports)
-    .set({
-      fillsNew: nowe.wyp,
-      fillsDuplicate: nowe.dupWyp,
-      tradesMatched: przebieg.zastosowane.length,
-      tradesCreated: utworzone.length,
-      pendingDecisions: doDecyzji,
-      warnings: ostrzezenia,
-    })
-    .where(eq(brokerImports.id, imp.id));
-  await tx.insert(authEvents).values({
-    kind: "broker_import",
-    tokenId: o.tokenId,
-    detail: {
+  
+    const ROZMIAR_PACZKI = 500;
+    for (let i = 0; i < p.wypelnienia.length; i += ROZMIAR_PACZKI) {
+      const paczka = p.wypelnienia.slice(i, i + ROZMIAR_PACZKI);
+      const wiersze = paczka.map((w: Wypelnienie) => {
+        const k = konteksty.get(w.konto)!;
+        return {
+          brokerAccountId: k.id,
+          importId: imp.id,
+          externalRef: refWypelnienia(k, w.idZrodla),
+          contract: w.kontrakt,
+          side: w.strona,
+          qty: String(w.ilosc),
+          price: String(w.cena),
+          filledAt: w.czas,
+          orderRef: w.zlecenie,
+          raw: w.raw,
+        };
+      });
+      const wstawione = await tx.insert(brokerFills).values(wiersze).onConflictDoNothing({ target: brokerFills.externalRef }).returning({ ref: brokerFills.externalRef });
+      const nowych = new Set(wstawione.map((x) => x.ref));
+      nowe.wyp += nowych.size;
+      nowe.dupWyp += paczka.length - nowych.size;
+      // Powiazanie z importem dla KAZDEGO wiersza pliku (nowego i duplikatu): cofniecie kasuje tylko wiersze wylacznie tego importu.
+      const ids = await tx.select({ id: brokerFills.id }).from(brokerFills).where(inArray(brokerFills.externalRef, wiersze.map((w) => w.externalRef)));
+      if (ids.length > 0) await tx.insert(brokerImportRows).values(ids.map((x) => ({ importId: imp.id, kind: "fill" as const, rowId: x.id }))).onConflictDoNothing();
+      for (const w of paczka) {
+        const k = konteksty.get(w.konto)!;
+        if (nowych.has(refWypelnienia(k, w.idZrodla))) dotknij(k, w.kontrakt, w.czas);
+      }
+    }
+    for (let i = 0; i < p.zdarzenia.length; i += ROZMIAR_PACZKI) {
+      const paczka = p.zdarzenia.slice(i, i + ROZMIAR_PACZKI);
+      const wiersze = paczka.map((z: ZdarzenieCash) => {
+        const k = konteksty.get(z.konto)!;
+        return {
+          brokerAccountId: k.id,
+          importId: imp.id,
+          externalRef: refZdarzenia(k, z.idZrodla),
+          kind: z.rodzaj,
+          deltaCents: z.deltaCenty,
+          contract: z.kontrakt,
+          occurredAt: z.czas,
+          raw: z.raw,
+        };
+      });
+      const wstawione = await tx.insert(brokerCashEvents).values(wiersze).onConflictDoNothing({ target: brokerCashEvents.externalRef }).returning({ ref: brokerCashEvents.externalRef });
+      const nowych = new Set(wstawione.map((x) => x.ref));
+      nowe.zd += nowych.size;
+      nowe.dupZd += paczka.length - nowych.size;
+      const ids = await tx.select({ id: brokerCashEvents.id }).from(brokerCashEvents).where(inArray(brokerCashEvents.externalRef, wiersze.map((w) => w.externalRef)));
+      if (ids.length > 0) await tx.insert(brokerImportRows).values(ids.map((x) => ({ importId: imp.id, kind: "cash" as const, rowId: x.id }))).onConflictDoNothing();
+      for (const z of paczka) {
+        const k = konteksty.get(z.konto)!;
+        if (z.kontrakt !== null && nowych.has(refZdarzenia(k, z.idZrodla))) dotknij(k, z.kontrakt, z.czas);
+      }
+    }
+  
+    // --- przeliczenie trade'ow brokera ---
+    const skutki: Awaited<ReturnType<typeof przeliczOkno>>[] = [];
+    for (const { konto, kontrakt, czas } of najwczesniej.values()) {
+      skutki.push(await przeliczOkno(tx, konto, kontrakt, czas, imp.id, { ochronaDopasowan: o.pochodzenie === "tj_watch", tylkoAuto: o.pochodzenie === "tj_watch" }));
+    }
+    const dotkniete = skutki.flatMap((s) => s.trade);
+    const idyTrade = new Set(dotkniete.map((t) => t.wiersz.id));
+  
+    // --- dopasowanie 1:1 (UI: zaznaczone na podgladzie, automat: od razu z "Cofnij") ---
+    const kontaDoDopasowania = [...new Set([...konteksty.values()].filter((k) => k.kontoDziennikaId !== null).map((k) => k.id))];
+    const przebieg = await przebiegDopasowania(tx, {
+      kontaBrokera: kontaDoDopasowania,
+      rodzaj: o.pochodzenie === "ui" ? "user" : "auto",
+      odznaczone: new Set(o.odznaczone ?? []),
+    });
+    for (const z of przebieg.zastosowane) idyTrade.add(z.brokerTradeId);
+    for (const b of przebieg.bledy) {
+      ostrzezenia.push({ code: "dopasowanie_nieudane", message: `Dopasowanie trade'a brokera #${b.brokerTradeId} nie przeszło: ${b.komunikat}.` });
+    }
+  
+    // --- tworzenie trade'ow dziennika z danych brokera (tylko UI, tylko zaznaczone) ---
+    const utworzone: { brokerTradeId: number; tradeId: number }[] = [];
+    if (o.pochodzenie === "ui" && (o.utworz?.length ?? 0) > 0) {
+      const zadane = new Set(o.utworz);
+      for (const { wiersz, domena } of dotkniete) {
+        if (!zadane.has(wiersz.externalRef)) continue;
+        const [swiezy] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, wiersz.id)).limit(1);
+        if (!swiezy || swiezy.tradeId !== null || swiezy.status !== "closed") continue;
+        const ctx = [...konteksty.values()].find((k) => k.id === swiezy.brokerAccountId);
+        if (!ctx || ctx.kontoDziennikaId === null) {
+          ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: konto u brokera nie jest przypisane do konta dziennika.` });
+          continue;
+        }
+        if (swiezy.instrumentId === null) {
+          ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: kontrakt ${swiezy.contract} nie ma instrumentu w dzienniku (dodaj go w Ustawieniach).` });
+          continue;
+        }
+        const [nagrobek] = await tx.select({ id: ingestSkips.id }).from(ingestSkips).where(eq(ingestSkips.externalRef, swiezy.externalRef)).limit(1);
+        if (nagrobek) {
+          ostrzezenia.push({ code: "utworzenie_pominiete", message: `Nie utworzono trade'a z ${wiersz.externalRef}: został wcześniej skasowany w aplikacji (nagrobek).` });
+          continue;
+        }
+        const w = await utworzTradeZDanychBrokera(tx, swiezy, ctx.kontoDziennikaId, domena);
+        if (w.ok) {
+          utworzone.push({ brokerTradeId: swiezy.id, tradeId: w.tradeId });
+          idyTrade.add(swiezy.id);
+        } else {
+          ostrzezenia.push({ code: "utworzenie_nieudane", message: `Trade z ${wiersz.externalRef} nie powstał: ${w.komunikat}.` });
+        }
+      }
+    }
+  
+    // --- ostrzezenie o mozliwym przesunieciu strefy (nie przesuwamy sami) ---
+    const przesuniecie = await podejrzeniePrzesuniecia(tx, kontaDoDopasowania, [...idyTrade]);
+    if (przesuniecie) {
+      ostrzezenia.push({
+        code: "strefa_podejrzana",
+        message: `Po przesunięciu czasów w pliku o ${przesuniecie.godziny > 0 ? "+" : ""}${przesuniecie.godziny} h dopasowałoby się ${przesuniecie.dopasowan} trade'ów dziennika 1:1 (bez przesunięcia: ${przesuniecie.bazowo}). Plik nie podaje strefy, więc to możliwa pomyłka: wgraj plik ponownie z inną strefą. Niczego nie przesunięto.`,
+      });
+    }
+  
+    // --- pozycje do raportu ---
+    const finalne = idyTrade.size === 0 ? [] : await tx.select().from(brokerTrades).where(inArray(brokerTrades.id, [...idyTrade])).orderBy(asc(brokerTrades.entryTime));
+    const ukryte = await ukryteTradyBrokera(tx, finalne.map((t) => t.id));
+    const ostatnie4 = new Map(kontaWPliku.map((k) => [k.brokerAccountId, k]));
+    const poId = new Map(dotkniete.map((t) => [t.wiersz.id, t]));
+    const dop = new Map<number, Dopasowanie>(przebieg.dopasowania.map((d) => [d.brokerTradeId, d]));
+    const zast = new Map(przebieg.zastosowane.map((z) => [z.brokerTradeId, z]));
+    const utw = new Set(utworzone.map((u) => u.brokerTradeId));
+    const pozycje: PozycjaImportu[] = finalne.map((bt) => {
+      const k = ostatnie4.get(bt.brokerAccountId);
+      const d = dop.get(bt.id);
+      const z = zast.get(bt.id);
+      const u = ukryte.has(bt.id);
+      return {
+        id: bt.id,
+        externalRef: bt.externalRef,
+        kontrakt: bt.contract,
+        kierunek: bt.direction,
+        ilosc: Number(bt.maxQty),
+        wejscie: bt.entryTime.toISOString(),
+        wyjscie: u ? null : (bt.exitTime?.toISOString() ?? null),
+        cenaWejscia: Number(bt.avgEntryPrice),
+        cenaWyjscia: u || bt.avgExitPrice === null ? null : Number(bt.avgExitPrice),
+        // Ukryty wynik: status neutralny (w API jest null), bo »closed« zdradzalby, ze trade z werdyktem juz sie skonczyl.
+        status: u ? ("open" as typeof bt.status) : bt.status,
+        bruttoCenty: u ? null : bt.grossCents,
+        oplatyCenty: u ? null : bt.feesCents,
+        zrodloOplat: u ? null : bt.feeSource,
+        nettoCenty: u ? null : bt.netCents,
+        zrodloBrutto: u ? null : bt.grossSource,
+        kontoOstatnie4: k?.ostatnie4 ?? null,
+        kontoDziennikaId: k?.kontoDziennikaId ?? null,
+        stanDopasowania: bt.matchState,
+        rodzajDopasowania: bt.matchKind,
+        tradeId: bt.tradeId,
+        kandydaci: d?.kandydaci ?? [],
+        powod: d?.powod ?? null,
+        pnlPrzed: u ? null : (z?.pnlPrzed ?? null),
+        pnlPo: u ? null : (z?.pnlPo ?? null),
+        nowy: poId.get(bt.id)?.nowy ?? false,
+        utworzony: utw.has(bt.id),
+        wynikUkryty: u,
+      };
+    });
+  
+    // --- liczniki importu ---
+    const [{ doDecyzji }] = await tx
+      .select({ doDecyzji: sql<number>`count(*)::int` })
+      .from(brokerTrades)
+      .where(
+        and(
+          inArray(brokerTrades.brokerAccountId, [...konteksty.values()].map((k) => k.id)),
+          eq(brokerTrades.status, "closed"),
+          inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]),
+          isNull(brokerTrades.tradeId),
+        ),
+      );
+    const otwarte = finalne.filter((t) => t.status === "open").length;
+    await tx
+      .update(brokerImports)
+      .set({
+        fillsNew: nowe.wyp,
+        fillsDuplicate: nowe.dupWyp,
+        tradesMatched: przebieg.zastosowane.length,
+        tradesCreated: utworzone.length,
+        pendingDecisions: doDecyzji,
+        warnings: ostrzezenia,
+      })
+      .where(eq(brokerImports.id, imp.id));
+    await tx.insert(authEvents).values({
+      kind: "broker_import",
+      tokenId: o.tokenId,
+      detail: {
+        importId: imp.id,
+        origin: o.pochodzenie,
+        format: p.format,
+        fills: nowe.wyp,
+        zdarzenia: nowe.zd,
+        dopasowane: przebieg.zastosowane.length,
+        utworzone: utworzone.length,
+        doDecyzji,
+      },
+    });
+  
+    return {
+      ok: true,
+      status: "applied",
       importId: imp.id,
-      origin: o.pochodzenie,
+      sha256: sha,
       format: p.format,
-      fills: nowe.wyp,
-      zdarzenia: nowe.zd,
-      dopasowane: przebieg.zastosowane.length,
-      utworzone: utworzone.length,
-      doDecyzji,
-    },
-  });
-
-  return {
-    ok: true,
-    status: "applied",
-    importId: imp.id,
-    sha256: sha,
-    format: p.format,
-    platforma,
-    strefa,
-    wypelnienia: { nowe: nowe.wyp, duplikaty: nowe.dupWyp },
-    zdarzenia: { nowe: nowe.zd, duplikaty: nowe.dupZd },
-    wiersze: wiersze(p),
-    trade: { dopasowane: przebieg.zastosowane.length, doDecyzji, otwarte, utworzone: utworzone.length },
-    konta: kontaWPliku,
-    pozycje,
-    zastosowane: przebieg.zastosowane,
-    ostrzezenia,
-    bledy: p.bledy,
-    zaimportowanoWczesniej: null,
+      platforma,
+      strefa,
+      wypelnienia: { nowe: nowe.wyp, duplikaty: nowe.dupWyp },
+      zdarzenia: { nowe: nowe.zd, duplikaty: nowe.dupZd },
+      wiersze: wiersze(p),
+      trade: { dopasowane: przebieg.zastosowane.length, doDecyzji, otwarte, utworzone: utworzone.length },
+      konta: kontaWPliku,
+      pozycje,
+      zastosowane: przebieg.zastosowane,
+      ostrzezenia,
+      bledy: p.bledy,
+      zaimportowanoWczesniej: null,
+    };
   };
+  if (o.pochodzenie !== "tj_watch") return zapisz(tx);
+  try {
+    return await tx.transaction((sp) => zapisz(sp as unknown as Transakcja));
+  } catch (e) {
+    if (e instanceof BladAutomatu) {
+      const importId = await zapiszOdrzucenie(tx, o, sha, p, strefa, e.message);
+      return { ok: false, status: 422, kod: "would_alter_matched", komunikat: e.message, sha256: sha, importId };
+    }
+    throw e;
+  }
 }
 
 /** Blad domenowy importu: transakcja jest wycofywana, a wolajacy zamienia go na odpowiedz. */
@@ -635,17 +657,29 @@ export async function utworzTradeZDanychBrokera(
   return { ok: true, tradeId: zapis.id };
 }
 
-async function podejrzeniePrzesuniecia(tx: Transakcja, kontaBrokera: number[]) {
-  if (kontaBrokera.length === 0) return null;
+/** Limity kosztu wykrywania strefy: stala cena kazdego importu, takze po latach historii (audyt N2). */
+const MAKS_DO_WYKRYWANIA_STREFY = 300;
+const MAKS_KANDYDATOW_DO_STREFY = 3000;
+
+async function podejrzeniePrzesuniecia(tx: Transakcja, kontaBrokera: number[], tradeTegoImportu: number[]) {
+  if (kontaBrokera.length === 0 || tradeTegoImportu.length === 0) return null;
   const bez = await tx
     .select({ bt: brokerTrades, konto: brokerAccounts.accountId })
     .from(brokerTrades)
     .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
-    .where(and(inArray(brokerTrades.brokerAccountId, kontaBrokera), eq(brokerTrades.status, "closed"), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), isNull(brokerTrades.tradeId)));
+    .where(and(inArray(brokerTrades.id, tradeTegoImportu), inArray(brokerTrades.brokerAccountId, kontaBrokera), eq(brokerTrades.status, "closed"), inArray(brokerTrades.matchState, ["unmatched", "ambiguous"]), isNull(brokerTrades.tradeId)))
+    .limit(MAKS_DO_WYKRYWANIA_STREFY);
   const wiersze = bez.filter((w) => w.konto !== null && w.bt.instrumentId !== null);
   if (wiersze.length < 2) return null;
-  const minCzas = new Date(Math.min(...wiersze.map((w) => w.bt.entryTime.getTime())) - 15 * 3_600_000);
-  const maxCzas = new Date(Math.max(...wiersze.map((w) => w.bt.entryTime.getTime())) + 15 * 3_600_000);
+  let najwczesniej = Infinity;
+  let najpozniej = -Infinity;
+  for (const w of wiersze) {
+    const t = w.bt.entryTime.getTime();
+    if (t < najwczesniej) najwczesniej = t;
+    if (t > najpozniej) najpozniej = t;
+  }
+  const minCzas = new Date(najwczesniej - 15 * 3_600_000);
+  const maxCzas = new Date(najpozniej + 15 * 3_600_000);
   const dziennik = await tx
     .select({ id: trades.id, accountId: trades.accountId, instrumentId: trades.instrumentId, direction: trades.direction, entryTime: trades.entryTime, contracts: trades.contracts })
     .from(trades)
@@ -658,7 +692,8 @@ async function podejrzeniePrzesuniecia(tx: Transakcja, kontaBrokera: number[]) {
         lte(trades.entryTime, maxCzas),
         sql`not exists (select 1 from broker_trades bx where bx.trade_id = ${trades.id})`,
       ),
-    );
+    )
+    .limit(MAKS_KANDYDATOW_DO_STREFY);
   if (dziennik.length < 2) return null;
   return wykryjPrzesunieciaStrefy(
     wiersze.map((w) => ({ id: w.bt.id, accountId: w.konto, instrumentId: w.bt.instrumentId, direction: w.bt.direction, entryTime: w.bt.entryTime, maxQty: Number(w.bt.maxQty) })),
@@ -681,11 +716,20 @@ export async function cofnijImport(tx: Transakcja, importId: number): Promise<Wy
   if (imp.status !== "committed") {
     return { ok: false, status: 409, komunikat: `Import #${importId} ma status »${imp.status}«, a cofnąć można tylko zastosowany. Odśwież listę.` };
   }
-  const { odepnijDopasowanie } = await import("./dopasowania");
-
-  // co zostanie dotkniete: konta, kontrakty i najwczesniejsze czasy wypelnien i zdarzen tego importu
-  const wyp = await tx.select().from(brokerFills).where(eq(brokerFills.importId, importId));
-  const zd = await tx.select().from(brokerCashEvents).where(eq(brokerCashEvents.importId, importId));
+  // Wiersze WYLACZNIE tego importu: te, ktorych nie zawiera zaden inny zatwierdzony import (duplikaty z innych plikow zostaja).
+  const powiazania = await tx.select().from(brokerImportRows).where(eq(brokerImportRows.importId, importId));
+  const idWyp = powiazania.filter((r) => r.kind === "fill").map((r) => r.rowId);
+  const idZd = powiazania.filter((r) => r.kind === "cash").map((r) => r.rowId);
+  const inne = idWyp.length + idZd.length === 0 ? [] : await tx
+    .select({ kind: brokerImportRows.kind, rowId: brokerImportRows.rowId })
+    .from(brokerImportRows)
+    .innerJoin(brokerImports, eq(brokerImports.id, brokerImportRows.importId))
+    .where(and(ne(brokerImportRows.importId, importId), eq(brokerImports.status, "committed"), inArray(brokerImportRows.rowId, [...idWyp, ...idZd])));
+  const wspolne = new Set(inne.map((r) => `${r.kind}:${r.rowId}`));
+  const wylaczneWyp = idWyp.filter((id) => !wspolne.has(`fill:${id}`));
+  const wylaczneZd = idZd.filter((id) => !wspolne.has(`cash:${id}`));
+  const wyp = wylaczneWyp.length === 0 ? [] : await tx.select().from(brokerFills).where(inArray(brokerFills.id, wylaczneWyp));
+  const zd = wylaczneZd.length === 0 ? [] : await tx.select().from(brokerCashEvents).where(inArray(brokerCashEvents.id, wylaczneZd));
   const grupy = new Map<string, { kontoId: number; kontrakt: string; czas: Date }>();
   const dotknij = (kontoId: number, kontrakt: string, czas: Date): void => {
     const k = `${kontoId}|${kontrakt}`;
@@ -695,21 +739,18 @@ export async function cofnijImport(tx: Transakcja, importId: number): Promise<Wy
   for (const w of wyp) dotknij(w.brokerAccountId, w.contract, w.filledAt);
   for (const z of zd) if (z.contract !== null) dotknij(z.brokerAccountId, z.contract, z.occurredAt);
 
-  // trade'y brokera utworzone przez ten import: odpinamy (utworzone w dzienniku kasujemy bez nagrobka)
-  const swoje = await tx.select().from(brokerTrades).where(eq(brokerTrades.importId, importId));
+  // Kasujemy tylko wylaczne wiersze. Trade'y brokera nie sa kasowane jawnie: przeliczOkno usuwa te, ktorych po cofnieciu nie ma
+  // w pozostalych wypelnieniach (odpina je od dziennika, trade utworzony z brokera kasuje bez nagrobka, kwote z rachunku przywraca),
+  // a te, ktore sie ostaly dzieki wypelnieniom z innych plikow, zachowuja dopasowanie.
   const uwagi: string[] = [];
-  let odpiete = 0;
-  let skasowane = 0;
-  for (const bt of swoje) {
-    if (bt.tradeId === null) continue;
-    const w = await odepnijDopasowanie(tx, bt, { nowyStan: "unmatched", przywrocKwote: true });
-    odpiete += 1;
-    if (w.skasowanoTrade) skasowane += 1;
-    if (w.uwaga) uwagi.push(w.uwaga);
-  }
-  await tx.delete(brokerTrades).where(eq(brokerTrades.importId, importId));
-  await tx.delete(brokerFills).where(eq(brokerFills.importId, importId));
-  await tx.delete(brokerCashEvents).where(eq(brokerCashEvents.importId, importId));
+  const licz = async (): Promise<{ powiazane: number; zBrokera: number }> => {
+    const [p] = await tx.select({ n: sql<number>`count(*)::int` }).from(brokerTrades).where(isNotNull(brokerTrades.tradeId));
+    const [b] = await tx.select({ n: sql<number>`count(*)::int` }).from(trades).where(eq(trades.source, "broker"));
+    return { powiazane: p?.n ?? 0, zBrokera: b?.n ?? 0 };
+  };
+  const przed = await licz();
+  if (wylaczneWyp.length > 0) await tx.delete(brokerFills).where(inArray(brokerFills.id, wylaczneWyp));
+  if (wylaczneZd.length > 0) await tx.delete(brokerCashEvents).where(inArray(brokerCashEvents.id, wylaczneZd));
 
   // przeliczenie okien z pozostalych danych
   const konta = new Map<number, KontoBrokeraKontekst>();
@@ -724,6 +765,9 @@ export async function cofnijImport(tx: Transakcja, importId: number): Promise<Wy
     const start = await poczatekOkna(tx, k.id, g.kontrakt, g.czas);
     await przeliczOkno(tx, k, g.kontrakt, start, null);
   }
+  const po = await licz();
+  const odpiete = Math.max(0, przed.powiazane - po.powiazane);
+  const skasowane = Math.max(0, przed.zBrokera - po.zBrokera);
 
   await tx.update(brokerImports).set({ status: "reverted", revertedAt: new Date() }).where(eq(brokerImports.id, importId));
   await tx.insert(authEvents).values({ kind: "broker_import_reverted", detail: { importId, wypelnienia: wyp.length, odpiete, skasowaneTrady: skasowane } });

@@ -153,6 +153,25 @@ export function wynikDlaTradu(
   });
 }
 
+/**
+ * Plik z automatu zmienilby strukture trade'ow brokera, ktore uzytkownik juz dopasowal (albo automat dopasowal wczesniej): np. nowe
+ * wypelnienie z przeszlosci zlaczyloby historie kontraktu. Takiego pliku automat nie stosuje; trafia do »Do decyzji« (zapisany jako
+ * odrzucony) i czeka na reczny import w aplikacji (audyt bezpieczenstwa W2).
+ */
+export class BladAutomatu extends Error {
+  constructor(komunikat: string) {
+    super(komunikat);
+    this.name = "BladAutomatu";
+  }
+}
+
+export type OpcjePrzeliczania = {
+  /** Automat: nie wolno usunac ani przebudowac dopasowanego trade'a brokera. */
+  ochronaDopasowan?: boolean;
+  /** Automat: kwote w trade'zie dziennika odswieza tylko dla dopasowan »auto« (reczne i z sugestii AI zmienia wylacznie uzytkownik). */
+  tylkoAuto?: boolean;
+};
+
 export type SkutekOkna = {
   /** Trade'y brokera po przeliczeniu (nowe i istniejace) z flaga, czy sa nowe w tym przebiegu. */
   trade: { wiersz: WierszTraduBrokera; domena: TradeZGrupowania; nowy: boolean; zmieniony: boolean }[];
@@ -171,6 +190,7 @@ export async function przeliczOkno(
   kontrakt: string,
   odCzasu: Date,
   importId: number | null,
+  opcje: OpcjePrzeliczania = {},
 ): Promise<SkutekOkna> {
   const start = await poczatekOkna(tx, konto.id, kontrakt, odCzasu);
   const dom = await wczytajDomene(tx, konto, kontrakt, start);
@@ -260,6 +280,11 @@ export async function przeliczOkno(
   // 3) trade'y, ktorych po przeliczeniu nie ma (np. po cofnieciu importu): odpinamy od dziennika i kasujemy
   for (const stary of istniejace) {
     if (widziane.has(stary.externalRef)) continue;
+    if (opcje.ochronaDopasowan && stary.tradeId !== null) {
+      throw new BladAutomatu(
+        `Ten plik zmieniłby trade brokera ${stary.externalRef} (${stary.contract}, wejście ${stary.entryTime.toISOString()}), który jest już dopasowany do trade'a #${stary.tradeId} dziennika: nowe wypełnienia zmieniają podział historii kontraktu na trade'y. Automat takich plików nie stosuje. Zaimportuj plik ręcznie w aplikacji (Prop → Połączenia) i sprawdź podgląd.`,
+      );
+    }
     if (stary.tradeId !== null) await odepnijDopasowanie(tx, stary, { nowyStan: "unmatched", przywrocKwote: true });
     await tx.delete(brokerTrades).where(eq(brokerTrades.id, stary.id));
     wynik.usuniete += 1;
@@ -280,7 +305,7 @@ export async function przeliczOkno(
 
   // 5) dopasowane trade'y: kwota z rachunku mogla sie zmienic (np. doszla Cash History z oplatami)
   for (const { wiersz, zmieniony } of wynik.trade) {
-    if (wiersz.tradeId !== null && zmieniony) await odswiezKwoteDopasowania(tx, wiersz);
+    if (wiersz.tradeId !== null && zmieniony && (!opcje.tylkoAuto || wiersz.matchKind === "auto")) await odswiezKwoteDopasowania(tx, wiersz);
   }
   return wynik;
 }

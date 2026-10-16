@@ -21,6 +21,7 @@ ALTER TABLE "ai_suggestions" ADD CONSTRAINT "ai_suggestions_kind" CHECK ("kind" 
   'profile_term', 'day_conclusion', 'weekly_conclusion', 'strategy_detail', 'trade_setup'));
 
 DROP TABLE "day_accounts";
+DROP TABLE "broker_import_rows";
 DROP TABLE "broker_cash_events";
 DROP TABLE "broker_fills";
 DROP TABLE "broker_trades";
@@ -32,6 +33,7 @@ DROP FUNCTION public.tj_broker_import_origin();
 DROP FUNCTION public.tj_broker_konto_zapis();
 DROP FUNCTION public.tj_broker_zapis();
 DROP FUNCTION public.tj_broker_aktor_import();
+DROP FUNCTION public.tj_broker_token_importu();
 
 DELETE FROM "auth_events" WHERE "kind" IN ('broker_import', 'broker_import_reverted', 'broker_import_rejected', 'broker_account_mapped', 'broker_match_reverted', 'broker_history_recalculated')
   OR "token_id" IN (SELECT "id" FROM "api_tokens" WHERE 'import_broker' = ANY ("scopes"));
