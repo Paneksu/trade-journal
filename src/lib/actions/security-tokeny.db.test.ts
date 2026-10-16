@@ -40,6 +40,8 @@ describe.skipIf(!MOZNA_NA_BAZIE)("unieważnianie tokenów przy wylogowaniu i wy�
 
   beforeAll(async () => {
     sql = polacz();
+    // Zimny import ./security (drizzle, auth) potrafi przekroczyć 5 s testu przy obciążeniu pełnego test:db; ładujemy go tu (17.10.2026).
+    await import("./security");
     await sql`insert into settings (id) values (1) on conflict (id) do nothing`;
     startPliku = (await sql`select coalesce(max(id), 0)::int as m from auth_events`)[0].m;
   });
