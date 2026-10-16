@@ -9,6 +9,14 @@ import { cx } from "@/lib/classes";
  * względne, zawsze z `rel="noopener noreferrer"`. Słów użytkownika tym NIE renderujemy: one idą dosłownie
  * jako tekst (`whitespace-pre-wrap`), bo markdown zmieniłby ich wygląd (MUST 13).
  */
+/**
+ * Dozwolone adresy linków: http(s), ścieżka względna od `/` i kotwica. Odrzuca `//host` i `/\host` (adres bez
+ * protokołu prowadzi na obcą domenę; code review fazy 5, 16.10.2026) oraz `javascript:` i każdy inny protokół.
+ */
+export function bezpiecznyAdres(url: string): string {
+  return /^(https?:\/\/|\/(?![\/\\])|#)/i.test(url) ? url : "";
+}
+
 export function Markdown({ children, className }: { children: string; className?: string }) {
   return (
     <div
@@ -24,7 +32,7 @@ export function Markdown({ children, className }: { children: string; className?
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         skipHtml={false}
-        urlTransform={(url) => (/^(https?:|\/|#)/i.test(url) ? url : "")}
+        urlTransform={bezpiecznyAdres}
         components={{
           a: ({ href, children: c }) => (
             <a href={href} rel="noopener noreferrer" target={href?.startsWith("http") ? "_blank" : undefined}>

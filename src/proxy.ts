@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { readToken, SESSION_COOKIE } from "@/lib/auth/token";
+import { nowyNonce, politykaCsp } from "@/lib/csp";
 
 /*
  * Brama wejsciowa. Sprawdza wylacznie podpis i termin waznosci tokenu -
@@ -14,21 +15,41 @@ import { readToken, SESSION_COOKIE } from "@/lib/auth/token";
 /* Ikony, manifest, service worker i strona offline PWA sa publiczne (strona offline nie ma danych): przegladarka pobiera je bez ciasteczka (instalacja, ekran logowania). */
 const PUBLIC = ["/login", "/_next", "/favicon", "/robots.txt", "/api/health", "/icons/", "/manifest.webmanifest", "/sw.js", "/offline.html"];
 
+/* CSP z nonce na każdą odpowiedź (audyt fazy 5, pkt 6): nagłówek żądania mówi Next, jaki nonce dokleić do skryptów,
+   nagłówek odpowiedzi egzekwuje politykę w przeglądarce. */
+function zCsp(request: NextRequest): { dalej: () => NextResponse; csp: string } {
+  const nonce = nowyNonce();
+  const csp = politykaCsp(nonce, process.env.NODE_ENV !== "production");
+  const naglowki = new Headers(request.headers);
+  naglowki.set("x-nonce", nonce);
+  naglowki.set("Content-Security-Policy", csp);
+  return {
+    csp,
+    dalej: () => {
+      const r = NextResponse.next({ request: { headers: naglowki } });
+      r.headers.set("Content-Security-Policy", csp);
+      return r;
+    },
+  };
+}
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const { dalej, csp } = zCsp(request);
 
   if (PUBLIC.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+    return dalej();
   }
 
   const token = request.cookies.get(SESSION_COOKIE)?.value;
   if (readToken(token)) {
-    return NextResponse.next();
+    return dalej();
   }
 
   const target = new URL("/login", request.url);
   if (pathname !== "/") target.searchParams.set("wroc", pathname + request.nextUrl.search);
   const response = NextResponse.redirect(target);
+  response.headers.set("Content-Security-Policy", csp);
   // Kasujemy tylko ciasteczko, ktore przyszlo i jest niewazne. Przy SameSite=Strict wejscie z
   // zewnetrznego linku (Gmail, TradingView) nie niesie ciasteczka wcale; kasowanie "na slepo"
   // wylogowaloby uzytkownika zamiast pozwolic mu kliknac jeszcze raz (ADR-031).

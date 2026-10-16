@@ -196,7 +196,8 @@ export const PROP_KSIEGA_RODZAJE = ["eval_fee", "reset_fee", "activation_fee", "
 export const PropKsiegaWpisSchema = z.strictObject({
   kind: z.enum(PROP_KSIEGA_RODZAJE),
   /** Ze znakiem: koszt ujemny, wplyw dodatni; w centach. */
-  amountCents: z.number().int().refine((w) => w !== 0, { message: "kwota nie może być zerem" }),
+  // Górna granica (audyt fazy 5, pkt 5): ±10 mln USD w centach; większa kwota to pomyłka w polu, nie opłata za eval.
+  amountCents: z.number().int().min(-1_000_000_000).max(1_000_000_000).refine((w) => w !== 0, { message: "kwota nie może być zerem" }),
   occurredOn: DataSchema,
   note: z.string().max(500).nullish(),
 });
