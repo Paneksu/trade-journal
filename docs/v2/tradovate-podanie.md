@@ -62,8 +62,8 @@ and its outbound network traffic is limited to Tradovate hosts.
    exact names? Can an application be restricted to read-only access (accounts, fills, orders, positions,
    cash balance, contracts), so that a token issued to it **cannot** place, modify or cancel orders or
    liquidate positions? If such a restriction exists, would a token rejected for a write request return an
-   error (for example 401 or 403)? We would like a written confirmation of this before enabling the
-   integration.
+   error (for example 401 or 403)? Are permission levels (Denied / Read / Full) shown to the user in the consent
+   window? We would like a written confirmation of this before enabling the integration.
 2. **Caching and retention (API License Agreement, section 3).** Does the 24-hour cache requirement for
    "NinjaTrader Content" apply to the user's **own** account data (their own fills, orders, positions and cash
    balance) retrieved with their consent for their own journal? If it does, may the application keep a
@@ -83,7 +83,12 @@ and its outbound network traffic is limited to Tradovate hosts.
    `refresh_token_expires_in`)? Is PKCE supported (`code_verifier`)? Is there an endpoint to revoke a token
    or the application's authorisation, or should the user revoke it in the Tradovate settings? Which host
    should be used for the token exchange (`live.tradovateapi.com` or `live-api-d.tradovate.com`)?
-7. **Commissions and fees.** Is `/fillFee/list` available to OAuth applications?
+7. **Commissions and fees.** Is `/fillFee/list` available to OAuth applications? The journal records results
+   net of all fees, so per-fill commissions and exchange fees matter.
+7a. **Fill history under OAuth.** Do `/fill/list` and `/order/list` return historical fills (previous sessions)
+   for an OAuth token, or only the current session? Developers on the community forum report empty arrays for these
+   endpoints under OAuth while `/position/list` works. If history requires the Reporting API, does it accept an
+   OAuth access token?
 8. **Rate limits.** Which limits apply to OAuth applications (per user, per application, per IP)?
 9. **Costs and process.** Are there any fees for Ecosystem approval or for read-only API access? How long
    does the review usually take, and is a demo environment (`trader.devel.ninjatrader.dev`) available for

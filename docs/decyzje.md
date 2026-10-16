@@ -254,6 +254,9 @@ sposób wpisania wyniku bez liczenia ceny wyjścia ręcznie, tylko przestało
 być kwotą „po prowizji". (Rola tego pola zmieniła się później — ADR-016:
 kwota nie podpowiada już wyniku, tylko nim jest.)
 
+**Zmienione 16.10.2026 przez ADR-034, pkt 5.** Słowa użytkownika: «wynik ma być po prostu prawdziwy».
+Wynik trade'a jest od teraz netto, po prowizjach i opłatach; kwota z brokera oznacza kwotę netto.
+
 ---
 
 ## ADR-011 — wynik BE (2026-08-23)
@@ -1640,539 +1643,489 @@ z cofnięciem, a dopiski do strategii (obserwacje, nie reguły) wchodzą bez zat
 
 ---
 
-## ADR-034 — konta prop tylko do odczytu: import CSV teraz, OAuth Tradovate za flagą; AI rozpoznaje trade z danych brokera (2026-10-16)
+## ADR-034 — konta prop tylko do odczytu: jeden wlot „Pobierz teraz”, eksport z automatem łącznika teraz, OAuth Tradovate za flagą; wynik netto (2026-10-16)
 
-**Status:** propozycja (2026-10-16), czeka na akceptację użytkownika.
-**Źródła:** `docs/research/polaczenia-kont.md` (16.10.2026), `docs/research/prop-presety.md` (14.10.2026),
-`docs/v2/model-danych.md`, ADR-026 i ADR-029 do ADR-033, kod gałęzi `feat/ui-v2` (ostatnia migracja `0029_notatka_dnia_bez_konta`, `when` 1787740000000).
+**Status:** ZAAKCEPTOWANY 16.10.2026 przez użytkownika. Słowa użytkownika: «OK, czyli możemy zastosować tę twoją
+rekomendowaną opcję. Czyli po prostu przed stworzeniem notatki muszę kliknąć „Eksport”.»
+**Źródła:** `docs/research/polaczenia-kont.md` (16.10.2026, z uzupełnieniem „automat bez OAuth”),
+`docs/research/polaczenia-porownanie.md` (16.10.2026, porównanie z TradeZellą), `docs/research/prop-presety.md`
+(14.10.2026), `docs/v2/model-danych.md` (sekcja 5.10), ADR-010, ADR-016, ADR-026, ADR-029 do ADR-033, kod gałęzi
+`feat/ui-v2` (ostatnia migracja `0029_notatka_dnia_bez_konta`, `when` 1787740000000) i repo `tj-connector`.
 
 **Kontekst.** Słowa użytkownika (16.10.2026):
 - «Chciałbym, żeby dziennik miał połączenie tylko do odczytu. Nie może wykonywać żadnych czynności — ma to chronić przed skasowaniem danych lub innymi działaniami. Powinien mieć dostęp do odczytu kont prop firmowych.»
 - «w dzienniku była po prostu możliwość połączenia kont firmowych poszczególnych firm — mam listę tych firm i przycisk „Połącz”»
 - «Kiedy AI pracuje nad notatką, automatycznie odczytuje dane ze wszystkich tych kont i potrafi się domyślić, jaki to był trade. Nie muszę mu wtedy mówić, jaki to typ konta, czy to jest IWAL, czy FUNDED ani ile zarobiłem lub straciłem.»
 - «Wszystko ma być jak najbardziej bezpieczne, ponieważ są to dane wrażliwe.»
+- «zależy mi na tym, żeby w końcu było jedno połączenie, z którego dałoby się stale korzystać»
+- «wynik trade’a powinien być taki, jaki faktycznie jest prawdziwy, czyli powinien odzwierciedlać to, ile zarobiłem po opłatach i wszelkich innych kosztach. wynik ma być po prostu prawdziwy»
 
-Rozstrzygnięcia użytkownika z 16.10.2026 (Słowa użytkownika): «CSV teraz + OAuth Tradovate»; na pytanie
-o blokadę „tylko do odczytu” wymuszaną wyłącznie po naszej stronie: «Nie, tylko z potwierdzonym read-only».
-Użytkownik handluje na Tradovate; lista firm ma objąć najpopularniejsze.
+Rozstrzygnięcia użytkownika z 16.10.2026 (Słowa użytkownika):
+- «CSV teraz + OAuth Tradovate»;
+- na pytanie o blokadę „tylko do odczytu” wymuszaną wyłącznie po naszej stronie: «Nie, tylko z potwierdzonym read-only»;
+- wyciągi e-mail: «sprawdzanie skrzynek pocztowych nie będzie moim znanym rozwiązaniem, ponieważ skrzynki dostajesz dopiero po zakończonym dniu tradingowym»;
+- odczyt panelu TradingView przez CDP: «Nie»;
+- po porównaniu z TradeZellą: «OK, czyli możemy zastosować tę twoją rekomendowaną opcję. Czyli po prostu przed stworzeniem notatki muszę kliknąć „Eksport”.»;
+- dopasowanie 1:1 zaznaczone domyślnie na podglądzie: «Tak, z możliwością odznaczenia».
+
+Użytkownik handluje na Tradovate (przez TradingView Desktop); lista firm ma objąć najpopularniejsze.
 
 Decyzja sesji głównej (16.10.2026): **nigdy** nie przechowujemy haseł do firm, platform ani Rithmic; nigdy
 nie przechowujemy kluczy API z prawem handlu (np. ProjectX).
 
-Research (poziomy dowodów stamtąd): **żadna** sprawdzona platforma nie ma udokumentowanego poświadczenia
-tylko do odczytu dla konta prop. Klucz ProjectX daje pełny handel (OFICJALNE), Rithmic wymaga hasła
-traderskiego (LUKA w sprawie trybu view-only), zakres OAuth Tradovate jest nieudokumentowany (CZĘŚCIOWE),
-klucz API Tradovate wymaga hasła w żądaniu tokenu i nie działa dla kont prop (CZĘŚCIOWE). Skoro użytkownik
-odrzucił gwarancję „tylko po naszej stronie”, **jedyną aktywną metodą jest import pliku**, a OAuth Tradovate
-czeka na pisemne potwierdzenie od Tradovate.
+Research: żadna platforma nie ma udokumentowanego poświadczenia tylko do odczytu dla konta prop. Klucz ProjectX
+daje pełny handel (OFICJALNE), Rithmic wymaga hasła traderskiego, zakres OAuth Tradovate nie ma oficjalnej listy
+(są tylko wskazówki z forum o poziomach Read/Full, CZĘŚCIOWE). TradeZella nie ma „innego” rozwiązania: dla
+Tradovate używa tego samego OAuth (po zatwierdzeniu w NinjaTrader Ecosystem), dla Rithmic i ProjectX trzyma hasło
+albo klucz z prawem handlu, a „PropFirm Sync” to panel kosztów przez bank, bez transakcji
+(`polaczenia-porownanie.md`, sekcja 1). Read-only „z konstrukcji”, czyli bez żadnego kanału do konta, daje tylko
+plik eksportu. Stąd rekomendacja przyjęta przez użytkownika: **eksport jednym kliknięciem plus automat po naszej
+stronie, a OAuth dopiero po pisemnym potwierdzeniu Tradovate**, wszystko przez **jeden wlot**.
 
 **Co ten ADR zmienia w poprzednich.**
+- **ADR-010 (prowizja poza modelem) przestaje obowiązywać** w części „wynik bez prowizji”. Słowa użytkownika
+  (16.10.2026): «wynik ma być po prostu prawdziwy». Wynik trade'a jest **netto**: po prowizjach i opłatach
+  (pkt 5). ADR-016 („kwota z brokera jest wynikiem”) zostaje, ale kwota z brokera oznacza teraz kwotę netto.
 - ADR-026 („aplikacja nie zna żadnego brokera ani rachunku”), ADR-032 („aplikacja nie ma żadnego połączenia
-  z brokerem”) i ADR-033 („Nie robimy: auto-sync brokerów”): aplikacja zaczyna znać **format pliku**
-  platformy i **konto u brokera** (jako skrót). Nadal z nikim się nie łączy: import CSV to plik wgrany ręcznie
-  przez użytkownika, nie synchronizacja. Auto-sync (OAuth) zostaje wyłączony do spełnienia warunków z pkt 5.
-- ADR-026 „push, nie pull”: przyszły OAuth to pull, więc jest wyjątkiem ograniczonym do osobnego workera
-  (pkt 5); aplikacja webowa sama niczego nie pobiera.
-- ADR-032 (granica „wylogowany broker w czasie pracy AI”) zostaje bez zmian: ten ADR nie daje AI żadnej
-  drogi do platformy, tylko odczyt danych już zapisanych w dzienniku.
+  z brokerem”) i ADR-033 („Nie robimy: auto-sync brokerów”): aplikacja zna **format pliku** platformy i **konto
+  u brokera** (jako skrót). Nadal z nikim się nie łączy; plik wyeksportował człowiek. Auto-sync (OAuth) zostaje
+  wyłączony do spełnienia warunków z pkt 8.
+- ADR-026 „push, nie pull”: automat łącznika (pkt 3) to push. Przyszły OAuth to pull, wyjątek ograniczony do
+  osobnego workera (pkt 8).
+- ADR-032 (granica „wylogowany broker w czasie pracy AI”) bez zmian: AI nie dostaje żadnej drogi do platformy.
 
-### 1. Model połączenia per konto
+### 1. Jeden wlot: „Pobierz teraz”
 
-**Metoda jest cechą konta, nie firmy.** Ta sama firma działa na kilku platformach, a platforma jest
-przypisana do konta przy zakupie (research, sekcja 5). Jedno konto dziennika ma co najwyżej jedno
-powiązanie z kontem u brokera (`broker_accounts`, pkt 7), z metodą:
+**Jedno połączenie to jeden wlot w dzienniku, a nie jeden kabel do platformy.** Każde źródło danych brokera
+(plik wgrany w UI, plik z automatu łącznika, w przyszłości OAuth) zasila ten sam parser, to samo grupowanie,
+dopasowanie i zapis. Źródło można wymienić bez przebudowy i bez ponownego „łączenia”; to także zabezpieczenie
+przed zależnością od jednej platformy (spór Alpha Futures z Tradovate, `polaczenia-porownanie.md` 5.1 pkt 6).
+
+**Przycisk „Pobierz teraz”** w Prop → Połączenia i na ekranie Dziś:
+- **dziś (flaga OAuth wyłączona):** pokazuje instrukcję „wyeksportuj w Tradovate” (gdzie kliknąć, dla platformy
+  konta) i czeka na plik: odpytuje serwer co 3 s przez 3 minuty, czy przyszedł import z automatu łącznika,
+  i pokazuje wynik („odebrano 4 trade'y, 3 uzgodnione, 1 do decyzji”). Obok zawsze „Wgraj plik ręcznie” (ta sama
+  ścieżka bez łącznika, np. z telefonu);
+- **po włączeniu OAuth (pkt 8):** ten sam przycisk zleca pobranie workerowi i czeka na wynik tak samo.
+  Użytkownik nie uczy się drugiego przycisku.
+
+**Metoda jest cechą konta, nie firmy.** Platforma jest przypisana do konta przy zakupie. Jedno konto dziennika ma
+co najwyżej jedno powiązanie z kontem u brokera (`broker_accounts`):
 
 | Metoda | Stan | Poświadczenie w bazie |
 |---|---|---|
-| `csv_import` | **aktywna** od etapu A | żadne |
+| `export_file` (plik z UI albo z automatu łącznika) | **aktywna** od etapu A | żadne |
 | `oauth_tradovate` | **wyłączona**; tylko platforma `tradovate` | zaszyfrowany token odświeżania (etap B) |
 
-Wartości odrzucone na stałe (w kodzie jako komentarz z datą i odesłaniem do tego ADR): `projectx_key`
-(klucz z pełnym handlem), `rithmic_login` (hasło), `tradovate_api_key` (hasło w żądaniu tokenu, brak dla prop).
+Odrzucone na stałe (w kodzie jako komentarz z datą i odesłaniem do tego ADR): `projectx_key`, `rithmic_login`,
+`dxtrade_login` (hasło albo klucz z prawem handlu), `tradovate_api_key` (hasło w żądaniu tokenu, brak dla prop),
+`email_statement` i `tradingview_panel` (decyzje użytkownika wyżej). `tradesviz_api` odłożone (sekcja „Odrzucone i odłożone”).
 
-**Flaga OAuth: dwa klucze, oba muszą się zgadzać.**
-1. Stała w kodzie `TRADOVATE_READONLY_POTWIERDZENIE` w `src/lib/brokerzy/flagi.ts`, domyślnie `null`.
-   Włączenie to commit, który wpisuje `{ data, dokument }` (data i sygnatura pisemnego potwierdzenia
-   Tradovate, plik w `docs/v2/`), przechodzi przez `code-reviewer` i `security-auditor`.
-2. Zmienna środowiskowa `BROKER_OAUTH_TRADOVATE=1` w Coolify, ustawiana ręcznie przez użytkownika.
+**Flaga OAuth: dwa klucze naraz.** (1) Stała `TRADOVATE_READONLY_POTWIERDZENIE` w `src/lib/brokerzy/flagi.ts`,
+domyślnie `null`; włączenie to commit wpisujący `{ data, dokument }` pisemnego potwierdzenia Tradovate (plik
+w `docs/v2/`), po `code-reviewer` i `security-auditor`. (2) Zmienna `BROKER_OAUTH_TRADOVATE=1` w Coolify, ustawiana
+ręcznie przez użytkownika. Brak któregokolwiek: „Połącz z Tradovate” nieaktywne z jednym zdaniem („Tradovate nie
+potwierdził jeszcze dostępu tylko do odczytu”), trasy OAuth zwracają 404, worker nie startuje.
 
-Brak któregokolwiek = przycisk „Połącz z Tradovate” jest nieaktywny z jednym zdaniem: „Tradovate nie
-potwierdził jeszcze dostępu tylko do odczytu”, trasy OAuth zwracają 404, worker nie startuje.
+**Faza eval/funded pochodzi z dziennika, nie z platformy.** Żadna platforma nie ma udokumentowanego pola fazy
+prop. Źródłem prawdy zostaje `accounts.prop_phase` (ADR-027). Przypięcie presetu w `prop_rules` (UI) ustawia pustą
+fazę z `preset.phase` w tej samej transakcji; przy innej fazie zapis daje 409 („konto ma fazę X, preset jest dla
+fazy Y”). Firma i program pochodzą z presetu najnowszej reguły. Heurystyka po nazwie konta nie powstaje.
 
-**Faza eval/funded pochodzi z dziennika, nie z platformy.** Żadna platforma nie ma udokumentowanego pola
-fazy prop (research, sekcja 5). Źródłem prawdy zostaje `accounts.prop_phase` (ADR-027, z niego liczy się
-kategoria). Przypięcie presetu w `prop_rules` (UI) ustawia `accounts.prop_phase = preset.phase` w tej samej
-transakcji, gdy faza jest pusta; gdy jest inna, zapis daje 409 z komunikatem „konto ma fazę X, preset jest
-dla fazy Y” (bez cichego nadpisania). Firma i program dla AI pochodzą z presetu najnowszej reguły
-(`prop_rules.valid_from <= dzień`). Heurystyka po nazwie konta (np. prefiks „PA-”) nie powstaje.
+**Lista firm w UI.** Prop → Połączenia: lista firm z platformami. Przy firmie przycisk „Połącz” (słowa
+użytkownika), który otwiera kreator: platforma → konto dziennika (istniejące albo nowe, z presetem i stawką opłat)
+→ instrukcja eksportu i „Pobierz teraz” (albo „Połącz z Tradovate” przy włączonej fladze). Przy platformie bez
+bezpiecznej metody automatycznej kreator mówi wprost: „platforma nie wydaje dostępu tylko do odczytu”. Lista to
+**dane** (`prop_firm_platforms`, URL źródła, `read_on`, ostrzeżenie po 30 dniach), nie kod.
 
-**Lista firm w UI.** Prop → nowa zakładka „Połączenia”: lista firm z platformami. Przy firmie przycisk
-„Połącz” (słowa użytkownika), który otwiera kreator: platforma → konto dziennika (istniejące albo nowe,
-z presetem) → krok końcowy „Importuj CSV” albo, tylko dla Tradovate i tylko przy włączonej fladze,
-„Połącz z Tradovate”. Przy platformie bez bezpiecznej metody kreator mówi wprost, dlaczego jest tylko plik:
-„platforma nie wydaje dostępu tylko do odczytu”. Lista firm to **dane** (tabela `prop_firm_platforms`
-z URL źródła i `read_on`, ostrzeżenie po 30 dniach, jak presety), nie kod, bo w 2026 cztery firmy odeszły
-z ProjectX, a Alpha porzuciła Tradovate (research, ryzyko 8).
-
-Stan listy z researchu (odczyt 2026-10-16):
-
-| Firma | Platformy | Metoda w dzienniku |
+| Firma | Platformy (research, 16.10.2026) | Źródło danych w dzienniku |
 |---|---|---|
-| Topstep | TopstepX (ProjectX) | CSV („Trades” → Export) |
-| Apex | Tradovate, Rithmic, WealthCharts | Tradovate: CSV, później „Połącz”; Rithmic: CSV; WealthCharts: format nieznany |
-| Tradeify | Tradovate (+NinjaTrader, TradingView), Rithmic (+R\|Trader i inne), WealthCharts | jak Apex |
-| Lucid | Tradovate i NinjaTrader (kanał CQG), Rithmic (R\|Trader Pro i inne) | Tradovate: CSV, później „Połącz”; reszta CSV |
-| MyFundedFutures | Tradovate, NinjaTrader, Volumetrica, Quantower, ATAS i inne | Tradovate: CSV, później „Połącz”; reszta: format nieznany |
-| Take Profit Trader | Tradovate i NinjaTrader (CQG), Rithmic | jak Lucid (WYWNIOSKOWANE) |
-| Alpha Futures | AlphaTrader, Volumetrica, WealthCharts (Tradovate wycofany 2026-07-12) | format nieznany: szablon `generic` |
-| Bulenox | Rithmic (R\|Trader Pro i inne) | CSV („Completed Orders” z R\|Trader) |
-| Earn2Trade | NinjaTrader, Tradovate i inne (bez oficjalnej listy) | Tradovate: jak wyżej; reszta do weryfikacji |
-| Własne konto Tradovate | Tradovate | CSV, później „Połącz” |
-| Inna firma / platforma | dowolna | szablon `generic` |
+| Topstep | TopstepX (ProjectX) | eksport „Trades” z TopstepX |
+| Apex | Tradovate, Rithmic, WealthCharts | Tradovate: eksport, później OAuth; Rithmic: eksport R\|Trader (także „periodic csv export”); WealthCharts: `generic` |
+| Tradeify | Tradovate (+NinjaTrader, TradingView), Rithmic, WealthCharts | jak Apex |
+| Lucid | Tradovate i NinjaTrader (CQG), Rithmic | jak Apex |
+| MyFundedFutures | Tradovate, NinjaTrader, Volumetrica, Quantower, ATAS | Tradovate: jak wyżej; reszta `generic` |
+| Take Profit Trader | Tradovate i NinjaTrader (CQG), Rithmic | jak Apex (WYWNIOSKOWANE) |
+| Alpha Futures | AlphaTrader, Volumetrica, WealthCharts (Tradovate wycofany 2026-07-12) | `generic` (format AlphaTrader nieznany) |
+| Bulenox | Rithmic | eksport R\|Trader |
+| Earn2Trade | NinjaTrader, Tradovate i inne | Tradovate: jak wyżej; reszta do weryfikacji |
+| Własne konto Tradovate | Tradovate | eksport, później OAuth |
+| Inna firma / platforma | dowolna | `generic` |
 
-Dodatkowych firm nie dopisujemy: rankingi 2026 nie dały dowodu popularności poza tymi dziewięcioma
-(`prop-presety.md`). Użytkownik może dodać firmę sam (wiersz danych, nie wydanie).
+### 2. Import pliku
 
-### 2. Import CSV
+**Wszystko deterministycznym kodem, nie przez model językowy.** Parser, rozpoznanie formatu, grupowanie,
+dopasowanie i opłaty to czyste funkcje w `src/lib/domain/brokerzy/` (bez `db`, `next/*`, `server-only`). AI
+nigdy nie dostaje surowego pliku; „AI domyśla się trade'a” spełnia odczyt już sparsowanych danych (pkt 7).
 
-**Wszystko deterministycznym kodem, nie przez model językowy.** Parser, rozpoznanie formatu, grupowanie
-i dopasowanie to czyste funkcje w `src/lib/domain/brokerzy/` (bez `db`, `next/*`, `server-only`, zgodnie
-z pułapką 3 modelu danych). AI nigdy nie dostaje surowego pliku. Słowa „AI samo rozpoznaje trade”
-spełnia odczyt już sparsowanych danych (pkt 4), a nie czytanie CSV przez model.
+**Formaty.** Research nie podaje dokładnych kolumn żadnego eksportu (LUKA). Parser powstaje **wyłącznie
+z prawdziwego pliku użytkownika**: nagłówki 1:1, a do repo trafia fikstura z tymi nagłówkami i wartościami
+syntetycznymi (ADR-032). Kolejność:
 
-**Formaty i ich stan wiedzy.** Research nie podaje dokładnych kolumn żadnego eksportu (LUKA: strony
-pomocy Tradovate nie wczytały się, TopstepX i R|Trader opisane tylko przez dzienniki konkurencji). Dlatego:
-parser powstaje **wyłącznie dla formatu, dla którego jest prawdziwy plik użytkownika**; z pliku bierzemy
-nagłówki 1:1, a do repo trafia fikstura z tymi nagłówkami i wartościami syntetycznymi (ADR-032: dane
-testowe tylko syntetyczne). Kolejność:
-
-| Kolejność | Format (`format`) | Co niesie | Uwagi |
+| Kolejność | Format | Co niesie | Uwagi |
 |---|---|---|---|
-| 1 | `tradovate_fills` | pojedyncze wypełnienia z identyfikatorem | podstawowy dla Tradovate: ma id fill i dokładny czas |
-| 2 | `tradovate_performance` | pary wejście/wyjście z P&L | P&L z brokera; pary rozkładane na syntetyczne fills |
-| 3 | `tradovate_orders` | zlecenia ze średnią ceną wypełnienia | gdy nie ma eksportu fills; bez częściowych wypełnień |
-| 4 | `topstepx_trades` | pary z P&L i opłatami | eksport z zakładki „Trades”, nie „Orders” |
-| 5 | `rithmic_rtrader` | „Completed Orders” z R\|Trader Pro | wymaga dodanych kolumn „Qty Filled” i „Order Number” |
-| 6 | `ninjatrader_executions` | wykonania z NT8 | konto Tradovate pod NT lub Rithmic pod NT |
-| zawsze | `generic` | nasz szablon (opisany w instrukcji) | dla Alpha, Volumetrica, WealthCharts i reszty |
+| 1 | `tradovate_fills` | pojedyncze wypełnienia z id | podstawowy: dokładny czas, częściowe wypełnienia |
+| 2 | `tradovate_performance` | pary wejście/wyjście z P&L | P&L z brokera |
+| 3 | `tradovate_orders` | zlecenia ze średnią ceną | gdy nie ma fills |
+| 4 | `tradovate_cash_history` | opłaty i prowizje per dzień | do uzgodnienia opłat (pkt 5); bez trade'ów |
+| 5 | `tradingview_order_history` | historia zleceń z panelu brokera w TradingView (eksport ręczny, wszystkie kolumny) | eksport klika człowiek, nie skrypt (CDP odrzucone) |
+| 6 | `topstepx_trades` | pary z P&L i opłatami | zakładka „Trades”, nie „Orders” |
+| 7 | `rithmic_rtrader` | „Completed Orders” z R\|Trader Pro | kolumny „Qty Filled”, „Order Number” |
+| 8 | `ninjatrader_executions` | wykonania z NT8 | tylko gdy użytkownik handluje z NT8 |
+| zawsze | `generic` | nasz szablon z instrukcji | Alpha, Volumetrica, WealthCharts i reszta |
 
-Hipoteza do sprawdzenia na pliku (z pamięci modelu, nie z researchu): Performance Tradovate ma kolumny
-w rodzaju `symbol, qty, buyPrice, sellPrice, pnl, boughtTimestamp, soldTimestamp, buyFillId, sellFillId`.
-Nie wolno pisać parsera z tej listy; wolno jej użyć do rozpoznania pliku, który przyśle użytkownik.
+Hipoteza z pamięci modelu (nie z researchu), tylko do rozpoznania pliku użytkownika, nie do pisania parsera:
+Performance Tradovate ma kolumny w rodzaju `symbol, qty, buyPrice, sellPrice, pnl, boughtTimestamp, soldTimestamp,
+buyFillId, sellFillId`.
 
-**Rozpoznanie formatu po nagłówkach.** Każdy format deklaruje zestaw kolumn wymaganych (porównanie bez
-wielkości liter i białych znaków na brzegach). Plik pasuje, gdy ma wszystkie wymagane kolumny jednego
-formatu; zero albo dwa dopasowania = odrzucenie z listą obsługiwanych formatów. Żadnego zgadywania
-mapowania kolumn i żadnego ręcznego mapowania w UI w etapie A (szablon `generic` pokrywa resztę).
+**Rozpoznanie po nagłówkach.** Każdy format deklaruje kolumny wymagane (bez wielkości liter i białych znaków na
+brzegach). Plik pasuje, gdy ma wszystkie kolumny jednego formatu; zero albo dwa dopasowania = odrzucenie z listą
+obsługiwanych formatów. Żadnego zgadywania i ręcznego mapowania kolumn w etapie A.
 
-**Wspólny kształt: wszystko do fills.** Każdy parser zwraca listę znormalizowanych wypełnień
-(`konto`, `kontrakt`, `strona`, `ilość`, `cena`, `czas`, `opłata?`, `pnl_brokera?`, `id_źródła`). Formaty
-z parami (Performance, TopstepX) rozkładają parę na fill wejścia i wyjścia z `id_źródła` `<id pary>:in`
-i `:out`; P&L pary wisi przy fillu wyjścia. Jedno grupowanie obsługuje wszystkie formaty.
+**Wszystko do fills.** Każdy parser zwraca znormalizowane wypełnienia (`konto`, `kontrakt`, `strona`, `ilość`,
+`cena`, `czas`, `opłata?`, `pnl_brokera?`, `id_źródła`). Pary rozkładane na fill wejścia i wyjścia
+(`<id pary>:in`, `:out`); P&L pary przy fillu wyjścia.
 
-**Grupowanie fills w trade'y** (per konto u brokera i kontrakt, po czasie, przy remisie po `id_źródła`):
-- trade zaczyna się, gdy pozycja netto wychodzi z zera, i kończy, gdy do zera wraca;
-- dokładanie do pozycji (scale-in): średnia ważona cena wejścia, `contracts` = maksymalna pozycja; model
-  dziennika ma jedno wejście (ADR-025 opisuje tylko częściowe wyjścia), więc lista wejść zostaje
-  w danych brokera i w `source_snapshot` trade'a;
-- każde zmniejszenie pozycji to wiersz `trade_exits` (ADR-025);
-- odwrócenie pozycji jednym fillem (z +2 na −1): fill dzielony na zamknięcie 2 i otwarcie 1, część
-  otwierająca dostaje `id_źródła` z sufiksem `#flip`;
-- pozycja otwarta na końcu pliku: trade brokera ze statusem `open`; następny import go domyka.
+**Grupowanie** (per konto u brokera i kontrakt, po czasie, remis po `id_źródła`): trade od wyjścia pozycji netto
+z zera do powrotu do zera; dokładanie do pozycji = średnia ważona cena wejścia, `contracts` = maksymalna pozycja,
+lista wejść zostaje w danych brokera i w `source_snapshot`; każde zmniejszenie pozycji = wiersz `trade_exits`
+(ADR-025); odwrócenie jednym fillem dzielone na zamknięcie i otwarcie (sufiks `#flip`); pozycja otwarta na końcu
+pliku = trade brokera `open`, domyka go następny import.
 
-**Strefy czasowe.** Czas z przesunięciem w pliku: bierzemy go. Czas bez przesunięcia: format ma
-zadeklarowaną strefę domyślną (ustaloną na pliku użytkownika, nie zgadniętą), a podgląd importu pozwala ją
-zmienić (lista stref IANA). Konwersja do UTC na granicy pliku, dalej wszystko jest `timestamptz`;
-dzień handlowy liczy istniejący mechanizm ADR-022. Kontrola: podgląd sprawdza, czy przesunięcie
-o pełne godziny dałoby wyraźnie więcej dopasowań z dziennikiem, i wtedy ostrzega („czasy w pliku wyglądają
-na przesunięte o N h”). Nigdy nie przesuwa sam. Test na granicy zmiany czasu (marzec i listopad, USA i UE).
+**Strefy czasowe.** Czas z przesunięciem: bierzemy go. Bez przesunięcia: strefa domyślna formatu ustalona na
+pliku użytkownika; w UI do zmiany na podglądzie, w automacie z ustawienia konta u brokera (`broker_accounts.tz`).
+Do UTC na granicy pliku; dzień handlowy liczy mechanizm ADR-022. Gdy przesunięcie o pełne godziny dałoby wyraźnie
+więcej dopasowań, import ostrzega i **nie** przesuwa sam. Testy na granicach zmiany czasu w USA i UE.
 
-**Idempotencja.** `broker_fills.external_ref` = `<platforma>:<skrót konta 12 znaków>:<id_źródła>`,
-UNIQUE. Format bez identyfikatora fill: `id_źródła` = SHA-256 kanonicznego wiersza (konto, kontrakt,
-strona, ilość, cena, czas) + numer kolejnego wystąpienia identycznego wiersza w pliku. Ponowny import tego
-samego albo zachodzącego pliku dodaje tylko nowe fills, potem przelicza grupowanie od ostatniego punktu
-płaskiej pozycji przed najwcześniejszym nowym fillem. `broker_trades.external_ref` powstaje z pierwszego
-fill wejścia, więc przeliczony trade brokera zachowuje id i powiązanie z dziennikiem. Cały plik:
-SHA-256 bajtów w `broker_imports`; ten sam skrót drugi raz = komunikat „ten plik zaimportowano <data>”
-z możliwością kontynuacji (nic się nie zdubluje).
+**Idempotencja.** `broker_fills.external_ref` = `<platforma>:<skrót konta 12 znaków>:<id_źródła>`, UNIQUE. Bez id
+wypełnienia: SHA-256 kanonicznego wiersza + numer kolejnego identycznego wiersza w pliku. Ponowny lub zachodzący
+plik dodaje tylko nowe fills i przelicza grupowanie od ostatniego punktu płaskiej pozycji;
+`broker_trades.external_ref` z pierwszego fill wejścia, więc trade brokera zachowuje id i powiązanie. Ten sam
+SHA-256 pliku drugi raz = „ten plik zaimportowano <data>” (nic się nie dubluje).
 
-**Limity i walidacja (serwer, nie przeglądarka).** Plik do 5 MB, do 20 000 wierszy danych, do 64 kolumn,
-komórka do 1 KB; przekroczenie = odrzucenie, nigdy obcięcie. Kodowanie UTF-8 (BOM usuwany) albo UTF-16LE
-z BOM; inne = odrzucenie. Separator przecinek albo średnik, wykryty z nagłówka. Każda komórka
-walidowana schematem zod formatu (liczby dziesiętne z kropką, ilość > 0, cena > 0, czas w zakresie
-2000 do jutra). Błędny wiersz nie przerywa reszty: podgląd pokazuje numer wiersza i powód, a zapis
-wymaga, by użytkownik świadomie pominął błędne wiersze. Parser: `csv-parse` (tryb synchroniczny, `bom: true`,
-`relax_column_count: false`). Kontrakt na instrument dziennika: rdzeń z symbolu (`NQZ6` → `NQ`,
-`MNQZ6` → `MNQ`) według `instruments.symbol`; nieznany rdzeń = trade brokera bez instrumentu z ostrzeżeniem
-i przyciskiem „Dopasuj ponownie” po dodaniu instrumentu w Ustawieniach.
+**Limity i walidacja (serwer).** Plik do 5 MB, do 20 000 wierszy, do 64 kolumn, komórka do 1 KB; przekroczenie =
+odrzucenie, nigdy obcięcie. UTF-8 (BOM usuwany) albo UTF-16LE z BOM. Separator przecinek albo średnik z nagłówka.
+Schemat zod na każdą komórkę (liczby z kropką, ilość > 0, cena > 0, czas od 2000 do jutra). Błędne wiersze
+w podglądzie z numerem i powodem; zapis wymaga ich świadomego pominięcia (w automacie: plik z błędnymi wierszami
+nie jest stosowany, trafia do „Do decyzji”). Parser: `csv-parse` (synchronicznie, `bom: true`). Kontrakt →
+instrument po rdzeniu (`NQZ6` → `NQ`, `MNQZ6` → `MNQ`); nieznany rdzeń = ostrzeżenie i „Dopasuj ponownie”.
 
-**CSV injection.** Import niczego nie wykonuje: komórki są tekstem, walidowanym i renderowanym przez React
-jako tekst. Ryzyko formuł dotyczy **eksportu**: każdy eksport CSV z dziennika (dziś go nie ma, `lib/export`
-daje JSON) i każdy przyszły eksport danych brokera poprzedza apostrofem komórkę zaczynającą się od
-`=`, `+`, `-`, `@`, tabulatora lub CR (OWASP). Jedna funkcja w `lib/domain`, test na każdy znak.
+**CSV injection.** Import niczego nie wykonuje (tekst, walidacja, React renderuje tekst). Każdy eksport CSV
+z dziennika poprzedza apostrofem komórkę zaczynającą się od `=`, `+`, `-`, `@`, tabulatora lub CR; jedna funkcja
+w `lib/domain` z testem na każdy znak.
 
-**Plik nie zostaje nigdzie: ani jawny, ani zaszyfrowany.** Akcja serwera dostaje plik w pamięci (limit
-akcji to już 12 MB w `next.config.ts`), parsuje go i zapomina; zakaz zapisu do katalogu uploadów i do
-`%TEMP%`. Zostaje: SHA-256 pliku, nazwa formatu, liczniki i wiersze `broker_fills` z kolumną `raw`
-(sparsowany wiersz **bez** numeru konta). Uzasadnienie: wszystko, czego dziennik potrzebuje, jest
-w wierszach; zaszyfrowany plik byłby drugą kopią danych wrażliwych, wymagałby klucza i jego rotacji,
-a jedyny zysk (ponowne parsowanie po poprawce parsera) daje to, że użytkownik ma swój plik i może go
-wgrać jeszcze raz. Numer konta u brokera nie jest przechowywany jawnie: w bazie leży HMAC-SHA256
-(klucz `BROKER_ID_HMAC_KEY` z env) i ostatnie 4 znaki do pokazania w UI.
+**Plik nie zostaje na serwerze: ani jawny, ani zaszyfrowany.** Serwer parsuje plik w pamięci i zapomina; zakaz
+zapisu do katalogu uploadów i plików tymczasowych. Zostaje SHA-256 pliku, format, liczniki i wiersze `broker_fills`
+z `raw` (sparsowany wiersz **bez** numeru konta). Zaszyfrowany plik byłby drugą kopią danych wrażliwych z kluczem
+do rotacji, a jedyny zysk (ponowne parsowanie) daje ponowny eksport. Numer konta u brokera: w bazie HMAC-SHA256
+(`BROKER_ID_HMAC_KEY`) i ostatnie 4 znaki.
 
-**Przepływ importu (dwa kroki, oba w UI za sesją).**
-1. „Importuj CSV” → akcja `podgladImportu(plik)`: parsowanie, rozpoznanie, grupowanie, dopasowanie,
-   **zero zapisów**. Wynik: format, konta w pliku (nowe trzeba przypisać do kont dziennika), nowe fills,
-   duplikaty, błędne wiersze, trade'y brokera z propozycją dopasowania, ostrzeżenie o strefie.
-2. „Zapisz import” → akcja `zapiszImport(plik, wybory)`: przeglądarka wysyła ten sam plik jeszcze raz
-   (serwer nie trzyma niczego między krokami), serwer sprawdza, że SHA-256 zgadza się z podglądem,
-   i wykonuje wszystko w **jednej** transakcji z `tj.actor = 'ui'`. Wpis w `auth_events` (`broker_import`).
+**Ścieżka UI (dwa kroki za sesją).** „Wgraj plik” → `podgladImportu(plik)`: zero zapisów; format, konta w pliku
+(nowe przypisuje się do kont dziennika), nowe fills, duplikaty, błędne wiersze, trade'y z propozycją dopasowania.
+„Zapisz import” → `zapiszImport(plik, wybory)`: przeglądarka wysyła plik ponownie, serwer sprawdza SHA-256
+z podglądu i zapisuje w **jednej** transakcji z `tj.actor = 'ui'`; `auth_events` (`broker_import`).
 
-**Cofnięcie importu** (UI, za sesją): kasuje fills i trade'y brokera z tego importu; trade'y dziennika
-utworzone przez ten import kasuje bez nagrobka (to cofnięcie, nie decyzja „nie chcę tego trade'a”);
-trade'om tylko dopasowanym przywraca poprzednią `broker_amount` z `broker_trades.prev_broker_amount_cents`
-przez `persistTrade`. Wpis `broker_import_reverted`.
+**Cofnięcie importu** (UI): kasuje fills i trade'y brokera z importu; trade'y dziennika utworzone przez import
+kasuje bez nagrobka; dopasowanym przywraca poprzednią `broker_amount` (`broker_trades.prev_broker_amount_cents`)
+przez `persistTrade`. `auth_events`: `broker_import_reverted`.
 
-### 3. Dopasowanie do dziennika
+### 3. Automat w łączniku: `tj watch-exports`
 
-**Kandydat** dla trade'a brokera: trade dziennika na koncie przypisanym do tego konta u brokera,
-`backtest_session_id IS NULL`, ten sam instrument, ten sam kierunek, wejście w oknie **±120 s**, ta sama
-liczba kontraktów. Okno 120 s, bo czasy w dzienniku pochodzą z formularza i z TradingView (dokładność do
-minuty); stała w `lib/domain` z testem.
+Słowa użytkownika (16.10.2026): «przed stworzeniem notatki muszę kliknąć „Eksport”». Resztę robi automat.
 
-| Sytuacja | Na podglądzie importu | Po „Zapisz import” |
+**Działanie** (repo `tj-connector`, `packages/core/src/eksporty/` + komenda w `packages/cli`):
+1. `tj watch-exports` obserwuje folder Pobrane (ścieżka ze znanego folderu systemu, nie z `%USERPROFILE%\Downloads`
+   na sztywno; zmiana: `tj config set exports.dir`). Bierze tylko **nowe** pliki `.csv` do 5 MB, po ustaniu zmian
+   rozmiaru (przeglądarka zapisuje przez plik tymczasowy) i z nagłówkiem pasującym do znanego formatu. Innych
+   plików nie czyta dalej niż pierwsza linia i nigdy ich nie rusza.
+2. Wysyła plik do `POST /api/v2/broker/inbox` tokenem, którego **jedynym** zakresem jest `import_broker`.
+3. Serwer robi to samo co „Zapisz import” w UI (parser, grupowanie, dopasowanie), z różnicami z pkt 4.
+4. Po odpowiedzi 2xx z tym samym SHA-256 łącznik **kasuje plik**. Przy odrzuceniu plik zostaje, a łącznik
+   zapisuje powód w swoim logu i pokazuje go w `tj doctor`.
+5. `tj watch-exports install` rejestruje uruchamianie przy logowaniu (Harmonogram zadań Windows); robi to
+   użytkownik, raz.
+
+**Decyzja: automat importuje sam, ale ma wąskie prawa, a reszta czeka w UI.** Rozważone:
+- *Łącznik tylko zostawia plik do potwierdzenia w UI.* Najmocniejsze, ale wtedy przed każdą notatką są dwa
+  kliknięcia zamiast jednego, a użytkownik zgodził się, żeby po eksporcie resztę robił automat. Odrzucone.
+- *Kolejka sugestii na każde dopasowanie.* To samo kliknięcie, tylko w innym miejscu. Odrzucone.
+- **Przyjęte:** automat zapisuje dane brokera (fills, trade'y brokera: to nie zmienia dziennika) i **od razu
+  stosuje wyłącznie dopasowania 1:1** (pkt 4), bo to jest dokładnie to, co użytkownik ma zaznaczone domyślnie na
+  podglądzie («Tak, z możliwością odznaczenia»). W automacie „odznaczenie” staje się „Cofnij” przy każdym
+  dopasowaniu i przy całym imporcie: lista „Uzgodnione z rachunku” na Dziś pokazuje każdą zmianę wyniku (było →
+  jest). Wszystko inne (kilku kandydatów, brak trade'a w dzienniku, błędne wiersze, nowe konto u brokera bez
+  przypisania) trafia do „Do decyzji” w UI. **Automat nigdy nie tworzy trade'a w dzienniku.**
+
+**Jak to się ma do zasady „agent nie uruchamia importu”.** Automat nie jest agentem AI: to proces uruchamiany przez
+użytkownika, który reaguje na plik z jego kliknięcia. Granica wobec AI:
+1. **osobny token**: `import_broker` nie łączy się z żadnym innym zakresem (CHECK w bazie), wydaje go wyłącznie UI
+   w trybie sudo, nigdy logowanie kodem urządzenia; leży w osobnym pliku konfiguracji `tj` (uprawnienia tylko
+   użytkownika). Token, którym pracuje AI (`read`/`write`/`propose`), importu nie otworzy;
+2. **MCP i skille**: brak narzędzia importu w MCP; skille nie wołają `tj watch-exports` ani `inbox`;
+3. **hook pluginu** (druga warstwa, ADR-032): chroni plik tokenu importu, blokuje `tj watch-exports`
+   i wywołania `inbox` z sesji AI oraz zapis do folderu eksportów;
+4. **baza**: zapis do `broker_imports` tylko z aktorem `ui` albo `api:<id>` tokenu, którego jedynym zakresem jest
+   `import_broker` (trigger sprawdza `api_tokens`);
+5. **skutki ograniczone**: przez `inbox` nie da się utworzyć trade'a, przypisać konta, połączyć OAuth ani
+   zatwierdzić sugestii.
+
+Ryzyko resztkowe (jawne): agent albo złośliwy program, który zapisze sfałszowany plik w folderze Pobrane, może
+zmienić wynik trade'ów, które dokładnie pasują 1:1 (konto, instrument, kierunek, kontrakty, ±120 s). Hook to
+tylko druga warstwa. Ogranicza to: widoczna lista zmian z „Cofnij”, `broker_imports.origin = 'tj_watch'`
+i `auth_events`. Pytanie o akceptację tego ryzyka jest w raporcie.
+
+**Skill `po-trade` i `po-sesji`:** pierwszy krok przed notatką: `tj broker status` (odczyt: czas ostatniego importu
+dla konta dnia, liczba trade'ów brokera bez dopasowania). Gdy ostatni import jest starszy niż ostatni trade dnia,
+skill prosi jednym zdaniem: „Kliknij Eksport w Tradovate” i czeka (`tj broker status --wait 180`). Bez świeżego
+eksportu notatka powstaje z wynikiem wyliczonym (pkt 5), oznaczonym jako „wyliczony”.
+
+### 4. Dopasowanie do dziennika
+
+**Kandydat**: trade dziennika na koncie przypisanym do konta u brokera, `backtest_session_id IS NULL`, ten sam
+instrument i kierunek, wejście w oknie **±120 s**, ta sama liczba kontraktów. Okno 120 s, bo czasy w dzienniku są
+z formularza i z TradingView (dokładność do minuty); stała w `lib/domain` z testem.
+
+| Sytuacja | Wgranie w UI (podgląd) | Automat (`inbox`) |
 |---|---|---|
-| dokładnie jeden kandydat i trade dziennika nie ma innego kandydata (1:1) | zaznaczone „połącz” | powiązanie `match_kind = 'auto'` i `broker_amount` przez `persistTrade` |
-| kilku kandydatów albo zgodne wszystko poza liczbą kontraktów | lista do wyboru, nic nie zaznaczone | tylko to, co użytkownik wybrał (`'user'`) |
-| brak kandydata | wiersz „brak w dzienniku” z polem „utwórz trade”, **niezaznaczonym** | trade tworzony tylko z zaznaczonych wierszy |
-| trade brokera ma nagrobek w `ingest_skips` | ukryty, licznik „pominiętych” | nic |
+| 1:1 (jeden kandydat, a trade dziennika nie ma innego kandydata) | zaznaczone, do odznaczenia («Tak, z możliwością odznaczenia») | stosowane od razu, z „Cofnij” |
+| kilku kandydatów albo różna liczba kontraktów | wybór użytkownika | „Do decyzji” |
+| brak trade'a w dzienniku | pole „utwórz trade”, **niezaznaczone** | „Do decyzji”; AI może zaproponować przez kolejkę |
+| nagrobek w `ingest_skips` | pominięty, licznik | pominięty, licznik |
 
-**Czy import z UI może tworzyć trade'y od razu: tak, ale tylko zaznaczone przez użytkownika na
-podglądzie.** Zasada „AI proponuje, zatwierdza człowiek” dotyczy zapisów, których autorem jest model.
-Import jest akcją użytkownika (aktor `ui`), a podgląd jest jego zatwierdzeniem: widzi każdy trade przed
-zapisem i sam go zaznacza. Domyślnie nic nie jest zaznaczone do utworzenia (jest przycisk „zaznacz
-wszystkie”), bo utworzony trade wchodzi do statystyk. Dopasowanie 1:1 jest zaznaczone domyślnie, bo nie
-tworzy nowego wpisu, a tylko dopisuje wynik z rachunku do trade'a, który już jest; użytkownik może je odznaczyć.
+**Tworzenie trade'ów z importu: tylko kliknięciem użytkownika.** Wgranie w UI może je utworzyć od razu, ale
+wyłącznie z wierszy zaznaczonych na podglądzie (aktor `ui`; podgląd jest zatwierdzeniem). Automat nie tworzy nigdy.
+**AI tylko proponuje** przez `ai_suggestions` (zakres `propose`): `broker_match` (`brokerTradeId`, `tradeId`)
+i `broker_trade` (`brokerTradeId`, opcjonalnie `noteId`, `wordsIds`), z obowiązkowym dowodem; zatwierdzenie jednym
+kliknięciem w UI (trigger `tj_require_ui_actor`), cofnięcie zdejmuje powiązanie albo kasuje trade. Trade z danych
+brokera zapisuje się przez `persistTrade` z `source = 'broker'` i `external_ref` = `broker_trades.external_ref`;
+skasowany w UI zostawia nagrobek (ADR-026).
 
-**Ścieżka AI: tylko kolejka.** Gdy AI przy notatce rozpozna trade brokera, zgłasza propozycję zakresem
-`propose` do istniejącej kolejki `ai_suggestions` z dwoma nowymi rodzajami:
-- `broker_match` (`payload`: `brokerTradeId`, `tradeId`): połącz trade dziennika z trade'em brokera;
-- `broker_trade` (`payload`: `brokerTradeId`, opcjonalnie `noteId`, `wordsIds`): utwórz trade z danych brokera
-  i przypnij notatkę.
+Ceny wejścia i wyjścia trade'a z formularza albo z AI **nie są nadpisywane**: różnica z cenami brokera to poślizg
+i ma być widoczna (pkt 5). Trade utworzony z danych brokera bierze ceny, czasy i wyjścia z fills; nie ma SL, więc
+R jest puste, dopóki ktoś nie dopisze SL.
 
-Dowód (`evidence`) obowiązkowy jak dla każdej sugestii (CHECK). Zatwierdzenie jednym kliknięciem w UI
-(trigger `tj_require_ui_actor`), cofnięcie kasuje utworzony trade albo zdejmuje powiązanie. Zapis trade'a
-z serwera po zatwierdzeniu idzie przez `persistTrade` z `source = 'broker'` i `external_ref` równym
-`broker_trades.external_ref`. Skasowanie takiego trade'a w UI zostawia nagrobek w `ingest_skips` (ADR-026),
-więc ani kolejny import, ani AI nie zaproponują go ponownie.
+### 5. Wynik netto, wynik wyliczony i uzgodnienie
 
-**Wynik z brokera.** `broker_trades.pnl_cents` = suma P&L podanego przez brokera, gdy format go niesie
-(`pnl_source = 'broker'`); inaczej P&L z cen fills policzony przez `computeTrade` na nogach brokera
-(`pnl_source = 'computed'`; dla futures jest to dokładnie wynik brutto rachunku, bo ceny chodzą po tickach).
-Przy powiązaniu i przy tworzeniu trade'a ta kwota idzie jako `brokerAmount` przez `persistTrade` →
-`computeTrade` (ADR-016); żadna nowa tabela nie liczy pieniędzy z ticków sama (pułapka 1 i 2 modelu danych).
-Ceny wejścia i wyjścia trade'a z formularza **nie są nadpisywane**: różnica z cenami brokera to poślizg
-i ma być widoczna. Trade utworzony z danych brokera bierze ceny, czasy i wyjścia z fills, nie ma SL
-(R zostaje puste, dopóki użytkownik albo AI nie dopisze SL).
+**Zmiana ADR-010.** Słowa użytkownika (16.10.2026): «wynik trade’a powinien być taki, jaki faktycznie jest
+prawdziwy, czyli powinien odzwierciedlać to, ile zarobiłem po opłatach i wszelkich innych kosztach. wynik ma być
+po prostu prawdziwy». Od teraz `trades.pnl` to wynik **netto**.
 
-**Prowizje.** Zgodnie z ADR-010 wynik jest bez prowizji: `brokerAmount` to kwota brutto. Opłaty z pliku
-lądują informacyjnie w `broker_fills.fee_cents` i nie wchodzą do `pnl` (patrz pytanie 1 w raporcie: firmy
-prop liczą drawdown zwykle po opłatach).
+**Stawka opłat.** Opłata za kontrakt w obie strony (prowizja + giełda + NFA, „round turn”) w centach, osobno dla
+kontraktów mini i micro:
+- `prop_firm_presets` i `prop_rules`: `fee_rt_mini_cents`, `fee_rt_micro_cents`, `fee_source_url` (preset ich dziś
+  nie ma; research ich nie zebrał, więc startują jako NULL i wypełnia je użytkownik albo `market-researcher`);
+- `accounts`: te same dwie kolumny dla kont innych niż prop (własne konto Tradovate);
+- `instruments.size_class` (`mini` / `micro`), bo stawka zależy od klasy kontraktu, a dziś tę klasę zna tylko
+  funkcja ekspozycji w `prop.ts` (po symbolu).
+Stawka obowiązująca dla trade'a: reguła prop z dnia trade'a, a dla konta nie-prop stawka konta.
 
-**Moduł prop.** Bufory DD i consistency liczy dalej `prop.ts` z `trades.pnl` (ADR-033 bez zmian). Ekran konta
-prop pokazuje dodatkowo: „N transakcji z rachunku poza dziennikiem, razem X $”, bo bez nich bufor jest
-zawyżony. Saldo z platformy nie jest źródłem stanu (research: widok platformy ≠ silnik reguł firmy).
+**Skutki dla `computeTrade`.** Nowe wejście `feeRtCents` (stawka dla klasy instrumentu; NULL = brak stawki).
+`computeTrade` liczy:
+- `fees` = stawka × zamknięte kontrakty (suma po wyjściach); bez stawki 0 i flaga „bez opłat”;
+- `pnl_estimate` = wynik z ticków (z cen trade'a) − `fees`: **wynik wyliczony**, zawsze liczony i zapisywany;
+- `pnl` = `brokerAmount` (netto z rachunku), gdy jest, inaczej `pnl_estimate`;
+- `rMultiple` z `pnl` (netto), jak dotąd; `riskAmount` bez zmian (odległość do SL, bez opłat). Skutek: SL
+  trafiony w całości to trochę więcej niż −1R. To prawda o koszcie i ma być widoczna.
+Czy wynik jest „wyliczony” czy „rzeczywisty”, wynika z `broker_amount IS NULL` (bez nowej kolumny). Etykieta
+w UI: „wyliczony” albo „z rachunku”.
 
-### 4. Co widzi AI (API v2 i łącznik `tj`)
+**Skutki dla `brokerAmount`.** Kwota z brokera to kwota **netto**. Formularz: „Kwota z rachunku (po opłatach)”.
+Import liczy ją jako: P&L brutto z pliku (albo z cen fills przez `computeTrade`) − opłaty z pliku, gdy format je
+ma (`fee_source = 'broker'`), inaczej − opłaty ze stawki (`fee_source = 'rate'`, w UI „opłaty wg stawki”). Plik
+Cash History Tradovate (gdy dostępny) uzgadnia sumę opłat dnia ze stawką i pokazuje różnicę przy dniu. Stare
+wartości `broker_amount` z formularza mają nieznane znaczenie (brutto albo netto) i zostają bez zmian.
+
+**Skutki dla statystyk.** Statystyki, filtry SQL, wykresy, Edge Finder i siatka procesu czytają `trades.pnl`, więc
+przechodzą na netto same, bez zmian w zapytaniach (ten sam argument co w ADR-016). Próg BE (ADR-011) porównuje
+wynik netto: trade z małym zyskiem brutto może stać się BE albo stratą. Historia: trade'y sprzed zmiany mają `pnl`
+brutto (migracja 0005 z ADR-010). Przeliczenie historii nie dzieje się w migracji: w UI jest przycisk „Przelicz
+historię z opłatami” z podglądem (ile trade'ów, suma różnicy), który po ustawieniu stawek przelicza przez
+`persistTrade` tylko trade'y bez `broker_amount`. Do tego czasu statystyki pokazują ostrzeżenie „część historii
+bez opłat” (liczba wyliczana z `fees IS NULL`).
+
+**Skutki dla buforów prop.** `prop.ts` liczy z `trades.pnl`, więc bufory DD, limit dnia i consistency liczą się
+netto, czyli tak jak firmy zwykle liczą saldo konta (WYWNIOSKOWANE; dokładna podstawa per firma to LUKA, a każda
+reguła ma „potwierdź z regulaminem”). Ekran konta prop dodatkowo pokazuje „N transakcji z rachunku poza
+dziennikiem, razem X $”, bo bez nich bufor jest zawyżony.
+
+**Wynik wyliczony od AI i uzgodnienie.** Gdy AI zapisuje trade z notatki przed eksportem, podaje poziomy
+i kontrakty, a konto bierze z aktywnego konta dnia (pkt 6); wynik liczy serwer (`computeTrade`, netto ze stawką
+z presetu), nie AI. Po imporcie dopasowanie 1:1 wpisuje `brokerAmount` i dziennik pokazuje różnicę
+`pnl − pnl_estimate` jako **„poślizg i opłaty”** przy trade'zie, a w statystykach średni poślizg na setup.
+
+### 6. Aktywne konto dnia
+
+Rytuał przed sesją na Dziś dostaje wybór kont dnia: jedno kliknięcie „jak wczoraj” albo zaznaczenie kont. Zapis
+w nowej tabeli `day_accounts (day, account_id)`, nie w `day_notes.account_id`, bo migracja 0029 właśnie uczyniła
+notatkę dnia niezależną od konta. AI bierze z tego konto dla trade'ów z notatki, a z konta firmę, program, fazę
+(pkt 1) i stawkę opłat. Gdy kont dnia jest kilka, AI nie zgaduje: dopasowanie po imporcie rozstrzyga konto, a do
+tego czasu trade ma konto pierwsze z listy i notę „konto do potwierdzenia importem”. Brak wyboru = AI pyta jednym
+zdaniem i nie zapisuje trade'a bez konta. API: `GET/PUT /api/v2/days/:date/accounts` (`read` / `write`, aktor
+`api:`), bo to jest ustalenie dnia, a nie zatwierdzenie.
+
+### 7. Co widzi AI (API v2 i łącznik `tj`)
 
 | Trasa | Zakres | Zwraca |
 |---|---|---|
-| `GET /api/v2/broker/trades?from&to&accountId&unmatched` | `read` | trade'y brokera: konto dziennika (nazwa, kategoria z ADR-027, firma, program, faza), kontrakt, kierunek, ilość, czasy, średnie ceny, P&L, liczba fills, status dopasowania i `tradeId` |
-| `GET /api/v2/broker/trades/:id` | `read` | to samo + lista fills (bez `raw`) |
-| `GET /api/v2/trades/:id` | `read` | nowy blok `broker` przy trade'ie dopasowanym (konto, faza, P&L, fills) |
-| `POST /api/v2/ai-suggestions` | `propose` | istniejąca trasa, dwa nowe rodzaje z pkt 3 |
+| `GET /api/v2/broker/trades?from&to&accountId&unmatched` | `read` | trade'y brokera: konto dziennika (nazwa, kategoria z ADR-027, firma, program, faza), kontrakt, kierunek, ilość, czasy, średnie ceny, P&L netto i brutto, opłaty i ich źródło, liczba fills, stan dopasowania, `tradeId` |
+| `GET /api/v2/broker/trades/:id` | `read` | to samo + fills (bez `raw`) |
+| `GET /api/v2/broker/status` | `read` | czas ostatniego importu per konto, liczba niedopasowanych, „Do decyzji” |
+| `GET /api/v2/trades/:id` | `read` | blok `broker` przy trade'zie dopasowanym; `pnlEstimate`, `pnlSource` (`estimate` / `broker`), różnica |
+| `POST /api/v2/ai-suggestions` | `propose` | dwa nowe rodzaje z pkt 4 |
+| `POST /api/v2/broker/inbox` | **tylko** `import_broker` | przyjęcie pliku z automatu (pkt 3); żaden inny token |
 
-W `tj` i MCP: `tj broker trades` i `tj broker trade <id>`, tylko odczyt; dane w bloku oznaczonym jako dane,
-nie instrukcje (ADR-032), bo pola tekstowe pochodzą z pliku. Numer konta u brokera nigdy nie wychodzi
-z API (tylko ostatnie 4 znaki).
+`tj broker trades`, `tj broker trade <id>`, `tj broker status`: tylko odczyt, dane w bloku danych (ADR-032), bo pola
+tekstowe pochodzą z pliku. Numer konta u brokera nigdy nie wychodzi z API (tylko ostatnie 4 znaki).
 
-**Ślepa ocena obejmuje dane brokera** przez ten sam moduł `ukrycie-wyniku.ts` (jedna nowa funkcja
-`sqlBrokerUkryty`, bez drugiego mechanizmu):
-- trade brokera dopasowany do trade'a z ukrytym wynikiem: wychodzą tylko fills wejścia sprzed
-  `sqlWejscieTradu`; P&L, wyjścia, czas wyjścia, status i fills po wejściu są ukryte (pole `resultHidden: true`);
-- trade brokera **niedopasowany**, którego konto i dzień handlowy mają trade z ukrytym wynikiem,
-  a wejście jest po najwcześniejszym wejściu takiego trade'a: ukryte jak wyżej (fail-closed, bo to może być
-  ten sam trade, którego dziennik jeszcze nie połączył);
-- sumy dnia i konta liczone z danych brokera pomijają wiersze ukryte.
-Werdykt wydany na trade'zie utworzonym z importu nie jest ślepy i to widać z danych (`trade_reviews.as_of`
-późniejsze niż `exit_time`), bez nowej kolumny.
+**Ślepa ocena obejmuje dane brokera** przez `ukrycie-wyniku.ts` (nowa funkcja `sqlBrokerUkryty`, bez drugiego
+mechanizmu): przy trade'zie z ukrytym wynikiem wychodzą tylko fills wejścia sprzed `sqlWejscieTradu`; P&L,
+`pnlEstimate`, wyjścia, status i fills po wejściu są ukryte (`resultHidden: true`); tak samo niedopasowany trade
+brokera z konta i dnia, w którym jest trade z ukrytym wynikiem, z wejściem po najwcześniejszym wejściu takiego
+trade'a (fail-closed); sumy dnia i konta pomijają wiersze ukryte. Werdykt wydany po imporcie nie jest ślepy, co
+wynika z danych (`as_of` późniejsze niż `exit_time`).
 
-**Agent nie uruchomi importu ani połączenia. Cztery warstwy:**
-1. **brak trasy**: w `/api/v2` nie ma żadnej trasy zapisu danych brokera, importu, przypisania konta,
-   połączenia ani rozłączenia; test-strażnik (jak w ADR-030) czyta źródła tras i pada, gdy pod
-   `/api/v2/broker/**` pojawi się eksport inny niż `GET`, a w kontrakcie OpenAPI ścieżka z `import` lub `connect`;
-2. **brak zakresu**: żaden zakres (także `import` z 15.10.2026, który dotyczy wyłącznie importu sejfu)
-   nie otwiera tych operacji; nowego zakresu nie dodajemy;
-3. **baza**: trigger na `INSERT` do `broker_imports`, `broker_accounts` i (etap B) `broker_connections`
-   odrzuca zapis, gdy `tj.actor` nie jest `ui` (worker etapu B dostaje własnego aktora `worker:tradovate`
-   wyłącznie dla `broker_fills`, `broker_trades` i dziennika zdarzeń połączenia);
-4. **UI**: import wymaga sesji z 2FA; „Połącz z Tradovate” wymaga trybu sudo (ADR-031). Rozłączenie sudo
-   nie wymaga: odcięcie dostępu ma być łatwiejsze niż jego nadanie.
+**Granica agenta** (poza automatem z pkt 3): w `/api/v2` nie ma trasy przypisania konta, cofnięcia importu,
+połączenia ani rozłączenia; test-strażnik czyta źródła tras i pada, gdy pod `/api/v2/broker/**` pojawi się
+eksport inny niż `GET`, z wyjątkiem `inbox`, i gdy `inbox` przyjmie jakikolwiek zakres poza `import_broker`.
+Żaden inny zakres (także `import` z 15.10.2026, który dotyczy importu sejfu) nie otwiera tych operacji. Import
+z UI wymaga sesji z 2FA; wydanie tokenu `import_broker` i „Połącz z Tradovate” wymagają sudo (ADR-031);
+unieważnienie tokenu i rozłączenie sudo nie wymagają.
 
-### 5. OAuth Tradovate: projekt na etap B (nieaktywny)
+### 8. OAuth Tradovate: etap B (nieaktywny)
 
-**Warunek włączenia (wszystkie trzy):** pisemna odpowiedź Tradovate/NinjaTrader potwierdzająca, że
-poświadczenie aplikacji nie pozwala na operacje zmieniające konto (zlecenia, anulowanie, likwidacja,
-zmiana ustawień), z nazwami zakresów; odpowiedź w sprawie licencji 24 h i limitu sesji (pytania w
-`docs/v2/tradovate-podanie.md`); decyzja użytkownika po przeczytaniu odpowiedzi. Kod workera powstaje
-dopiero, gdy jest `client_id` środowiska demo (bez niego nie da się go przetestować); do tego czasu istnieje
-tylko flaga z pkt 1 i stan przycisku.
+**Warunek włączenia (wszystkie trzy):** pisemne potwierdzenie Tradovate/NinjaTrader, że poświadczenie aplikacji
+nie pozwala na operacje zmieniające konto, z nazwami i poziomami zakresów; odpowiedzi w sprawie licencji 24 h,
+limitu sesji i historii fills pod OAuth (pytania w `docs/v2/tradovate-podanie.md`); decyzja użytkownika po
+przeczytaniu odpowiedzi. Kod workera powstaje dopiero z `client_id` środowiska demo; do tego czasu jest tylko flaga.
 
 **Architektura.**
-- **Osobny kontener `broker-worker`** w Coolify (ten sam obraz, inny punkt wejścia), bez wystawionego portu.
-  Sieć wychodząca tylko do hostów Tradovate (`live.tradovateapi.com`, `trader.tradovate.com`, host wymiany
-  tokenu z dokumentacji; lista w konfiguracji) i do bazy. Osobna rola bazy z prawem zapisu tylko do
-  `broker_fills`, `broker_trades`, `broker_connections`, `broker_connection_events`.
-- **Klient z białą listą par (metoda, ścieżka)**: `GET` dla `/account/list`, `/fill/list`, `/fillPair/list`,
+- Osobny kontener `broker-worker` (ten sam obraz, inny punkt wejścia), bez portu; ruch wychodzący tylko do hostów
+  Tradovate i do bazy; osobna rola bazy z zapisem tylko do tabel brokera i dziennika zdarzeń połączenia.
+- Klient z białą listą par (metoda, ścieżka): `GET` dla `/account/list`, `/fill/list`, `/fillPair/list`,
   `/fillFee/list`, `/order/list`, `/position/list`, `/cashBalance/getcashbalancesnapshot`, `/contract/item`,
-  `/auth/me`; `POST` wyłącznie dla wymiany i odnowienia tokenu. Wszystko inne rzuca wyjątek przed wysłaniem.
-  Test w CI skanuje repo pod kątem czarnej listy (`placeorder`, `cancelorder`, `modifyorder`,
-  `liquidateposition`, `startorderstrategy`, `/order/`, `/orderStrategy/` poza `list`) i oblewa build.
-- **Tokeny: web nie umie ich odczytać.** Wywołanie zwrotne OAuth obsługuje aplikacja webowa (sprawdza `state`
-  związany z sesją sudo i `code_verifier` PKCE z podpisanego ciasteczka), ale jednorazowy `code` szyfruje
-  **kluczem publicznym workera** (X25519 + AES-256-GCM) i zapisuje jako zdarzenie oczekujące. Worker
-  odszyfrowuje go kluczem prywatnym (`BROKER_WORKER_PRIVKEY`), wymienia na tokeny i zapisuje token
-  odświeżania zaszyfrowany AES-256-GCM kluczem `BROKER_TOKEN_KEY` (osobnym od `TOTP_ENC_KEY`, poza bazą,
-  poza repo). Token dostępu żyje w pamięci workera. `client_secret` tylko w env workera.
-- **Nigdy w odpowiedziach API, logach, błędach ani w przeglądarce**: token, `client_secret`, `code`,
-  identyfikator konta platformy (zaszyfrowany tym samym kluczem).
-- **Rotacja i unieważnienie**: odnowienie tokenu dostępu przed `expirationTime`; nowy token odświeżania
-  zastępuje stary w tej samej transakcji; zmiana `BROKER_TOKEN_KEY` = skrypt przeszyfrowania; „Rozłącz” w UI
-  natychmiast kasuje tokeny z bazy, woła odwołanie u platformy, jeśli Tradovate je udokumentuje (dziś
-  nieopisane), i pokazuje instrukcję, gdzie cofnąć zgodę w Tradovate. Wybór: zostaw pobrane dane albo skasuj.
-- **Dziennik zdarzeń** `broker_connection_events` (tylko dopisywanie): metoda, ścieżka, status HTTP, czas,
-  bez treści. Widoczny w Prop → Połączenia. `auth_events`: `broker_connect`, `broker_disconnect`,
-  `broker_token_refresh_fail`.
-- **Limit dwóch sesji**: trzecia sesja wylogowuje najstarszą (OFICJALNE), czyli może wyrzucić użytkownika
-  z platformy w trakcie handlu. Domyślnie pobieranie **tylko poza godzinami handlu** z ustawień
-  (`settings.trading_hours_*`) plus ręczne „Pobierz teraz” z ostrzeżeniem. Odpowiedź Tradovate może to zmienić.
-- **Licencja NinjaTrader, sekcja 3 (cache 24 h)**: dopóki Tradovate nie odpowie, że nie dotyczy to danych
-  własnego konta użytkownika, worker traktuje pobrane fills jako treść z 24-godzinnym terminem:
-  `broker_fills.expires_at` = pobranie + 24 h i zadanie sprzątające. Trwałe zostaje tylko to, co użytkownik
-  zatwierdził do swojego dziennika (trade z `brokerAmount`). Jeśli to też będzie zakazane, OAuth nie ma sensu
-  i zostaje sam CSV. Plik wyeksportowany przez użytkownika z platformy nie jest „treścią API” (WYWNIOSKOWANE;
-  pytanie w podaniu).
-- Sekcja 2 licencji („nie wolno działać w imieniu klienta”): worker niczego nie zleca; podanie mówi to wprost.
+  `/auth/me`; `POST` wyłącznie dla wymiany i odnowienia tokenu. Test w CI skanuje repo pod kątem czarnej listy
+  (`placeorder`, `cancelorder`, `modifyorder`, `liquidateposition`, `startorderstrategy`, `revoketradingpermission`)
+  i oblewa build.
+- Tokeny: wywołanie zwrotne obsługuje aplikacja webowa (`state` związany z sesją sudo, PKCE), ale `code` szyfruje
+  kluczem publicznym workera (X25519 + AES-256-GCM); worker wymienia go na tokeny i trzyma token odświeżania
+  zaszyfrowany `BROKER_TOKEN_KEY` (osobny od `TOTP_ENC_KEY`, poza bazą i repo). Web nie umie odczytać tokenów.
+  `client_secret` tylko w env workera. Nigdy w odpowiedziach API, logach, błędach ani w przeglądarce.
+- Rotacja i unieważnienie: odnowienie przed `expirationTime`; nowy token odświeżania zastępuje stary w jednej
+  transakcji; zmiana klucza = skrypt przeszyfrowania; „Rozłącz” kasuje tokeny natychmiast i pokazuje, gdzie cofnąć
+  zgodę w Tradovate.
+- Dziennik zdarzeń `broker_connection_events` (tylko dopisywanie: metoda, ścieżka, status, czas, bez treści);
+  `auth_events`: `broker_connect`, `broker_disconnect`, `broker_token_refresh_fail`.
+- „Pobierz teraz” zleca pobranie; poza tym worker pobiera **tylko poza godzinami handlu** z ustawień, bo trzecia
+  sesja Tradovate wylogowuje najstarszą. Sweep nocny i eksport jako zapas, bo pod OAuth `fill/list` bywa puste
+  albo zwraca tylko bieżącą sesję (`polaczenia-porownanie.md`, sekcja 7, CZĘŚCIOWE).
+- Licencja NinjaTrader, sekcja 3 (cache 24 h): do odpowiedzi Tradovate fills z OAuth mają `expires_at` = pobranie
+  + 24 h i są sprzątane; trwałe zostaje to, co weszło do dziennika (trade z `brokerAmount`). Jeśli i to będzie
+  zakazane, OAuth odpada, a eksport zostaje jedyną drogą.
 
-### 6. Bezpieczeństwo
-
-**Model zagrożeń w skrócie.**
+### 9. Bezpieczeństwo
 
 | Zagrożenie | Skutek bez zabezpieczeń | Zabezpieczenie |
 |---|---|---|
-| wyciek bazy albo kopii | fills i salda; przy hasłach i kluczach: handel na koncie funded | brak haseł i kluczy handlowych w ogóle; numer konta jako HMAC; token OAuth szyfrowany kluczem spoza bazy; klucze poza kopią |
-| agent zmanipulowany (prompt injection z notatki lub pliku) | import, połączenie, zmiana wyników | brak tras i zakresów, trigger aktora, zatwierdzanie sugestii tylko w UI (pkt 4) |
-| złośliwy plik CSV | DoS, formuły w Excelu, wstrzyknięcie poleceń do AI | limity, kodowanie, schemat, brak wykonywania, ucieczka formuł przy eksporcie, dane dla AI w bloku danych |
-| przejęta sesja przeglądarki | import fałszywych danych | 2FA, `SameSite=Strict`, cofnięcie importu, wpis w `auth_events`; połączenie wymaga sudo |
-| błąd w naszym kodzie wołający zapis u brokera (etap B) | zlecenie albo likwidacja | biała lista par, test czarnej listy w CI, ruch wychodzący tylko do hostów Tradovate, osobny proces i rola bazy, potwierdzone read-only po stronie platformy (warunek włączenia) |
-| wylogowanie z platformy przez naszą sesję (etap B) | strata kontroli nad pozycją | pobieranie poza godzinami handlu, pytanie do Tradovate przed włączeniem |
-| utrata licencji API | utrata funkcji | CSV zostaje pełną ścieżką; OAuth to wygoda, nie zależność |
+| wyciek bazy albo kopii | fills i salda; przy hasłach i kluczach: handel na koncie funded | brak haseł i kluczy handlowych; numer konta jako HMAC; token OAuth szyfrowany kluczem spoza bazy |
+| agent zmanipulowany (wstrzyknięcie z notatki lub pliku) | import, połączenie, zmiana wyników | brak tras i zakresów dla AI, osobny token automatu, trigger aktora, zatwierdzanie sugestii tylko w UI |
+| sfałszowany plik w folderze Pobrane | zmiana wyniku trade'ów pasujących 1:1 | tylko 1:1 bez tworzenia trade'ów, lista zmian z „Cofnij”, origin i `auth_events`, hook (druga warstwa) |
+| wyciek tokenu `import_broker` | wgrywanie plików | jedyny zakres, unieważnienie bez sudo, limit zapytań, `auth_events` |
+| złośliwy plik CSV | DoS, formuły w Excelu, wstrzyknięcie do AI | limity, kodowanie, schemat, brak wykonywania, ucieczka formuł przy eksporcie, blok danych dla AI |
+| przejęta sesja przeglądarki | import fałszywych danych | 2FA, `SameSite=Strict`, cofnięcie importu, sudo dla tokenów i połączeń |
+| błąd naszego kodu wołający zapis u brokera (etap B) | zlecenie albo likwidacja | potwierdzone read-only po stronie platformy (warunek), biała lista, test czarnej listy, egress, osobny proces |
+| wylogowanie z platformy przez naszą sesję (etap B) | strata kontroli nad pozycją | pobieranie poza godzinami handlu, pytanie do Tradovate |
 
-**Lista zabezpieczeń (etap A):** brak poświadczeń; plik nie zostaje; HMAC numeru konta; walidacja po
-stronie serwera z limitami; jedna transakcja z `tj.actor = 'ui'`; trigger aktora na tabelach brokera;
-test-strażnik tras v2; ślepa ocena przez wspólny moduł; nagrobki; cofnięcie importu; `auth_events`;
-eksport z ucieczką formuł; fikstury syntetyczne; `gitleaks` jak dotąd.
-**Etap B dokłada:** worker, biała lista, test czarnej listy, egress, szyfrowanie asymetryczne `code`,
-`BROKER_TOKEN_KEY`, dziennik zdarzeń połączenia, sudo, rozłączenie bez sudo, okno pobierania, retencja 24 h.
+**RODO.** Dziennik jednoosobowy (ADR-031). Gdyby kiedyś miał innych użytkowników: najpierw `legal-compliance-pl`
+i nowe podanie do Ecosystem.
 
-**RODO.** Dziennik jest jednoosobowy (ADR-031); dane finansowe jednej osoby na jej serwerze. Gdyby kiedyś
-miał innych użytkowników: najpierw `legal-compliance-pl` (retencja, podmioty przetwarzające) i nowe podanie
-do Ecosystem.
+### 10. Migracje
 
-### 7. Migracje i model danych
-
-Numeracja po `0029` (journal w `feat/ui-v2`, `when` co 10 000 000). Migracje ręczne, z lustrem w
-`schema.ts`, test „migracje od zera vs `schema.ts`” (pułapka 4 modelu danych).
+Numeracja po `0029` (journal w `feat/ui-v2`, `when` co 10 000 000). Migracje ręczne, z lustrem w `schema.ts`,
+test „migracje od zera vs `schema.ts`”. Kolumny i ograniczenia: `docs/v2/model-danych.md`, sekcja 5.10.
 
 | Plik | Etap | `when` | Zawartość |
 |---|---|---|---|
-| `0030_broker_import.sql` | A | 1787750000000 | `prop_firm_platforms`, `broker_accounts`, `broker_imports`, `broker_trades`, `broker_fills`; trigger aktora `ui`; rozszerzenie CHECK-ów `trades_source`, `ai_suggestions.kind`, `auth_events.kind` |
-| `0031_firmy_platformy.sql` | A | 1787760000000 | tylko dane: wiersze `prop_firm_platforms` z researchu (URL, `read_on` 2026-10-16, `needs_verification`) |
-| `00NN_broker_oauth.sql` | B | kolejny wolny | `broker_connections`, `broker_connection_events`, `broker_fills.expires_at`, aktor `worker:tradovate` |
+| `0030_wynik_netto.sql` | A | 1787750000000 | `trades.fees`, `trades.pnl_estimate`; `instruments.size_class` (+ wypełnienie po symbolu); stawki opłat w `prop_firm_presets`, `prop_rules`, `accounts`; `day_accounts` |
+| `0031_broker_import.sql` | A | 1787760000000 | `prop_firm_platforms`, `broker_accounts`, `broker_imports`, `broker_trades`, `broker_fills`; trigger aktora; zakres `import_broker` w CHECK `api_tokens` (wyłącznie samodzielny); rozszerzenie CHECK-ów `trades_source`, `ai_suggestions.kind`, `auth_events.kind` |
+| `0032_firmy_platformy.sql` | A | 1787770000000 | tylko dane: `prop_firm_platforms` z researchu (`read_on` 2026-10-16) |
+| `00NN_broker_oauth.sql` | B | kolejny wolny | `broker_connections`, `broker_connection_events`, `broker_fills.expires_at`, aktor workera |
 
-Do dopisania w `docs/v2/model-danych.md` (nowa sekcja 5.10 „Dane brokera”, po akceptacji tego ADR;
-pisze `database-engineer`):
+### Odrzucone i odłożone
 
-```sql
-CREATE TABLE prop_firm_platforms (
-  id serial PK,
-  firm text NOT NULL, platform text NOT NULL,
-  methods text[] NOT NULL CHECK (methods <@ ARRAY['csv_import','oauth_tradovate']),
-  export_hint text NULL,                  -- skad pobrac plik ("Trades -> Export")
-  source_url text NOT NULL CHECK (source_url ~ '^https://'),
-  read_on date NOT NULL, needs_verification boolean NOT NULL DEFAULT true,
-  notes text NULL,
-  UNIQUE (firm, platform, read_on)
-);
-
-CREATE TABLE broker_accounts (            -- konto u brokera <-> konto dziennika, 1:1
-  id serial PK,
-  account_id integer NOT NULL UNIQUE REFERENCES accounts ON DELETE CASCADE,
-  platform text NOT NULL CHECK (platform IN ('tradovate','topstepx','rithmic','ninjatrader','generic')),
-  method text NOT NULL CHECK (method IN ('csv_import','oauth_tradovate')),
-  firm text NULL,
-  external_account_hmac text NOT NULL CHECK (external_account_hmac ~ '^[0-9a-f]{64}$'),
-  label_last4 text NULL CHECK (label_last4 IS NULL OR length(label_last4) <= 4),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK (method <> 'oauth_tradovate' OR platform = 'tradovate'),
-  UNIQUE (platform, external_account_hmac)
-);
-
-CREATE TABLE broker_imports (
-  id serial PK,
-  format text NOT NULL,                   -- lista w lib/domain (rosnie bez migracji, ADR-013)
-  file_sha256 text NOT NULL CHECK (file_sha256 ~ '^[0-9a-f]{64}$'),
-  file_bytes integer NOT NULL CHECK (file_bytes > 0),
-  tz text NOT NULL,                       -- strefa przyjeta dla czasow bez przesuniecia
-  rows_total integer NOT NULL, rows_skipped integer NOT NULL,
-  fills_new integer NOT NULL, fills_duplicate integer NOT NULL,
-  trades_matched integer NOT NULL, trades_created integer NOT NULL,
-  status text NOT NULL DEFAULT 'committed' CHECK (status IN ('committed','reverted')),
-  created_at timestamptz NOT NULL DEFAULT now(), reverted_at timestamptz NULL,
-  CHECK ((status = 'reverted') = (reverted_at IS NOT NULL))
-);
--- indeks: (file_sha256); trigger: INSERT tylko przy tj.actor = 'ui'
-
-CREATE TABLE broker_trades (
-  id serial PK,
-  broker_account_id integer NOT NULL REFERENCES broker_accounts ON DELETE CASCADE,
-  import_id integer NULL REFERENCES broker_imports ON DELETE CASCADE,   -- NULL dla etapu B
-  external_ref text NOT NULL UNIQUE,      -- 'brk:<platforma>:<skrot konta>:<id pierwszego fill wejscia>'
-  contract text NOT NULL,
-  instrument_id integer NULL REFERENCES instruments ON DELETE RESTRICT,
-  direction text NOT NULL CHECK (direction IN ('long','short')),
-  max_qty numeric(14,4) NOT NULL CHECK (max_qty > 0),
-  entry_time timestamptz NOT NULL, exit_time timestamptz NULL,
-  avg_entry_price numeric(18,8) NOT NULL, avg_exit_price numeric(18,8) NULL,
-  status text NOT NULL CHECK (status IN ('open','closed')),
-  pnl_cents bigint NULL, pnl_source text NULL CHECK (pnl_source IN ('broker','computed')),
-  trading_day date NULL,                  -- jak trades.trading_day (ADR-022), do indeksu i slepej oceny
-  trade_id integer NULL REFERENCES trades ON DELETE SET NULL,
-  match_kind text NULL CHECK (match_kind IN ('auto','user','ai_accepted','created')),
-  matched_at timestamptz NULL,
-  prev_broker_amount_cents bigint NULL,   -- do cofniecia importu
-  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((trade_id IS NULL) = (match_kind IS NULL)),
-  CHECK ((status = 'closed') = (exit_time IS NOT NULL)),
-  CHECK ((pnl_cents IS NULL) = (pnl_source IS NULL))
-);
--- UNIQUE (trade_id) WHERE trade_id IS NOT NULL; indeksy: (broker_account_id, entry_time), (trading_day),
--- (trade_id) WHERE trade_id IS NULL AND status = 'closed'  -- "poza dziennikiem"
-
-CREATE TABLE broker_fills (
-  id serial PK,
-  broker_account_id integer NOT NULL REFERENCES broker_accounts ON DELETE CASCADE,
-  import_id integer NULL REFERENCES broker_imports ON DELETE CASCADE,
-  external_ref text NOT NULL UNIQUE,      -- '<platforma>:<skrot konta>:<id_zrodla>'
-  broker_trade_id integer NULL REFERENCES broker_trades ON DELETE SET NULL,
-  contract text NOT NULL,
-  side text NOT NULL CHECK (side IN ('buy','sell')),
-  qty numeric(14,4) NOT NULL CHECK (qty > 0),
-  price numeric(18,8) NOT NULL CHECK (price > 0),
-  filled_at timestamptz NOT NULL,
-  fee_cents bigint NULL,                  -- informacyjnie, poza pnl (ADR-010)
-  broker_pnl_cents bigint NULL,           -- P&L pary z pliku, przy fillu wyjscia
-  order_ref text NULL,
-  raw jsonb NOT NULL,                     -- sparsowany wiersz BEZ numeru konta
-  created_at timestamptz NOT NULL DEFAULT now()
-);
--- indeksy: (broker_account_id, filled_at), (broker_trade_id)
-```
-
-Zmiany istniejących ograniczeń (rozszerzenia, stare wiersze je spełniają; `DROP CONSTRAINT` + `ADD` w jednej migracji):
-- `trades_source`: `('form','tradingview','fxreplay','broker')`; `external_ref` z prefiksem `brk:`.
-- `ai_suggestions.kind`: + `'broker_match'`, `'broker_trade'`.
-- `auth_events.kind`: + `'broker_import'`, `'broker_import_reverted'`, `'broker_account_mapped'`; w etapie B
-  + `'broker_connect'`, `'broker_disconnect'`, `'broker_token_refresh_fail'`.
-- Sekcja 11 modelu („Czego model świadomie nie ma”): zdanie o auto-sync brokerów zmienia się na „auto-sync
-  tylko za flagą z ADR-034, import CSV jest”.
-
-Etap B (szkic): `broker_connections` (`broker_account_id` UNIQUE, `status` `pending`/`active`/`revoked`/`error`,
-`refresh_token_enc`, `platform_account_id_enc`, `token_expires_at`, `authorized_at`, `last_sync_at`,
-`revoked_at`), `broker_connection_events` (`tj_forbid_update`: czas, metoda, ścieżka, status, ms).
-
-### Odrzucone
-
-- **Klucz API Tradovate** (droga A z researchu): żądanie tokenu wymaga hasła, a dodatek nie działa dla kont prop.
-- **Klucz ProjectX/TopstepX**: pełny dostęp handlowy do wszystkich kont (OFICJALNE); sprzeczne ze słowami
-  użytkownika i z zasadą sesji głównej. Topstep: tylko CSV.
-- **Login Rithmic**: hasło traderskie; dzienniki, które to robią, przechowują hasło (research, sekcja 7).
-- **Gwarancja „tylko do odczytu” wyłącznie po naszej stronie** przy OAuth bez potwierdzenia Tradovate:
-  odrzucona przez użytkownika 16.10.2026 («Nie, tylko z potwierdzonym read-only»). Warstwy z pkt 5 zostają
-  jako druga linia, nie jako podstawa.
-- **Logowanie do paneli firm przez przeglądarkę bez głowy albo przechwytywanie okna logowania**: hasła, 2FA,
-  zakazy regulaminów.
-- **Zachowanie pliku CSV, także zaszyfrowanego**: uzasadnienie w pkt 2.
-- **Model językowy jako parser lub mapowanie kolumn**: niedeterministyczny, podatny na wstrzyknięcia z pliku,
-  wysyła dane wrażliwe do modelu.
-- **Trasa importu w API v2 (nawet z nowym zakresem)**: agent mógłby ją wywołać; import tylko z UI.
-- **Tworzenie trade'ów z importu bez podglądu** i **dopasowania niejednoznaczne bez wyboru użytkownika**:
-  zapis do statystyk bez decyzji człowieka.
-- **Faza konta z platformy albo z nazwy konta**: żadna platforma jej nie udostępnia w dokumentacji;
-  heurystyka po nazwie jest WYWNIOSKOWANA.
-- **Tabela stanu konta z saldem platformy**: saldo platformy ≠ silnik reguł firmy; stan = funkcja historii (ADR-033).
-- **Synchronizacja w czasie rzeczywistym** (jak Tanto): więcej ryzyka (sesje, licencja) bez potrzeby;
-  AI rozpoznaje trade po zamknięciu.
-- **Ręczne mapowanie kolumn w UI** w etapie A: szablon `generic` pokrywa nieznane formaty taniej.
+- **Klucz API Tradovate**: hasło w żądaniu tokenu, brak dla kont prop.
+- **Klucz ProjectX/TopstepX, login Rithmic, login DXtrade**: poświadczenia z prawem handlu (zasada sesji głównej);
+  tak robi TradeZella, ale to ta klasa ryzyka, którą pokazał wyciek kluczy 3Commas w 2022 r.
+- **Gwarancja „tylko do odczytu” wyłącznie po naszej stronie** przy OAuth: «Nie, tylko z potwierdzonym read-only».
+- **Wyciągi e-mail**: odrzucone przez użytkownika: «sprawdzanie skrzynek pocztowych nie będzie moim znanym
+  rozwiązaniem, ponieważ skrzynki dostajesz dopiero po zakończonym dniu tradingowym». Do tego research nie potwierdził,
+  że konta prop dostają wyciąg (LUKA).
+- **Odczyt panelu TradingView przez CDP**: odrzucony przez użytkownika («Nie»). Ten sam port daje sterowanie
+  sesją z przyciskami zleceń, a read-only byłoby tylko w naszym kodzie.
+- **TradesViz jako pośrednik: odłożone.** Działa od zaraz i daje klucz tylko GET, ale dane finansowe trafiają do
+  trzeciej strony, plan płatny, sync raz na dobę, a pytanie o zakres OAuth Tradovate zostaje bez odpowiedzi, tylko
+  u kogoś innego. Wraca jako pytanie do użytkownika, jeśli Ecosystem odmówi, a eksport okaże się za uciążliwy.
+- **Rozszerzenie przeglądarki na stronie brokera** (TradesViz, PropLedger): widzi sesję i przyciski zleceń.
+- **TradeZella jako źródło**: brak API. **PropFirm Sync / Plaid**: inne dane (koszty z banku, nie trade'y); koszty
+  prop ma już `prop_ledger`.
+- **Baza NT8, pamięć TradingView Desktop, kopiarki transakcji, Tradervue API**: powody w `polaczenia-kont.md`, U.3.
+- **Logowanie do paneli firm przez przeglądarkę bez głowy**: hasła, 2FA, regulaminy.
+- **Zachowanie pliku CSV, także zaszyfrowanego**: pkt 2.
+- **Model językowy jako parser**: niedeterministyczny, podatny na wstrzyknięcia, wysyła dane wrażliwe do modelu.
+- **Automat tylko odkładający plik do potwierdzenia** i **kolejka na każde dopasowanie**: pkt 3.
+- **Automatyczne tworzenie trade'ów z importu**: zapis do statystyk bez decyzji człowieka.
+- **Faza z platformy albo z nazwy konta**, **tabela stanu konta z saldem platformy**, **sync w czasie rzeczywistym**,
+  **ręczne mapowanie kolumn**: jak w poprzedniej wersji tego ADR.
+- **Przeliczenie historii na netto w migracji**: zmienia wyniki bez decyzji; zamiast tego przycisk z podglądem.
 
 ### Ryzyka
 
-1. **Formaty plików nieznane z dokumentacji** (LUKA). Pierwszy parser powstaje dopiero z pliku użytkownika;
-   zmiana formatu przez platformę psuje rozpoznanie (bezpiecznie: odrzucenie, nie zły import). Test na fiksturze
-   każdego formatu.
-2. **Strefa czasowa w plikach bez przesunięcia**: zła strefa = brak dopasowań albo złe dni handlowe.
-   Łagodzi to ostrzeżenie o przesunięciu i podgląd; nie usuwa.
-3. **Scale-in** spłaszczony do średniej ceny: dziennik nie pokaże kolejnych wejść jako osobnych wierszy.
-   Dane są w `broker_fills`, więc rozszerzenie modelu wejść jest możliwe później bez utraty danych.
-4. **Kwota brutto przy kontach prop** (ADR-010): bufor DD wyjdzie optymistyczny o opłaty. Pytanie 1.
-5. **OAuth może nigdy nie dojść do skutku** (brak zgody Ecosystem, licencja 24 h, limit sesji). Wtedy
-   „Połącz” zostaje importem i nadal spełnia «tylko do odczytu».
-6. **Regulaminy firm** (research, ryzyko 1 i 2): dotyczą udostępniania logowania i automatycznych zleceń;
-   import pliku ich nie dotyka. Przy OAuth pytanie do firm zostaje otwarte.
-7. **Lista firm i platform starzeje się w tygodniach**: dane z `read_on` i ostrzeżeniem po 30 dniach.
+1. **Formaty plików nieznane z dokumentacji** (LUKA): parser dopiero z pliku użytkownika; zmiana formatu przez
+   platformę = odrzucenie pliku, nie zły import.
+2. **Strefa czasowa w plikach bez przesunięcia**: ostrzeżenie i podgląd łagodzą, nie usuwają.
+3. **Scale-in spłaszczony do średniej**: wejścia zostają w `broker_fills`, rozszerzenie modelu możliwe później.
+4. **Stawki opłat nieznane**: presety ich nie mają; bez stawki wynik wyliczony jest brutto z etykietą „bez opłat”.
+5. **Mieszanka brutto i netto w historii** do czasu „Przelicz historię”; ostrzeżenie w statystykach.
+6. **Sfałszowany plik w folderze Pobrane** (pkt 3): ryzyko resztkowe opisane jawnie.
+7. **OAuth może nie dojść do skutku** (Ecosystem, licencja 24 h, limit sesji, puste `fill/list`): eksport z automatem
+   zostaje pełną drogą i nadal spełnia «tylko do odczytu».
+8. **Lista firm i platform starzeje się w tygodniach**: dane z `read_on` i ostrzeżeniem po 30 dniach.
 
 ### Macierz testów
 
 | Co | Poziom | Przypadki |
 |---|---|---|
-| parsery i rozpoznanie formatu | jednostkowe (`lib/domain`), fikstury syntetyczne z prawdziwymi nagłówkami | każdy format; nagłówek nieznany i pasujący do dwóch formatów; BOM, UTF-16LE, średnik; komórka i plik ponad limit; liczba z przecinkiem; pusta kolumna wymagana |
-| grupowanie | jednostkowe | wejście i jedno wyjście; częściowe wyjścia; scale-in; odwrócenie jednym fillem; pozycja otwarta na końcu pliku; remis czasu; dwa kontrakty naraz |
-| strefy | jednostkowe | czas z przesunięciem; bez przesunięcia w strefie formatu; granice DST w USA i UE; ostrzeżenie o przesunięciu o pełne godziny |
-| idempotencja | baza lokalna | ten sam plik dwa razy = 0 nowych; plik zachodzący domyka trade `open`; id trade'a brokera stabilne po przeliczeniu; nagrobek blokuje ponowne utworzenie |
-| dopasowanie | jednostkowe + baza | 1:1; dwóch kandydatów; inna liczba kontraktów; poza oknem 120 s; trade z sesji backtestu nigdy kandydatem |
-| zapis i wynik | baza lokalna | `broker_amount` przez `persistTrade`, `pnl` i R przeliczone; cofnięcie importu przywraca poprzednią kwotę; transakcja wycofana w całości przy błędzie w połowie |
-| granica agenta | baza lokalna + strażnik tras | zapis do `broker_imports`/`broker_accounts` bez aktora `ui` → `TJ403`; brak trasy zapisu pod `/api/v2/broker/**`; akceptacja `broker_match` przez API → 403 |
-| ślepa ocena | baza lokalna (rozszerzenie `slepa-ocena.db.test.ts`) | P&L i wyjścia ukryte dla trade'a otwartego z werdyktem; niedopasowany trade brokera tego dnia ukryty; po zamknięciu widoczne |
+| parsery i rozpoznanie | jednostkowe, fikstury syntetyczne z prawdziwymi nagłówkami | każdy format; nieznany nagłówek; pasuje do dwóch; BOM, UTF-16LE, średnik; limity; liczba z przecinkiem |
+| grupowanie | jednostkowe | jedno wyjście; częściowe; scale-in; odwrócenie jednym fillem; pozycja otwarta; remis czasu |
+| strefy | jednostkowe | z przesunięciem; bez; DST w USA i UE; ostrzeżenie o przesunięciu |
+| wynik netto | jednostkowe (`calc.test.ts`) | `fees` mini i micro; częściowe wyjścia; brak stawki; `brokerAmount` netto wygrywa; BE po opłatach; R z netto |
+| idempotencja | baza lokalna | ten sam plik dwa razy; plik zachodzący domyka `open`; stabilne id; nagrobek |
+| dopasowanie | jednostkowe + baza | 1:1; dwóch kandydatów; inne kontrakty; poza oknem; trade z backtestu nigdy kandydatem |
+| automat | baza lokalna + test łącznika | `inbox` stosuje tylko 1:1, nie tworzy trade'ów; plik z błędami → „Do decyzji”; łącznik kasuje plik tylko po 2xx z tym samym SHA-256; nie rusza innych plików |
+| granica agenta | baza lokalna + strażnik tras | `inbox` z tokenem `read`/`write`/`propose` → 403; token z `import_broker` i innym zakresem odrzucony przez CHECK; zapis do `broker_imports` bez właściwego aktora → `TJ403`; akceptacja sugestii przez API → 403 |
+| ślepa ocena | baza lokalna (`slepa-ocena.db.test.ts`) | P&L, `pnlEstimate` i wyjścia ukryte; niedopasowany trade dnia ukryty; po zamknięciu widoczne |
 | ucieczka formuł | jednostkowe | `=`, `+`, `-`, `@`, tab, CR |
-| UI | E2E (Playwright, baza lokalna) | wgranie pliku → podgląd → zapis → trade połączony; ponowne wgranie → „zaimportowano wcześniej”; odznaczenie dopasowania |
-| etap B | jednostkowe + CI | biała lista odrzuca każdą inną ścieżkę; skan czarnej listy; token nie pojawia się w logach i odpowiedziach; rozłączenie kasuje tokeny |
+| UI | E2E (baza lokalna) | wgranie → podgląd → zapis; ponowne wgranie; odznaczenie 1:1; „Cofnij” dopasowania z automatu; „Pobierz teraz” odbiera import |
+| etap B | jednostkowe + CI | biała lista, skan czarnej listy, token poza logami, rozłączenie kasuje tokeny |
 
 Testy wyłącznie na bazie lokalnej (`127.0.0.1:55433`), nigdy na produkcji.
 
 ### Kolejność prac
 
-- **Etap A (teraz):** użytkownik eksportuje po jednym pliku Fills, Performance i Orders z Tradovate (i inne,
-  jeśli ma konta poza Tradovate) i przekazuje je lokalnie, poza repo → `database-engineer`: 0030, 0031 →
-  `backend-dev`: parsery z fikstur, grupowanie, dopasowanie, akcje podglądu i zapisu, trasy odczytu v2,
-  rodzaje sugestii → `frontend-dev`: zakładka „Połączenia”, kreator, podgląd → `security-auditor` przed scaleniem.
+- **Etap A:** użytkownik eksportuje po jednym pliku z Tradovate (Performance, Fills, Orders, Cash History; z miejsca,
+  w którym naprawdę klika „Eksport”) i z TradingView, jeśli eksportuje stamtąd, i przekazuje je lokalnie, poza repo;
+  podaje stawki opłat swoich kont → `database-engineer`: 0030, 0031, 0032 → `backend-dev`: wynik netto
+  w `computeTrade`, parsery z fikstur, grupowanie, dopasowanie, akcje UI, `inbox`, trasy odczytu, sugestie, konto dnia
+  → `frontend-dev`: „Pobierz teraz”, Połączenia, kreator, podgląd, „Do decyzji”, „Uzgodnione z rachunku”,
+  „Przelicz historię” → łącznik: `tj watch-exports`, `tj broker status`, zmiany w `po-trade` i `po-sesji`, hook →
+  `security-auditor` przed scaleniem.
 - **Równolegle:** użytkownik wysyła podanie z `docs/v2/tradovate-podanie.md`.
-- **Etap B (po odpowiedzi i decyzji użytkownika):** worker, migracja OAuth, test na koncie użytkownika
-  (za jego zgodą: czy sesja OAuth wylogowuje platformę), `security-auditor`, potem flaga.
+- **Etap B (po odpowiedzi i decyzji użytkownika):** worker, migracja OAuth, test na koncie użytkownika za jego zgodą
+  (czy sesja OAuth wylogowuje platformę), `security-auditor`, potem flaga.
 
 ### Do potwierdzenia
 
-- Dokładne kolumny i strefa czasowa każdego eksportu: w etapie A przez `backend-dev`, na plikach użytkownika.
-- Czy `csv-parse` w wersji bieżącej ma opcje opisane wyżej: `backend-dev` przez context7 przed implementacją.
-- Zakresy OAuth, licencja 24 h, limit sesji, konta prop, pole fazy: odpowiedź Tradovate na podanie, przed etapem B.
-- Mechanizm wymiany `code` przez klucz publiczny workera i osobna rola bazy w Coolify: w etapie B przez
-  `devops-engineer` i `backend-dev`.
+- Kolumny i strefa czasowa każdego eksportu: etap A, `backend-dev`, na plikach użytkownika.
+- `csv-parse` i odczyt znanego folderu Pobrane w Node na Windows: `backend-dev` przez context7 przed implementacją.
+- Zakresy OAuth, licencja 24 h, limit sesji, historia fills, konta prop, pole fazy: odpowiedź Tradovate, przed etapem B.
+- Wymiana `code` przez klucz publiczny workera i osobna rola bazy w Coolify: etap B, `devops-engineer` i `backend-dev`.
+- Stawki opłat firm prop do presetów: `market-researcher` albo użytkownik, przed włączeniem wyniku wyliczonego dla prop.
