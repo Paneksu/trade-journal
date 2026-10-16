@@ -67,7 +67,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("withApi: brama tokenów (baza lokalna)", () =>
     const dane = await res.json();
     expect(dane.apiVersion).toBe(2);
     expect(dane.contractHash).toBe(contractHash());
-    expect(dane.scopes).toEqual(["read", "write", "propose", "import"]);
+    expect(dane.scopes).toEqual(["read", "write", "propose", "import", "import_broker"]);
     expect(typeof dane.rulesVersion).toBe("number");
     expect(dane.limits.requestsPerMinute).toBe(120);
   });

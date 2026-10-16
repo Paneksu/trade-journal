@@ -1,6 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 
+import { zapiszKontaDnia } from "@/lib/api-v2/konta-dnia";
 import { zapisJakoUi } from "@/lib/api-v2/zapis";
 import { odepnijDopasowanie, przebiegDopasowania, zastosujDopasowanie } from "@/lib/brokerzy/dopasowania";
 import {
@@ -255,5 +256,14 @@ export async function przeliczHistorieUi(zapisz: boolean): Promise<{ ok: true; p
       });
     }
     return { ok: true as const, podglad, zapisano: zapisz };
+  });
+}
+
+/** Aktywne konta dnia (rytual przed sesja, wielokrotne): ustalenie dnia, nie zatwierdzenie; ten sam zapis co `PUT /days/:date/accounts`. */
+export async function ustawKontaDniaUi(dzien: string, accountIds: number[]): Promise<WynikOperacji> {
+  return zapisJakoUi(async (tx) => {
+    const w = await zapiszKontaDnia(tx, dzien, accountIds);
+    if (!w.ok) return blad(w.komunikat);
+    return { ok: true, komunikat: w.accounts.length === 0 ? "Wyczyszczono konta dnia." : `Konta dnia: ${w.accounts.map((k) => k.name).join(", ")}.` };
   });
 }

@@ -33,8 +33,9 @@ pierwszy prawdziwy trade.
 | `UPLOADS_DIR` | `/data/zrzuty` (już ustawione w obrazie, ale niech będzie jawnie) |
 | `TOTP_ENC_KEY` | **wymagana do włączenia 2FA** (sekcja 9): 32 losowe bajty, `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. Secret. **Nie zmieniaj po włączeniu 2FA** |
 | `INGEST_TOKEN_SHA256` | **opcjonalna**: skrót SHA-256 tokenu API synchronizacji, 64 znaki hex (patrz sekcja 8). Bez niej `/api/ingest/*` odpowiada 404 |
+| `BROKER_ID_HMAC_KEY` | **wymagana do importu z brokera** (ADR-034): 32 losowe bajty (`node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`). Numer konta u brokera trafia do bazy tylko jako HMAC tym kluczem. Secret. **Nie zmieniaj po pierwszym imporcie** (konta z poprzednich plików nie zostaną rozpoznane). Bez niej import pliku i automat `tj watch-exports` odpowiadają `503 broker_not_configured`, reszta aplikacji działa |
 
-`SESSION_SECRET`, `OWNER_PASSWORD`, `TOTP_ENC_KEY` i `INGEST_TOKEN_SHA256` oznacz w Coolify jako **secret**.
+`SESSION_SECRET`, `OWNER_PASSWORD`, `TOTP_ENC_KEY`, `INGEST_TOKEN_SHA256` i `BROKER_ID_HMAC_KEY` oznacz w Coolify jako **secret**.
 Po pierwszym zalogowaniu zmień hasło w *Ustawienia → Bezpieczeństwo* i usuń `OWNER_PASSWORD`
 ze zmiennych — nie jest już potrzebne.
 

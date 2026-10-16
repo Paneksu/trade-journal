@@ -6,8 +6,6 @@ import { revalidatePath } from "next/cache";
 import { LIMIT_BAJTOW } from "@/lib/domain/brokerzy/csv";
 import { requireSession } from "@/lib/auth/guard";
 import type { WynikCofniecia, WynikImportu } from "@/lib/brokerzy/import";
-import { zapiszKontaDnia } from "@/lib/api-v2/konta-dnia";
-import { zapisJakoUi } from "@/lib/api-v2/zapis";
 import {
   cofnijDopasowanieUi,
   cofnijImportUi,
@@ -17,6 +15,7 @@ import {
   pominTradeBrokeraUi,
   przeliczHistorieUi,
   przypiszKontoUi,
+  ustawKontaDniaUi,
   utworzTradeZBrokeraUi,
   zapiszImport,
   type PodgladHistorii,
@@ -221,10 +220,9 @@ export async function ustawKontaDniaAkcja(dzien: string, accountIds: number[]): 
   await requireSession();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dzien)) return { error: "Brak dnia. Odśwież stronę." };
   if (!Array.isArray(accountIds) || accountIds.length > 20 || !accountIds.every(idPoprawne)) return { error: "Lista kont jest nieprawidłowa." };
-  const w = await zapisJakoUi((tx) => zapiszKontaDnia(tx, dzien, accountIds));
-  if (!w.ok) return { error: w.komunikat };
-  revalidatePath("/");
-  return { ok: true, komunikat: w.accounts.length === 0 ? "Wyczyszczono konta dnia." : `Konta dnia: ${w.accounts.map((k) => k.name).join(", ")}.` };
+  const w = await ustawKontaDniaUi(dzien, accountIds);
+  if (w.ok) revalidatePath("/");
+  return wynikOperacji(w);
 }
 
 /* ---------------------------------------------------------------- stawki */
