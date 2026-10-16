@@ -9,8 +9,8 @@ import { cx } from "@/lib/classes";
 import { KATEGORIE, KATEGORIA_NAZWY } from "@/lib/domain/kategorie";
 import { INTERWALY, WARSTWA_NAZWY, WARSTWY } from "@/lib/domain/interwaly";
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
-import type { FieldDef } from "@/lib/fields/fields";
-import { GROUPABLE_TYPES } from "@/lib/fields/fields";
+import type { FieldDef } from "@/lib/fields/typy";
+import { GROUPABLE_TYPES } from "@/lib/fields/typy";
 import type { Account, Instrument } from "@/lib/db/schema";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 

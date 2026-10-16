@@ -18,7 +18,7 @@ import { cx } from "@/lib/classes";
 import { deleteMany, tagMany } from "@/lib/actions/trades";
 import { maWynik } from "@/lib/domain/status";
 import { SESSION_NAMES, TRADE_STATUS_NAMES } from "@/lib/domain/types";
-import { formatValue, type FieldDef } from "@/lib/fields/fields";
+import { formatValue, type FieldDef } from "@/lib/fields/typy";
 import { POWOD_NAZWY, type PowodZlejEgzekucji } from "@/lib/domain/kierunek";
 import {
   dateTime,

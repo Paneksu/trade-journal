@@ -37,7 +37,7 @@ import {
 } from "@/lib/domain/calc";
 import { POWODY, POWOD_NAZWY } from "@/lib/domain/kierunek";
 import { wynikTrade, type Progi } from "@/lib/domain/outcome";
-import type { FieldDef } from "@/lib/fields/fields";
+import type { FieldDef } from "@/lib/fields/typy";
 import {
   money,
   nazwaStrefy,

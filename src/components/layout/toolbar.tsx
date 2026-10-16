@@ -48,6 +48,7 @@ function Segment({
           <Link
             key={o.value}
             href={href(paramKey, o.value)}
+            prefetch={false}
             aria-current={selected ? "true" : undefined}
             className={cx(
               "px-2.5 py-1.5 text-xs transition-colors duration-150",
@@ -146,6 +147,7 @@ export function WidokSwitch({ active }: { active: "lista" | "galeria" }) {
           <Link
             key={o.value}
             href={o.href}
+            prefetch={false}
             aria-current={selected ? "true" : undefined}
             className={cx(
               "przejscie inline-flex h-7 items-center rounded-[6px] px-3 text-meta",

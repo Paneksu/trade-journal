@@ -181,6 +181,7 @@ export function TopBar() {
         </button>
         <Link
           href="/trades/new"
+          prefetch={false}
           className="przejscie hidden h-9 items-center gap-2 rounded-full border border-line-strong bg-panel px-4 text-karta text-text hover:bg-surface-2 active:bg-surface-3 lg:inline-flex"
         >
           <Plus size={15} aria-hidden />
@@ -218,7 +219,7 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
           const jest = czyAktywna(pathname, p.href) || (p.href === "/trades" && pathname.startsWith("/galeria"));
           const Icon = p.icon;
           return (
-            <Link key={p.href} href={p.href} aria-current={jest ? "page" : undefined} className={klasa(jest)}>
+            <Link key={p.href} href={p.href} prefetch={false} aria-current={jest ? "page" : undefined} className={klasa(jest)}>
               <Icon size={20} aria-hidden />
               {p.label}
             </Link>
@@ -226,7 +227,7 @@ export function MobileBar({ signOutAction, liczniki }: { signOutAction: () => Pr
         })}
         {/* „+” otwiera arkusz szybkiego wpisu (etap 4, PWA): Nowy trade, Notatka dnia, Zdjęcie. */}
         <SzybkiArkusz klasa={klasa(false)} />
-        <Link href="/decyzje" aria-current={czyAktywna(pathname, "/decyzje") ? "page" : undefined} className={klasa(czyAktywna(pathname, "/decyzje"))}>
+        <Link href="/decyzje" prefetch={false} aria-current={czyAktywna(pathname, "/decyzje") ? "page" : undefined} className={klasa(czyAktywna(pathname, "/decyzje"))}>
           <span className="relative">
             <Inbox size={20} aria-hidden />
             {liczba > 0 && (

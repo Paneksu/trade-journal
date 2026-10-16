@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Pliki czcionek (binarne) nie sa zrodlem klas: skaner Tailwind wyciagal z nich smieci i wywracal kompilacje CSS. */
+@source not "./fonts";
 
 /*
   Tokeny wizualne dziennika (UI v2, faza 5b, 15.10.2026). Zrodlo decyzji:

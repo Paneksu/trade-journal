@@ -1,22 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import localFont from "next/font/local";
 
 import { RejestracjaSw } from "@/components/layout/rejestracja-sw";
 
 import "./globals.css";
 
-const plexSans = IBM_Plex_Sans({
+// Wlasny hosting zamiast next/font/google: 3 pliki zamiast 6 (src/app/fonts/README.md).
+const plexSans = localFont({
+  src: [{ path: "./fonts/plex-sans-var.woff2", weight: "400 600", style: "normal" }],
   variable: "--font-plex-sans",
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500", "600"],
   display: "swap",
+  adjustFontFallback: "Arial",
 });
 
-const plexMono = IBM_Plex_Mono({
+const plexMono = localFont({
+  src: [
+    { path: "./fonts/plex-mono-400.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/plex-mono-500.woff2", weight: "500", style: "normal" },
+  ],
   variable: "--font-plex-mono",
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
   display: "swap",
+  adjustFontFallback: "Arial",
 });
 
 export const metadata: Metadata = {

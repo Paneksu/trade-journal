@@ -199,7 +199,17 @@ function dataGrupy(dzien: string): string {
   return new Intl.DateTimeFormat("pl-PL", { timeZone: "UTC", weekday: "short", day: "numeric", month: "long", year: "numeric" }).format(d);
 }
 
-export function Ksiega({ wiersze, tags, lacznie }: { wiersze: WierszKsiegi[]; tags: TagWithCategory[]; lacznie?: number }) {
+/** Tyle wierszy idzie w pierwszym HTML i hydratacji; reszta dochodzi po zamalowaniu (Lighthouse mobile, 2026-10-16). */
+const PIERWSZA_PARTIA = 30;
+
+export function Ksiega({ wiersze: wszystkieWiersze, tags, lacznie }: { wiersze: WierszKsiegi[]; tags: TagWithCategory[]; lacznie?: number }) {
+  const [pelna, setPelna] = useState(false);
+  useEffect(() => {
+    // Pozostale wiersze po pierwszym malowaniu: ten sam widok koncowy, ale mniej DOM i pracy przy starcie.
+    const t = window.setTimeout(() => setPelna(true), 800);
+    return () => window.clearTimeout(t);
+  }, []);
+  const wiersze = pelna ? wszystkieWiersze : wszystkieWiersze.slice(0, PIERWSZA_PARTIA);
   const [zaznaczone, setZaznaczone] = useState<number[]>([]);
   const [podglad, setPodglad] = useState<number | null>(null);
   const [trwa, startTransition] = useTransition();
@@ -353,7 +363,7 @@ export function Ksiega({ wiersze, tags, lacznie }: { wiersze: WierszKsiegi[]; ta
                             <ChipProcesu ocena={w.proces} />
                           </span>
                           <div className="min-w-0">
-                            <Link href={`/trades/${w.id}`} className="przejscie text-text hover:text-accent">
+                            <Link href={`/trades/${w.id}`} prefetch={false} className="przejscie text-text hover:text-accent">
                               <span className="num">{w.symbol}</span> <span className="text-muted">{w.kierunek}</span>
                               <span className="num ml-1.5 text-meta text-faint">×{w.kontrakty}</span>
                             </Link>

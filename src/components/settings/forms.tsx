@@ -26,7 +26,7 @@ import {
   saveTagCategory,
 } from "@/lib/actions/taxonomy";
 import { changePassword, type PasswordState } from "@/lib/actions/auth";
-import { TYPE_HINTS, TYPE_NAMES, TYPES_WITH_OPTIONS, type FieldDef, type FieldType } from "@/lib/fields/fields";
+import { TYPE_HINTS, TYPE_NAMES, TYPES_WITH_OPTIONS, type FieldDef, type FieldType } from "@/lib/fields/typy";
 
 /* Formularze ustawien. Kazdy zapisuje przez wlasna akcje serwerowa
    i pokazuje wynik na miejscu - bez przeladowania calego ekranu. */

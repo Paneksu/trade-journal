@@ -2,7 +2,7 @@
 
 import { Input, Label, Select, Textarea } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
-import type { FieldDef } from "@/lib/fields/fields";
+import type { FieldDef } from "@/lib/fields/typy";
 
 /**
  * Pola wlasne w formularzu. Kazdy typ ma swoja kontrolke, a nazwy pol

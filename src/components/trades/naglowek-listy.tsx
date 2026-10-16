@@ -5,7 +5,7 @@ import { FilterBar } from "@/components/trades/filter-bar";
 import { SavedViews } from "@/components/trades/saved-views";
 import { NaglowekStrony, Pigulka } from "@/components/ui/v2";
 import type { Account, Instrument } from "@/lib/db/schema";
-import type { FieldDef } from "@/lib/fields/fields";
+import type { FieldDef } from "@/lib/fields/typy";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 
 /**
