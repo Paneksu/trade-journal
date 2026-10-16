@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { SCOPES } from "../scopes";
+import { BlokBrokerOdpowiedz, WynikNettoOdpowiedz } from "./broker";
 import { KindNotatkiSchema, NotatkaOdpowiedz, SlowaOdpowiedz } from "./v2";
 
 /**
@@ -717,7 +718,7 @@ export const PrzegladZapisOdpowiedz = z.strictObject({ created: z.boolean(), rev
 
 export const SugestiaOut = z.strictObject({
   id: calk,
-  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup"]),
+  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup", "broker_match", "broker_trade"]),
   status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"]),
   target: obiekt,
   payload: obiekt,
@@ -968,8 +969,12 @@ export const TradeSzczegolyOdpowiedz = z.strictObject({
       mae: liczbaNull,
       mfe: liczbaNull,
       exits: z.array(z.strictObject({ id: calk, time: isoNull, price: z.number(), contracts: z.number(), note: tekstNull })),
+      /** Wynik jest NETTO (po oplatach, ADR-034): oplaty, wynik wyliczony z cen i zrodlo wyniku (szacunek albo rachunek). */
+      ...WynikNettoOdpowiedz,
     })
     .nullable(),
+  /** Trade brokera dopasowany do tego trade'a (dane z rachunku) albo null. Przy ukrytym wyniku bez pol wyniku. */
+  broker: BlokBrokerOdpowiedz.nullable(),
   plan: PlanSzczegolyOdpowiedz.nullable(),
   screenshots: z.array(
     z.strictObject({

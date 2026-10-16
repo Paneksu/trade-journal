@@ -182,3 +182,49 @@ describe("straznik: nic poza zapis.ts nie ustawia aktora transakcji, a trasy API
     expect(importy(`import x from "../decyzje/prop";\nconst y = await import("../../lib/actions/trades");`)).toEqual(["../decyzje/prop", "../../lib/actions/trades"]);
   });
 });
+
+describe("straznik: granica danych brokera (ADR-034 pkt 7)", () => {
+  const BROKER = path.join(KORZEN, "broker");
+  const pliki = wszystkiePliki(BROKER).filter(jestTrasa);
+  const rel = (p: string) => path.relative(BROKER, p).replaceAll("\\", "/");
+
+  it("istnieja trasy brokera (test nie sprawdza pustki)", () => {
+    expect(pliki.map(rel).sort()).toEqual(["inbox/route.ts", "status/route.ts", "trades/[id]/route.ts", "trades/route.ts"]);
+  });
+
+  it("pod /api/v2/broker/** nie ma eksportu innego niz GET, z wyjatkiem POST w inbox", () => {
+    for (const p of pliki) {
+      const metody = eksporty(readFileSync(p, "utf8")).map((e) => e.nazwa).filter((n) => METODY.includes(n));
+      const dozwolone = rel(p) === "inbox/route.ts" ? ["GET", "POST"] : ["GET"];
+      expect(metody.sort(), rel(p)).toEqual(dozwolone);
+    }
+  });
+
+  it("inbox przyjmuje wylacznie zakres import_broker (zadnego innego), a zadna inna trasa brokera go nie wymienia", () => {
+    for (const p of pliki) {
+      const zrodlo = bezKomentarzy(readFileSync(p, "utf8"));
+      const zakresy = [...zrodlo.matchAll(/scopes:\s*\[([^\]]*)\]/g)].map((m) => m[1].replace(/\s/g, ""));
+      if (rel(p) === "inbox/route.ts") {
+        expect(zakresy, "kazdy handler inboxa").toEqual(['"import_broker"', '"import_broker"']);
+      } else {
+        expect(zrodlo, rel(p)).not.toContain("import_broker");
+        expect(zakresy, rel(p)).toEqual(['"read"']);
+      }
+    }
+  });
+
+  it("zadna trasa poza inboxem v2 nie wymienia zakresu import_broker (token automatu niczego innego nie otworzy)", () => {
+    const winne = wszystkiePliki(KORZEN)
+      .filter(jestTrasa)
+      .filter((p) => !wzgledna(p).startsWith("broker/inbox/"))
+      .filter((p) => bezKomentarzy(readFileSync(p, "utf8")).includes("import_broker"))
+      .map(wzgledna);
+    expect(winne).toEqual([]);
+  });
+
+  it("inbox wola wylacznie zapis z aktorem tokenu (api.zapis) i nie dotyka zapisJakoUi ani kolejki sugestii", () => {
+    const zrodlo = bezKomentarzy(readFileSync(path.join(LIB, "broker.ts"), "utf8"));
+    expect(zrodlo).toContain("api.zapis(");
+    expect(zrodlo).not.toMatch(/zapisJakoUi|aiSuggestions|ai_suggestions|persistTrade/);
+  });
+});

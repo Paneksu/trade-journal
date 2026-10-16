@@ -33,6 +33,12 @@ const NAZWY_ZDARZEN: Record<AuthEventKind, string> = {
   token_created: "Utworzono token",
   token_revoked: "Unieważniono token",
   logout_all: "Wylogowano wszędzie",
+  broker_import: "Import z rachunku",
+  broker_import_reverted: "Cofnięto import z rachunku",
+  broker_import_rejected: "Odrzucono plik z rachunku",
+  broker_account_mapped: "Przypisano konto z rachunku",
+  broker_match_reverted: "Cofnięto dopasowanie do rachunku",
+  broker_history_recalculated: "Przeliczono historię z opłatami",
 };
 
 const ZLE: ReadonlySet<AuthEventKind> = new Set(["login_fail", "totp_fail"]);

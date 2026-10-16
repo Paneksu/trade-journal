@@ -232,14 +232,18 @@ BEGIN
     RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
   END IF;
   -- Odpiecie trade'u brokera od skasowanego trade'u dziennika (trigger trades_odepnij_broker) i zerowanie klucza obcego
-  -- przy kasowaniu wiersza nadrzednego: to ruch w kontekscie wyzwalacza, ktory niczego nie dopisuje.
-  IF TG_OP = 'UPDATE' AND pg_trigger_depth() > 1 AND TG_TABLE_NAME = 'broker_trades'
-     AND NEW.trade_id IS NULL AND NEW.match_kind IS NULL AND NEW.match_state = 'unmatched' THEN
-    RETURN NEW;
-  END IF;
-  IF TG_OP = 'UPDATE' AND pg_trigger_depth() > 1 AND TG_TABLE_NAME = 'broker_fills'
-     AND NEW.broker_trade_id IS NULL AND (to_jsonb(NEW) - 'broker_trade_id') = (to_jsonb(OLD) - 'broker_trade_id') THEN
-    RETURN NEW;
+  -- przy kasowaniu wiersza nadrzednego: to ruch w kontekscie wyzwalacza, ktory niczego nie dopisuje. Osobne IF-y na tabele,
+  -- bo plpgsql planuje kazde wyrazenie w calosci (pole trade_id nie istnieje w pozostalych tabelach).
+  IF TG_OP = 'UPDATE' AND pg_trigger_depth() > 1 THEN
+    IF TG_TABLE_NAME = 'broker_trades' THEN
+      IF NEW.trade_id IS NULL AND NEW.match_kind IS NULL AND NEW.match_state = 'unmatched' THEN
+        RETURN NEW;
+      END IF;
+    ELSIF TG_TABLE_NAME = 'broker_fills' THEN
+      IF NEW.broker_trade_id IS NULL AND (to_jsonb(NEW) - 'broker_trade_id') = (to_jsonb(OLD) - 'broker_trade_id') THEN
+        RETURN NEW;
+      END IF;
+    END IF;
   END IF;
   RAISE EXCEPTION 'Zapis do tabeli % (%) wymaga aktora "ui" albo tokenu z jedynym zakresem import_broker, a przyszedl od aktora "%". Powod: dane brokera moze wprowadzac tylko uzytkownik w aplikacji albo jego automat z folderu Pobrane; agent AI ma wylacznie odczyt. Naprawa: zaimportuj plik w aplikacji (Prop -> Polaczenia).', TG_TABLE_NAME, TG_OP, coalesce(v_actor, '(nieustawiony)')
     USING ERRCODE = 'TJ403', TABLE = TG_TABLE_NAME;

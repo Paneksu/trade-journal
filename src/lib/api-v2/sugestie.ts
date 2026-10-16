@@ -4,6 +4,9 @@ import type { z } from "zod";
 
 import {
   aiSuggestions,
+  brokerAccounts,
+  brokerTrades,
+  ingestSkips,
   noteAdditions,
   notes,
   setups,
@@ -68,6 +71,26 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
     const [t] = await tx.select({ id: trades.id, processGrade: trades.processGrade }).from(trades).where(eq(trades.id, d.target.id)).limit(1);
     if (!t) return odrzuc(422, "unknown_reference", `pole target.id: »${d.target.id}« - nie ma takiego trade'a (mógł zostać skasowany w aplikacji).`);
 
+    if (d.kind === "broker_match") {
+      const [bt] = await tx
+        .select({ id: brokerTrades.id, tradeId: brokerTrades.tradeId, status: brokerTrades.status, direction: brokerTrades.direction, konto: brokerAccounts.accountId })
+        .from(brokerTrades)
+        .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
+        .where(eq(brokerTrades.id, d.payload.brokerTradeId))
+        .limit(1);
+      if (!bt) return odrzuc(422, "unknown_reference", `pole payload.brokerTradeId: »${d.payload.brokerTradeId}« - nie ma takiego trade'a brokera (lista: GET /api/v2/broker/trades?unmatched=true).`);
+      if (bt.tradeId !== null) return odrzuc(409, "already_present", `Trade brokera #${bt.id} jest już dopasowany do trade'a #${bt.tradeId}; nic do zatwierdzania.`);
+      if (bt.status !== "closed") return odrzuc(422, "broker_trade_open", `Trade brokera #${bt.id} jest jeszcze otwarty, więc nie ma wyniku do wpisania. Zgłoś dopasowanie po kolejnym eksporcie.`);
+      if (bt.konto === null) return odrzuc(422, "broker_account_unmapped", `Konto u brokera trade'a #${bt.id} nie jest przypisane do konta dziennika. Przypisanie robi użytkownik w aplikacji (Prop → Połączenia).`);
+      const [tr] = await tx.select({ accountId: trades.accountId, status: trades.status, sesja: trades.backtestSessionId }).from(trades).where(eq(trades.id, t.id)).limit(1);
+      if (tr && tr.sesja !== null) return odrzuc(422, "backtest_trade", `Trade #${t.id} należy do sesji backtestu; z rachunkiem dopasowujemy tylko trade'y realne.`);
+      if (tr && tr.accountId !== bt.konto) return odrzuc(422, "account_mismatch", `Trade #${t.id} jest na innym koncie dziennika (#${tr.accountId}) niż konto u brokera (#${bt.konto}).`);
+      if (tr && tr.status !== "closed") return odrzuc(422, "trade_not_closed", `Trade #${t.id} nie jest zamknięty (status ${tr.status}), więc nie przyjmie wyniku z rachunku.`);
+      const [zajety] = await tx.select({ id: brokerTrades.id }).from(brokerTrades).where(eq(brokerTrades.tradeId, t.id)).limit(1);
+      if (zajety) return odrzuc(409, "already_present", `Trade #${t.id} jest już dopasowany do trade'a brokera #${zajety.id}.`);
+      return { ok: true, payload: { brokerTradeId: bt.id } };
+    }
+
     if (d.kind === "tag") {
       const [tag] = await tx.select({ id: tags.id, archived: tags.archived }).from(tags).where(eq(tags.id, d.payload.tagId)).limit(1);
       if (!tag) return odrzuc(422, "unknown_reference", `pole payload.tagId: »${d.payload.tagId}« - nie ma takiego tagu (lista: GET /api/v2/meta).`);
@@ -118,6 +141,27 @@ async function sprawdz(tx: Transakcja, d: Wejscie): Promise<{ ok: true; payload:
       if (t.processGrade === d.payload.grade) return odrzuc(409, "already_present", `Trade #${t.id} ma już ocenę procesu ${d.payload.grade}.`);
       return { ok: true, payload: { grade: d.payload.grade } };
     }
+  }
+
+  if (d.kind === "broker_trade") {
+    const [bt] = await tx
+      .select({ id: brokerTrades.id, tradeId: brokerTrades.tradeId, status: brokerTrades.status, instrumentId: brokerTrades.instrumentId, ref: brokerTrades.externalRef, konto: brokerAccounts.accountId })
+      .from(brokerTrades)
+      .innerJoin(brokerAccounts, eq(brokerTrades.brokerAccountId, brokerAccounts.id))
+      .where(eq(brokerTrades.id, d.target.id))
+      .limit(1);
+    if (!bt) return odrzuc(422, "unknown_reference", `pole target.id: »${d.target.id}« - nie ma takiego trade'a brokera.`);
+    if (bt.tradeId !== null) return odrzuc(409, "already_present", `Trade brokera #${bt.id} ma już trade w dzienniku (#${bt.tradeId}).`);
+    if (bt.status !== "closed") return odrzuc(422, "broker_trade_open", `Trade brokera #${bt.id} jest jeszcze otwarty; trade w dzienniku powstaje z zamkniętej pozycji.`);
+    if (bt.konto === null) return odrzuc(422, "broker_account_unmapped", `Konto u brokera trade'a #${bt.id} nie jest przypisane do konta dziennika (przypisuje użytkownik w Prop → Połączenia).`);
+    if (bt.instrumentId === null) return odrzuc(422, "instrument_unknown", `Kontrakt trade'a brokera #${bt.id} nie ma instrumentu w dzienniku (dodaj go w Ustawieniach).`);
+    const [nagrobek] = await tx.select({ id: ingestSkips.id }).from(ingestSkips).where(eq(ingestSkips.externalRef, bt.ref)).limit(1);
+    if (nagrobek) return odrzuc(409, "tombstoned", `Trade z ${bt.ref} został wcześniej skasowany w aplikacji, więc nie powstanie ponownie.`);
+    if (d.payload.noteId != null) {
+      const [nota] = await tx.select({ id: notes.id }).from(notes).where(eq(notes.id, d.payload.noteId)).limit(1);
+      if (!nota) return odrzuc(422, "unknown_reference", `pole payload.noteId: »${d.payload.noteId}« - nie ma takiej notatki.`);
+    }
+    return { ok: true, payload: { noteId: d.payload.noteId ?? null, wordsIds: d.payload.wordsIds } };
   }
 
   if (d.kind === "strategy_detail") {

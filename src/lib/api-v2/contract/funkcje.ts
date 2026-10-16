@@ -225,6 +225,7 @@ const celDzien = z.strictObject({ type: z.literal("day"), date: DataSchema });
 const celTydzien = z.strictObject({ type: z.literal("week"), weekStart: DataSchema });
 const celNotatka = z.strictObject({ type: z.literal("note"), id });
 const celProfil = z.strictObject({ type: z.literal("profile") });
+const celTradeBrokera = z.strictObject({ type: z.literal("broker_trade"), id });
 
 const Dowod = z.strictObject({
   /** Rodzaj dowodu: trade, swieca, zrzut, notatka, slowa uzytkownika... */
@@ -278,6 +279,20 @@ export const SugestiaUtworzSchema = z.discriminatedUnion("kind", [
     ...bazaSugestii,
   }),
   z.strictObject({
+    kind: z.literal("broker_match"),
+    target: celTrade,
+    /** Dopasowanie trade'a dziennika (cel) do trade'a brokera, gdy automat nie mogl tego rozstrzygnac (kilku kandydatow, inna liczba kontraktow). Zatwierdza uzytkownik jednym kliknieciem. */
+    payload: z.strictObject({ brokerTradeId: id }),
+    ...bazaSugestii,
+  }),
+  z.strictObject({
+    kind: z.literal("broker_trade"),
+    target: celTradeBrokera,
+    /** Propozycja utworzenia trade'a dziennika z danych brokera (gdy w dzienniku nie ma trade'a). Powstaje dopiero po zatwierdzeniu w UI. */
+    payload: z.strictObject({ noteId: id.nullish(), wordsIds: z.array(id).max(20).default([]) }),
+    ...bazaSugestii,
+  }),
+  z.strictObject({
     kind: z.literal("profile_term"),
     target: celProfil,
     payload: z.strictObject({ term: z.string().min(1).max(200), meaning: z.string().min(1).max(500), wordsIds: z.array(id).max(20).default([]) }),
@@ -310,7 +325,7 @@ export const SugestiaUtworzSchema = z.discriminatedUnion("kind", [
 
 export const SugestieListaQuery = z.strictObject({
   status: z.enum(["pending", "accepted", "rejected", "applied", "reverted"]).optional(),
-  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup"]).optional(),
+  kind: z.enum(["tag", "trade_link", "setup_example", "process_grade", "profile_term", "day_conclusion", "weekly_conclusion", "strategy_detail", "trade_setup", "broker_match", "broker_trade"]).optional(),
   tradeId: idZQuery.optional(),
   ...strona,
 });

@@ -10,6 +10,8 @@ import { validujSzkic, type TradeDraft } from "@/lib/domain/trade-draft";
 import { cleanValues, fieldsForScope, validateValues } from "@/lib/fields/fields";
 import { getFields, getProgi, instrumentSpec } from "@/lib/queries/dictionaries";
 
+import { stawkaOplatRt } from "./stawki";
+
 /**
  * Zapis trade'a: walidacja szkicu, `computeTrade`, jedna transakcja (ADR-026).
  * Wspolna droga formularza i API synchronizacji - zadne z nich nie liczy
@@ -20,7 +22,7 @@ import { getFields, getProgi, instrumentSpec } from "@/lib/queries/dictionaries"
  */
 
 export type PersistMeta = {
-  source: "tradingview" | "fxreplay";
+  source: "tradingview" | "fxreplay" | "broker";
   externalRef: string;
   sourceSnapshot: Record<string, unknown> | null;
 };
@@ -82,6 +84,10 @@ export async function persistTrade(
     brokerAmount: w.brokerAmount,
   }));
 
+  /* Wynik jest NETTO (ADR-034): stawka oplat dla konta, klasy instrumentu i dnia trade'a. Bez stawki oplaty to 0, wynik jest
+     brutto, a `trades.fees` zostaje NULL (nie »zero«). */
+  const stawkaRt = await stawkaOplatRt(opcje.tx ?? db, { accountId: d.accountId, instrumentId: d.instrumentId, entryTime: d.entryTime });
+
   const result = computeTrade({
     instrument: instrumentSpec(instrumentRow!),
     direction: d.direction,
@@ -94,6 +100,7 @@ export async function persistTrade(
     mfe: d.mfe,
     entryTime: d.entryTime,
     brokerAmount: d.brokerAmount,
+    feeRtCents: stawkaRt,
   });
 
   // --- pola wlasne ---
@@ -202,6 +209,9 @@ export async function persistTrade(
     ticks: result.ticks,
     riskTicks: result.riskTicks,
     pnl: result.pnl,
+    // NULL = oplaty nieznane (brak stawki albo pozycja bez wyjsc), nie »zero« (ADR-034, migracja 0030).
+    fees: result.exitCount === 0 || result.bezOplat ? null : result.fees,
+    pnlEstimate: result.pnlEstimate,
     riskAmount: result.riskAmount,
     rMultiple: result.rMultiple === null ? null : result.rMultiple.toFixed(4),
     maeR: result.maeR === null ? null : result.maeR.toFixed(4),

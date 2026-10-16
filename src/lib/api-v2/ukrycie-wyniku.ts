@@ -76,6 +76,24 @@ export function sqlSlowaUkryte(a: { tradeId: SQL; day: SQL; capturedAt: SQL; not
         and ${sqlNotatkaUkryta(sql`uw_n.trade_id`, sql`uw_n.created_at`, sql`uw_n.updated_at`, sql`uw_n.day`)})))`;
 }
 
+/**
+ * Warunek SQL: trade BROKERA jest ukryty w odczytach AI (ADR-034 pkt 7; ten sam mechanizm slepej oceny, bez drugiego):
+ *  - dopasowany do trade'a dziennika z ukrytym wynikiem, albo
+ *  - niedopasowany, z konta i dnia, w ktorym jest trade z ukrytym wynikiem, a jego wejscie jest PO najwczesniejszym wejsciu
+ *    takiego trade'a (fail-closed: nie wiemy, czy to nie ten sam trade).
+ * Argumenty to wyrazenia SQL (kolumny broker_trades albo aliasy).
+ */
+export function sqlBrokerUkryty(a: { tradeId: SQL; brokerAccountId: SQL; tradingDay: SQL; entryTime: SQL }): SQL {
+  return sql`((${a.tradeId} is not null and ${sqlWynikUkryty(a.tradeId)})
+    or (${a.tradeId} is null and exists (
+      select 1 from trades uw_b
+        join broker_accounts uw_ba on uw_ba.id = ${a.brokerAccountId}
+       where uw_b.account_id = uw_ba.account_id
+         and uw_b.trading_day = ${a.tradingDay}
+         and ${sqlWynikUkryty(sql`uw_b.id`)}
+         and ${a.entryTime} > ${sqlWejscieTradu(sql`uw_b.id`)})))`;
+}
+
 /** Podzbior `ids`, ktorych wynik jest ukryty (otwarty trade z werdyktem). */
 export async function ukryteTrady(tx: Db, ids: number[]): Promise<Set<number>> {
   if (ids.length === 0) return new Set();

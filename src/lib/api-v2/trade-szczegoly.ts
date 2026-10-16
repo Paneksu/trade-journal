@@ -21,6 +21,8 @@ import {
 import { moglZnacDzien } from "@/lib/domain/lookahead";
 import { zrodloDanych } from "@/lib/domain/zrodla";
 
+import { blokBrokerDlaTradu, polaWynikuNetto } from "@/lib/brokerzy/odczyt";
+
 import { planTradu } from "./plany";
 import { zSlow } from "./slowa";
 import { czyWynikUkryty, sqlNotatkaUkryta, sqlPoWejsciu, sqlSlowaUkryte, ukryteSlowa } from "./ukrycie-wyniku";
@@ -93,6 +95,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
   // Co powstalo PO wejsciu, moze zdradzic wynik: przy ukryciu wychodzi tylko to, co z chwili przed wejsciem.
   const wyjscia = ukryj ? [] : await tx.select().from(tradeExits).where(eq(tradeExits.tradeId, id)).orderBy(asc(tradeExits.sortOrder), asc(tradeExits.id));
   const plan = await planTradu(tx, id);
+  const broker = await blokBrokerDlaTradu(tx, id, ukryj);
 
   const slowaAdnotacji = adnotacje.map((a) => a.wordsId).filter((x): x is number => x !== null);
   const ukryteSlowaAdnotacji = await ukryteSlowa(tx, slowaAdnotacji);
@@ -138,7 +141,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
     },
     resultHidden: ukryj,
     resultHiddenReason: ukryj ? "Trade nie jest zamknięty, a ma werdykt AI wydany przed wynikiem. Wynik pokaże się po zamknięciu." : null,
-    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations(po wejsciu)", "screenshots(po wejsciu)", "links(notatki po wejsciu)", "plan.addenda/thesis(po wejsciu)"] : [],
+    hiddenFields: ukryj ? ["result", "trade.note", "trade.moodNote", "reviews.lesson", "reviews.summaryMd(user_override)", "reviews.basis=history", "userWords(po wejsciu)", "chartAnnotations(po wejsciu)", "screenshots(po wejsciu)", "links(notatki po wejsciu)", "plan.addenda/thesis(po wejsciu)", "result.pnlEstimateCents", "broker(wyniki, wyjscia i wypelnienia po wejsciu)"] : [],
     hiddenReviews: ukryteOceny,
     result: ukryj
       ? null
@@ -150,6 +153,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
           rMultiple: liczba(tr.rMultiple),
           mae: liczba(tr.mae),
           mfe: liczba(tr.mfe),
+          ...polaWynikuNetto({ pnl: tr.pnl, pnlEstimate: tr.pnlEstimate, fees: tr.fees, brokerAmount: tr.brokerAmount }),
           exits: wyjscia.map((w) => ({
             id: w.id,
             time: w.exitTime?.toISOString() ?? null,
@@ -158,6 +162,7 @@ export async function szczegolyTradu(tx: Db, id: number) {
             note: w.note,
           })),
         },
+    broker,
     plan,
     screenshots: zrzuty.map((z) => {
       return {

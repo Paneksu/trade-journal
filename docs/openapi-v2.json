@@ -3,7 +3,7 @@
   "info": {
     "title": "Dziennik tradingowy API v2",
     "version": "2.0.0",
-    "description": "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); zakresu zatwierdzania nie ma."
+    "description": "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); import_broker to osobny, samodzielny zakres tokenu automatu z folderu Pobrane (otwiera tylko /broker/inbox, wydaje go uzytkownik w trybie sudo); zakresu zatwierdzania nie ma."
   },
   "servers": [
     {
@@ -344,7 +344,8 @@
                           "read",
                           "write",
                           "propose",
-                          "import"
+                          "import",
+                          "import_broker"
                         ]
                       }
                     },
@@ -1255,6 +1256,49 @@
                                 ],
                                 "additionalProperties": false
                               }
+                            },
+                            "feesCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pnlEstimateCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pnlSource": {
+                              "type": "string",
+                              "enum": [
+                                "estimate",
+                                "broker"
+                              ]
+                            },
+                            "estimateDifferenceCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
                             }
                           },
                           "required": [
@@ -1265,7 +1309,342 @@
                             "rMultiple",
                             "mae",
                             "mfe",
-                            "exits"
+                            "exits",
+                            "feesCents",
+                            "pnlEstimateCents",
+                            "pnlSource",
+                            "estimateDifferenceCents"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "broker": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "brokerTradeId": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "externalRef": {
+                              "type": "string"
+                            },
+                            "matchKind": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "auto",
+                                    "user",
+                                    "ai_accepted",
+                                    "created"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "matchedAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "brokerAccount": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "platform": {
+                                  "type": "string"
+                                },
+                                "last4": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "platform",
+                                "last4"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "contract": {
+                              "type": "string"
+                            },
+                            "direction": {
+                              "type": "string",
+                              "enum": [
+                                "long",
+                                "short"
+                              ]
+                            },
+                            "quantity": {
+                              "type": "number"
+                            },
+                            "entryTime": {
+                              "type": "string"
+                            },
+                            "avgEntryPrice": {
+                              "type": "number"
+                            },
+                            "resultHidden": {
+                              "type": "boolean"
+                            },
+                            "exitTime": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "avgExitPrice": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grossCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "grossSource": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "broker",
+                                    "computed"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "feesCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "feeSource": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "broker",
+                                    "rate"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "netCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pnlEstimateCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "pnlSource": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "estimate",
+                                    "broker"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "differenceCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "slippageCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "feeDifferenceCents": {
+                              "anyOf": [
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "fills": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "side": {
+                                    "type": "string",
+                                    "enum": [
+                                      "buy",
+                                      "sell"
+                                    ]
+                                  },
+                                  "quantity": {
+                                    "type": "number"
+                                  },
+                                  "price": {
+                                    "type": "number"
+                                  },
+                                  "filledAt": {
+                                    "type": "string"
+                                  },
+                                  "feeCents": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "orderRef": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "side",
+                                  "quantity",
+                                  "price",
+                                  "filledAt",
+                                  "feeCents",
+                                  "orderRef"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "brokerTradeId",
+                            "externalRef",
+                            "matchKind",
+                            "matchedAt",
+                            "brokerAccount",
+                            "contract",
+                            "direction",
+                            "quantity",
+                            "entryTime",
+                            "avgEntryPrice",
+                            "resultHidden",
+                            "exitTime",
+                            "avgExitPrice",
+                            "grossCents",
+                            "grossSource",
+                            "feesCents",
+                            "feeSource",
+                            "netCents",
+                            "pnlEstimateCents",
+                            "pnlSource",
+                            "differenceCents",
+                            "slippageCents",
+                            "feeDifferenceCents",
+                            "fills"
                           ],
                           "additionalProperties": false
                         },
@@ -2468,6 +2847,7 @@
                     "hiddenFields",
                     "hiddenReviews",
                     "result",
+                    "broker",
                     "plan",
                     "screenshots",
                     "reviews",
@@ -5301,6 +5681,1878 @@
                 ]
               }
             }
+          }
+        }
+      }
+    },
+    "/days/{date}/accounts": {
+      "put": {
+        "operationId": "putDaysDateAccounts",
+        "summary": "Ustala aktywne konta dnia (wielokrotne; rytual przed sesja): zestaw kont, na ktorych uzytkownik dzis handluje. AI bierze z tego konto dla trade'ow z notatki, a z konta firme, program, faze i stawke oplat. To ustalenie dnia, nie zatwierdzenie.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "write"
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "day": {
+                      "type": "string"
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "firm": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "program": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "eval",
+                                  "funded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "category",
+                          "firm",
+                          "program",
+                          "phase"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "accounts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "422": {
+            "description": "Nieznane albo zarchiwizowane konto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountIds": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                },
+                "required": [
+                  "accountIds"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getDaysDateAccounts",
+        "summary": "Aktywne konta dnia z kategoria (ADR-027), firma, programem i faza.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "day": {
+                      "type": "string"
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "firm": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "program": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "phase": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "eval",
+                                  "funded"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "category",
+                          "firm",
+                          "program",
+                          "phase"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "accounts"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/broker/inbox": {
+      "post": {
+        "operationId": "postBrokerInbox",
+        "summary": "Przyjecie pliku z eksportu brokera (Tradovate Orders albo Cash History) od automatu tj watch-exports. WYLACZNIE token z jedynym zakresem import_broker (wydaje go uzytkownik w aplikacji w trybie sudo); read, write i propose dostaja 403. Stosuje tylko dopasowania 1:1 (z »Cofnij« w aplikacji), nigdy nie tworzy trade'ow ani nie przypisuje kont. Odpowiedz niesie SHA-256 przyjetych bajtow: automat kasuje plik dopiero, gdy jest rowny jego wlasnemu.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "import_broker"
+        ],
+        "parameters": [
+          {
+            "name": "X-Tj-Sha256",
+            "in": "header",
+            "required": false,
+            "description": "SHA-256 bajtow pliku (hex); niezgodnosc z policzonym przez serwer = 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ten plik (ten sam SHA-256) byl juz zaimportowany; nic sie nie zdublowalo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "applied",
+                        "duplicate"
+                      ]
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "importId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "fills": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "duplicate": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "duplicate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "cashEvents": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "duplicate": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "duplicate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "trades": {
+                      "type": "object",
+                      "properties": {
+                        "matched": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "needsDecision": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "open": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "matched",
+                        "needsDecision",
+                        "open"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "status",
+                    "format",
+                    "platform",
+                    "importId",
+                    "timezone",
+                    "fills",
+                    "cashEvents",
+                    "trades",
+                    "notes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "applied",
+                        "duplicate"
+                      ]
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "platform": {
+                      "type": "string"
+                    },
+                    "importId": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "fills": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "duplicate": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "duplicate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "cashEvents": {
+                      "type": "object",
+                      "properties": {
+                        "new": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "duplicate": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "new",
+                        "duplicate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "trades": {
+                      "type": "object",
+                      "properties": {
+                        "matched": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "needsDecision": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "open": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "matched",
+                        "needsDecision",
+                        "open"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "status",
+                    "format",
+                    "platform",
+                    "importId",
+                    "timezone",
+                    "fills",
+                    "cashEvents",
+                    "trades",
+                    "notes"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "409": {
+            "description": "sha_mismatch (naglowek nie zgadza sie z bajtami) albo account_taken.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Plik przekracza limit 5 MB, 20 000 wierszy, 64 kolumn albo 1 KB w komorce.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Zly Content-Type albo kodowanie pliku.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "unknown_format (naglowki nie pasuja do zadnego obslugiwanego formatu) albo rows_invalid (bledne wiersze: plik zostaje u klienta, powod w »Do decyzji«).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          },
+          "503": {
+            "description": "broker_not_configured (brak BROKER_ID_HMAC_KEY na serwerze).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "Surowe bajty pliku CSV (UTF-8 albo UTF-16LE z BOM), do 5 MB. Limit 5242880 B.",
+          "content": {
+            "text/csv": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getBrokerInbox",
+        "summary": "Sprawdzenie tokenu automatu: obslugiwane formaty, limit pliku i termin waznosci tokenu. Nic nie zapisuje.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "import_broker"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepts": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "maxBytes": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "tokenName": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accepts",
+                    "maxBytes",
+                    "tokenName",
+                    "expiresAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/broker/trades": {
+      "get": {
+        "operationId": "getBrokerTrades",
+        "summary": "Trade'y brokera zgrupowane z wypelnien: konto dziennika (nazwa, kategoria, firma, program, faza), kontrakt, kierunek, ilosc, czasy, srednie ceny, wynik brutto i netto, oplaty i ich zrodlo, stan dopasowania. Slepa ocena: trade z ukrytym wynikiem wychodzi z resultHidden: true i bez wyniku. Numer konta u brokera nie wychodzi (tylko ostatnie 4 znaki).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "unmatched",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1",
+                "true",
+                "false"
+              ]
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "trades": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "externalRef": {
+                            "type": "string"
+                          },
+                          "brokerAccount": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              "platform": {
+                                "type": "string"
+                              },
+                              "last4": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "platform",
+                              "last4"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "account": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "category": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "firm": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "program": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "phase": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "eval",
+                                          "funded"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "category",
+                                  "firm",
+                                  "program",
+                                  "phase"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "contract": {
+                            "type": "string"
+                          },
+                          "instrument": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "long",
+                              "short"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "number"
+                          },
+                          "entryTime": {
+                            "type": "string"
+                          },
+                          "avgEntryPrice": {
+                            "type": "number"
+                          },
+                          "tradingDay": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "exitTime": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "avgExitPrice": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "open",
+                                  "closed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "grossCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "grossSource": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "broker",
+                                  "computed"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feesCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "feeSource": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "broker",
+                                  "rate"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "netCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "fillCount": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "matchState": {
+                            "type": "string",
+                            "enum": [
+                              "unmatched",
+                              "ambiguous",
+                              "matched",
+                              "skipped"
+                            ]
+                          },
+                          "matchKind": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "auto",
+                                  "user",
+                                  "ai_accepted",
+                                  "created"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "tradeId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "resultHidden": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "externalRef",
+                          "brokerAccount",
+                          "account",
+                          "contract",
+                          "instrument",
+                          "direction",
+                          "quantity",
+                          "entryTime",
+                          "avgEntryPrice",
+                          "tradingDay",
+                          "exitTime",
+                          "avgExitPrice",
+                          "status",
+                          "grossCents",
+                          "grossSource",
+                          "feesCents",
+                          "feeSource",
+                          "netCents",
+                          "fillCount",
+                          "matchState",
+                          "matchKind",
+                          "tradeId",
+                          "resultHidden"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "nextAfter": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "trades",
+                    "nextAfter"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/broker/trades/{id}": {
+      "get": {
+        "operationId": "getBrokerTradesId",
+        "summary": "Trade brokera z wypelnieniami (bez surowego wiersza pliku). Przy ukrytym wyniku tylko wypelnienia wejscia sprzed wejscia trade'a dziennika.",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "externalRef": {
+                      "type": "string"
+                    },
+                    "brokerAccount": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "platform": {
+                          "type": "string"
+                        },
+                        "last4": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "platform",
+                        "last4"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "account": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "category": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "firm": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "program": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "phase": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "enum": [
+                                    "eval",
+                                    "funded"
+                                  ]
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "category",
+                            "firm",
+                            "program",
+                            "phase"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "contract": {
+                      "type": "string"
+                    },
+                    "instrument": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "direction": {
+                      "type": "string",
+                      "enum": [
+                        "long",
+                        "short"
+                      ]
+                    },
+                    "quantity": {
+                      "type": "number"
+                    },
+                    "entryTime": {
+                      "type": "string"
+                    },
+                    "avgEntryPrice": {
+                      "type": "number"
+                    },
+                    "tradingDay": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "exitTime": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "avgExitPrice": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "status": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "closed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "grossCents": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "grossSource": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "broker",
+                            "computed"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "feesCents": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "feeSource": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "broker",
+                            "rate"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "netCents": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "fillCount": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "matchState": {
+                      "type": "string",
+                      "enum": [
+                        "unmatched",
+                        "ambiguous",
+                        "matched",
+                        "skipped"
+                      ]
+                    },
+                    "matchKind": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "auto",
+                            "user",
+                            "ai_accepted",
+                            "created"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "tradeId": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "resultHidden": {
+                      "type": "boolean"
+                    },
+                    "fills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "buy",
+                              "sell"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "number"
+                          },
+                          "price": {
+                            "type": "number"
+                          },
+                          "filledAt": {
+                            "type": "string"
+                          },
+                          "feeCents": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "orderRef": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "side",
+                          "quantity",
+                          "price",
+                          "filledAt",
+                          "feeCents",
+                          "orderRef"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "externalRef",
+                    "brokerAccount",
+                    "account",
+                    "contract",
+                    "instrument",
+                    "direction",
+                    "quantity",
+                    "entryTime",
+                    "avgEntryPrice",
+                    "tradingDay",
+                    "exitTime",
+                    "avgExitPrice",
+                    "status",
+                    "grossCents",
+                    "grossSource",
+                    "feesCents",
+                    "feeSource",
+                    "netCents",
+                    "fillCount",
+                    "matchState",
+                    "matchKind",
+                    "tradeId",
+                    "resultHidden",
+                    "fills"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "404": {
+            "description": "Trade brokera nie istnieje.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "requestId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
+          }
+        }
+      }
+    },
+    "/broker/status": {
+      "get": {
+        "operationId": "getBrokerStatus",
+        "summary": "Czas ostatniego importu i wypelnienia per konto dnia, liczba trade'ow brokera bez dopasowania, trade'y dziennika bez danych z rachunku i flaga needsExport (czy przed notatka trzeba kliknac »Eksport« w Tradovate).",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "x-scopes": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sukces",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "day": {
+                      "type": "string"
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "accountName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "brokerAccountId": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "platform": {
+                            "type": "string"
+                          },
+                          "last4": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastImportAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastFillAt": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "unmatchedBrokerTrades": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "journalTradesWithoutBrokerData": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "needsExport": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "accountId",
+                          "accountName",
+                          "brokerAccountId",
+                          "platform",
+                          "last4",
+                          "lastImportAt",
+                          "lastFillAt",
+                          "unmatchedBrokerTrades",
+                          "journalTradesWithoutBrokerData",
+                          "needsExport"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "pendingDecisions": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "needsExport": {
+                      "type": "boolean"
+                    },
+                    "lastImportAt": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "day",
+                    "accounts",
+                    "pendingDecisions",
+                    "needsExport",
+                    "lastImportAt"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Brak, nieznany, uniewazniony albo wygasly token."
+          },
+          "403": {
+            "description": "Token nie ma wymaganego zakresu."
+          },
+          "429": {
+            "description": "Limit zapytan albo blokada."
           }
         }
       }
@@ -21374,7 +23626,9 @@
                 "day_conclusion",
                 "weekly_conclusion",
                 "strategy_detail",
-                "trade_setup"
+                "trade_setup",
+                "broker_match",
+                "broker_trade"
               ]
             }
           },
@@ -21440,7 +23694,9 @@
                               "day_conclusion",
                               "weekly_conclusion",
                               "strategy_detail",
-                              "trade_setup"
+                              "trade_setup",
+                              "broker_match",
+                              "broker_trade"
                             ]
                           },
                           "status": {
@@ -21628,7 +23884,9 @@
                             "day_conclusion",
                             "weekly_conclusion",
                             "strategy_detail",
-                            "trade_setup"
+                            "trade_setup",
+                            "broker_match",
+                            "broker_trade"
                           ]
                         },
                         "status": {
@@ -21782,7 +24040,9 @@
                             "day_conclusion",
                             "weekly_conclusion",
                             "strategy_detail",
-                            "trade_setup"
+                            "trade_setup",
+                            "broker_match",
+                            "broker_trade"
                           ]
                         },
                         "status": {
@@ -22520,6 +24780,246 @@
                         "required": [
                           "setupSlug"
                         ],
+                        "additionalProperties": false
+                      },
+                      "claim": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "evidence": {
+                        "minItems": 1,
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              ]
+                            },
+                            "note": {
+                              "type": "string",
+                              "maxLength": 1000
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "evidenceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "tested",
+                          "partial",
+                          "inferred"
+                        ]
+                      },
+                      "n": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "target",
+                      "payload",
+                      "claim",
+                      "evidence",
+                      "evidenceLevel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "broker_match"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "trade"
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "brokerTradeId": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "brokerTradeId"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "claim": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      "evidence": {
+                        "minItems": 1,
+                        "maxItems": 40,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 40
+                            },
+                            "ref": {
+                              "anyOf": [
+                                {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 200
+                                },
+                                {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              ]
+                            },
+                            "note": {
+                              "type": "string",
+                              "maxLength": 1000
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "evidenceLevel": {
+                        "type": "string",
+                        "enum": [
+                          "tested",
+                          "partial",
+                          "inferred"
+                        ]
+                      },
+                      "n": {
+                        "anyOf": [
+                          {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "target",
+                      "payload",
+                      "claim",
+                      "evidence",
+                      "evidenceLevel"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "broker_trade"
+                      },
+                      "target": {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "type": "string",
+                            "const": "broker_trade"
+                          },
+                          "id": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "id"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "payload": {
+                        "type": "object",
+                        "properties": {
+                          "noteId": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "wordsIds": {
+                            "default": [],
+                            "maxItems": 20,
+                            "type": "array",
+                            "items": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          }
+                        },
                         "additionalProperties": false
                       },
                       "claim": {

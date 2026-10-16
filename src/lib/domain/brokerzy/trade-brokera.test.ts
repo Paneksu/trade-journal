@@ -327,3 +327,29 @@ describe("uzgodnienie wyniku wyliczonego z rzeczywistym", () => {
     expect(uzgodnij({ pnl: 1000, pnlEstimate: null, brokerAmount: 1000, feesEstimate: null, feesBroker: null }).roznicaCenty).toBeNull();
   });
 });
+
+describe("podejrzenie innej strefy czasowej", () => {
+  const baza = new Date("2026-10-14T13:30:00Z");
+  const h = (n: number) => new Date(baza.getTime() + n * 3_600_000);
+  const kandydat = (id: number, entry: Date, contracts = 1): KandydatDziennika => ({ id, accountId: 1, instrumentId: 7, direction: "long", entryTime: entry, contracts });
+  const trade = (id: number, entry: Date): TradeBrokeraDoDopasowania => ({ id, accountId: 1, instrumentId: 7, direction: "long", entryTime: entry, maxQty: 1 });
+
+  it("trzy trade'y brokera wszystkie o 6 h za pozno wzgledem dziennika: proponuje -6 h, nie przesuwa sam", async () => {
+    const { wykryjPrzesunieciaStrefy } = await import("./dopasowanie");
+    const broker = [trade(1, h(6)), trade(2, h(7)), trade(3, h(9))];
+    const dziennik = [kandydat(10, h(0)), kandydat(11, h(1)), kandydat(12, h(3))];
+    expect(wykryjPrzesunieciaStrefy(broker, dziennik)).toEqual({ godziny: -6, dopasowan: 3, bazowo: 0 });
+  });
+
+  it("gdy bez przesuniecia dopasowuje sie tyle samo, nie ostrzega", async () => {
+    const { wykryjPrzesunieciaStrefy } = await import("./dopasowanie");
+    const broker = [trade(1, h(0)), trade(2, h(1))];
+    const dziennik = [kandydat(10, h(0)), kandydat(11, h(1))];
+    expect(wykryjPrzesunieciaStrefy(broker, dziennik)).toBeNull();
+  });
+
+  it("jedno trafienie to za malo, zeby podejrzewac strefe", async () => {
+    const { wykryjPrzesunieciaStrefy } = await import("./dopasowanie");
+    expect(wykryjPrzesunieciaStrefy([trade(1, h(6))], [kandydat(10, h(0))])).toBeNull();
+  });
+});

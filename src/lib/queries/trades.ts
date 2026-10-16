@@ -123,7 +123,7 @@ export type TradeRecord = TradeForAnalysis & {
   /** Wplyw skalowania na wynik w R - patrz komentarz przy kolumnie w schema.ts. */
   scalingR: number | null;
   /** Skad wpis przyszedl: formularz albo klient API (ADR-026). */
-  source: "form" | "tradingview" | "fxreplay";
+  source: "form" | "tradingview" | "fxreplay" | "broker";
   /** Klucz idempotencji z API ("tv:<id>", "fxr:<id>"); `null` dla wpisow z formularza. */
   externalRef: string | null;
   ingestedAt: Date | null;

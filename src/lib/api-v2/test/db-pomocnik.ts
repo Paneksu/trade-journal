@@ -75,12 +75,12 @@ export type Par = { id: number; token: string; prefix: string };
 export async function nowyToken(
   sql: Sql,
   scopes: string[],
-  opcje: { name?: string; expiresAt?: Date | null; revokedAt?: Date | null } = {},
+  opcje: { name?: string; expiresAt?: Date | null; revokedAt?: Date | null; createdVia?: "device_code" | "ui" } = {},
 ): Promise<Par> {
   const t = wygenerujToken();
   const [w] = await sql`
     insert into api_tokens (name, prefix, token_sha256, scopes, created_via, expires_at, revoked_at)
-    values (${opcje.name ?? `test-${randomBytes(3).toString("hex")}`}, ${t.prefix}, ${t.sha256}, ${scopes}, 'device_code',
+    values (${opcje.name ?? `test-${randomBytes(3).toString("hex")}`}, ${t.prefix}, ${t.sha256}, ${scopes}, ${opcje.createdVia ?? "device_code"},
             ${opcje.expiresAt ?? null}, ${opcje.revokedAt ?? null})
     returning id`;
   return { id: w.id, token: t.token, prefix: t.prefix };

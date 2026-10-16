@@ -390,6 +390,8 @@ export async function listaTradowZApi(p: ParametryListy) {
   if (p.refs.length > 0) warunki.push(inArray(trades.externalRef, p.refs));
   else warunki.push(sql`${trades.externalRef} is not null`);
   if (p.source) warunki.push(eq(trades.source, p.source));
+  // Trade'y utworzone z danych brokera (ADR-034) nie sa wpisami synchronizacji TradingView / FX Replay.
+  else warunki.push(sql`${trades.source} <> 'broker'`);
 
   const rows = await db
     .select({

@@ -2,10 +2,14 @@ import "server-only";
 import { and, eq, sql } from "drizzle-orm";
 
 import { utworzNotatke } from "@/lib/api-v2/notatki";
+import { odepnijDopasowanie, zastosujDopasowanie } from "@/lib/brokerzy/dopasowania";
+import { domenaTraduBrokera, utworzTradeZDanychBrokera } from "@/lib/brokerzy/import";
 import { wersjaSetupuNaChwile } from "@/lib/api-v2/wersje-setupu";
 import { zapisJakoUi, type Transakcja } from "@/lib/api-v2/zapis";
 import {
   aiSuggestions,
+  brokerAccounts,
+  brokerTrades,
   interpretationCorrections,
   noteAdditions,
   notes,
@@ -123,6 +127,30 @@ async function zastosuj(tx: Transakcja, s: Sugestia): Promise<{ ok: true; ref: R
     }
     case "strategy_detail":
       return { ok: false, komunikat: "Dopisek do strategii wchodzi od razu i nie wymaga zatwierdzenia; można go tylko cofnąć." };
+    case "broker_match": {
+      const [bt] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, p.brokerTradeId as number)).for("update").limit(1);
+      if (!bt) return { ok: false, komunikat: `Trade brokera #${String(p.brokerTradeId)} nie istnieje (import mógł zostać cofnięty). Odrzuć sugestię.` };
+      const w = await zastosujDopasowanie(tx, bt, t.id as number, "ai_accepted");
+      if (!w.ok) return { ok: false, komunikat: `Nie da się dopasować: ${w.komunikat}. Odrzuć sugestię.` };
+      return { ok: true, ref: { brokerTradeId: bt.id, tradeId: t.id as number, pnlPrzed: w.wynik.pnlPrzed, pnlPo: w.wynik.pnlPo } };
+    }
+    case "broker_trade": {
+      const [bt] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, t.id as number)).for("update").limit(1);
+      if (!bt) return { ok: false, komunikat: `Trade brokera #${String(t.id)} nie istnieje (import mógł zostać cofnięty). Odrzuć sugestię.` };
+      if (bt.tradeId !== null) return { ok: false, komunikat: `Trade brokera #${bt.id} ma już trade w dzienniku (#${bt.tradeId}). Odrzuć sugestię.` };
+      const [ba] = await tx.select({ konto: brokerAccounts.accountId }).from(brokerAccounts).where(eq(brokerAccounts.id, bt.brokerAccountId)).limit(1);
+      if (!ba || ba.konto === null) return { ok: false, komunikat: "Konto u brokera nie jest przypisane do konta dziennika (Prop → Połączenia)." };
+      const domena = await domenaTraduBrokera(tx, bt);
+      if (!domena) return { ok: false, komunikat: `Nie udało się odtworzyć wypełnień trade'a brokera #${bt.id} (dane mogły się zmienić po cofnięciu importu).` };
+      const w = await utworzTradeZDanychBrokera(tx, bt, ba.konto, domena);
+      if (!w.ok) return { ok: false, komunikat: `Trade nie powstał: ${w.komunikat}.` };
+      const ref: Record<string, unknown> = { brokerTradeId: bt.id, tradeId: w.tradeId };
+      if (typeof p.noteId === "number") {
+        const [link] = await tx.insert(tradeNoteLinks).values({ tradeId: w.tradeId, noteId: p.noteId, role: "other", origin: "ai" }).onConflictDoNothing().returning({ id: tradeNoteLinks.id });
+        if (link) ref.tradeNoteLinkId = link.id;
+      }
+      return { ok: true, ref };
+    }
   }
 }
 
@@ -217,6 +245,19 @@ export async function cofnijSugestie(id: number): Promise<WynikDecyzji> {
       case "strategy_detail":
         await tx.update(noteAdditions).set({ revertedAt: new Date() }).where(eq(noteAdditions.suggestionId, id));
         break;
+      case "broker_match":
+      case "broker_trade": {
+        const brokerTradeId = ref.brokerTradeId as number | undefined;
+        if (typeof brokerTradeId !== "number") break;
+        const [bt] = await tx.select().from(brokerTrades).where(eq(brokerTrades.id, brokerTradeId)).for("update").limit(1);
+        if (!bt || bt.tradeId === null) break;
+        if (typeof ref.tradeId === "number" && bt.tradeId !== ref.tradeId) {
+          return blad(`Trade brokera #${bt.id} jest teraz dopasowany do trade'a #${bt.tradeId}, a sugestia dotyczyła #${String(ref.tradeId)}. Cofnięcie nadpisałoby późniejszą decyzję; cofnij dopasowanie w Połączeniach.`);
+        }
+        // Utworzony z danych brokera trade dziennika jest kasowany bez nagrobka (wraca stan sprzed zatwierdzenia).
+        await odepnijDopasowanie(tx, bt, { nowyStan: "skipped", przywrocKwote: true });
+        break;
+      }
     }
     await tx.update(aiSuggestions).set({ status: "reverted" }).where(eq(aiSuggestions.id, id));
     return { ok: true, komunikat: "Cofnięte." };

@@ -106,13 +106,26 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
 
   it("zakres approve nie istnieje w zadnym wpisie, a import tylko przy trasach mentora", () => {
     const wszystkie = new Set(ENDPOINTS.flatMap((e) => e.zakresy ?? []));
-    expect([...wszystkie].sort()).toEqual(["import", "propose", "read", "write"]);
+    expect([...wszystkie].sort()).toEqual(["import", "import_broker", "propose", "read", "write"]);
     expect(JSON.stringify(zbudujOpenApi())).not.toMatch(/"approve"/);
     const zImportem = ENDPOINTS.filter((e) => e.zakresy?.includes("import")).map((e) => katalogTrasy(e.sciezka));
     expect(zImportem.length).toBeGreaterThan(0);
     for (const k of zImportem) expect(k.startsWith("mentor/"), "zakres import wolno wymagac tylko od tras mentora: " + k).toBe(true);
     for (const e of ENDPOINTS.filter((x) => x.sciezka.startsWith("/mentor/"))) {
       expect(e.zakresy, "mentor " + e.metoda + " " + e.sciezka).toContain("import");
+    }
+  });
+
+  it("import_broker (ADR-034) otwiera wylacznie /broker/inbox i jest tam JEDYNYM zakresem; inbox nie przyjmuje innego", () => {
+    const zBroker = ENDPOINTS.filter((e) => e.zakresy?.includes("import_broker"));
+    expect(zBroker.map((e) => `${e.metoda} ${e.sciezka}`).sort()).toEqual(["get /broker/inbox", "post /broker/inbox"]);
+    for (const e of zBroker) expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["import_broker"]);
+    const inbox = ENDPOINTS.filter((e) => e.sciezka === "/broker/inbox");
+    for (const e of inbox) expect(e.zakresy).not.toContain("read");
+    // Pod /broker/** poza inboxem tylko odczyt (GET), a odczyty wymagaja wylacznie read.
+    for (const e of ENDPOINTS.filter((x) => x.sciezka.startsWith("/broker/") && x.sciezka !== "/broker/inbox")) {
+      expect(e.metoda, e.sciezka).toBe("get");
+      expect(e.zakresy, e.sciezka).toEqual(["read"]);
     }
   });
 
@@ -126,6 +139,7 @@ describe("kontrakt a trasy: zadnej bez wpisu, zadnego wpisu bez trasy", () => {
   it("zapisy wymagaja write, odczyty read, propozycje agenta propose, mentor dokłada import", () => {
     for (const e of ENDPOINTS) {
       if (e.zakresy === null) continue;
+      if (e.sciezka === "/broker/inbox") continue; // osobny zakres import_broker (test wyzej)
       const dodatek = e.sciezka.startsWith("/mentor/") ? ["import"] : [];
       if (e.metoda === "get") expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["read", ...dodatek]);
       else if (e.metoda === "post" && PROPOZYCJE.includes(e.sciezka)) expect(e.zakresy, `${e.metoda} ${e.sciezka}`).toEqual(["propose"]);

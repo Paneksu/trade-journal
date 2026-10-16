@@ -38,6 +38,8 @@ const RODZAJE: Record<string, string> = {
   day_conclusion: "Wniosek dnia",
   weekly_conclusion: "Wniosek tygodnia",
   strategy_detail: "Dopisek do strategii",
+  broker_match: "Dopasowanie do rachunku",
+  broker_trade: "Trade z rachunku",
 };
 
 /** Lista warunków z wersji setupu: obiekty {id, text} albo (stare dane) zwykłe napisy. */
@@ -68,6 +70,7 @@ function CelSugestii({ target }: { target: Record<string, unknown> }) {
     );
   if (target.type === "day") return <span>dzień {String(target.date)}</span>;
   if (target.type === "week") return <span>tydzień od {String(target.weekStart)}</span>;
+  if (target.type === "broker_trade") return <span>trade z rachunku #{String(target.id)}</span>;
   return <span>profil tradera</span>;
 }
 

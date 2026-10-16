@@ -74,7 +74,7 @@ export function wczytajCsv(bajty: Uint8Array): WynikCsv {
       info: true,
       bom: false,
       max_record_size: LIMIT_KOLUMN * (LIMIT_KOMORKI + 2),
-    }) as { record: string[]; info: { lines: number } }[];
+    }) as unknown as { record: string[]; info: { lines: number } }[];
     rekordy = wyniki.map((w) => ({ rekord: w.record, linia: w.info.lines }));
   } catch (e) {
     if (e instanceof CsvError) {

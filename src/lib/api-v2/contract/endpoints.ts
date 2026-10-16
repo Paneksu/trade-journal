@@ -3,6 +3,18 @@ import { z } from "zod";
 
 import type { Scope } from "../scopes";
 import {
+  BrokerStatusOdpowiedz,
+  BrokerStatusQuery,
+  BrokerTradeSzczegolyOdpowiedz,
+  BrokerTradesListaOdpowiedz,
+  BrokerTradesQuery,
+  INBOX_MAX_BAJTOW,
+  InboxOdpowiedz,
+  InboxPingOdpowiedz,
+  KontaDniaOdpowiedz,
+  KontaDniaZapisSchema,
+} from "./broker";
+import {
   AdnotacjeListaQuery,
   AdnotacjeZapisSchema,
   DopisekNotatkiSchema,
@@ -187,6 +199,8 @@ export type Endpoint = {
   rodzajCiala?: "json" | "multipart";
   /** Opis pol multipart/form-data (domyslnie: zrzuty trade'a). */
   multipart?: Record<string, unknown>;
+  /** Cialo to surowe bajty pliku (nie JSON ani multipart): typ, limit i naglowki dodatkowe (np. inbox brokera). */
+  surowe?: { contentType: string; opis: string; maxBajtow: number; naglowki?: { name: string; opis: string }[] };
   odpowiedz?: z.ZodType;
   /** Kod sukcesu, domyslnie 200. */
   status?: number;
@@ -215,6 +229,15 @@ export const ENDPOINTS: Endpoint[] = [
   { metoda: "get", sciezka: "/days/{date}", zakresy: ["read"], opis: "Dzien: notatka dnia (jedna, bez konta; z rytualem przed sesja), liczba trade'ow (accountId zaweza tylko trade'y), slowa uzytkownika i notatki przypiete do dnia. sessionId: dzien sesji backtestu.", parametrySciezki: ["date"], query: DzienQuery, odpowiedz: DzienOdpowiedz },
   { metoda: "put", sciezka: "/days/{date}", zakresy: ["write"], opis: "Zapis notatki dnia (nadpisuje podane pola, takze bias, maxTrades i sleep). Notatka dnia jest jedna i bez konta (ADR-033, 16.10.2026); sessionId w ciele wskazuje dzien sesji backtestu.", parametrySciezki: ["date"], cialo: DzienZapisSchema, odpowiedz: DzienZapisOdpowiedz, bledy: { 201: "Utworzona nowa notatka dnia (200 przy zapisie do istniejacej).", 409: "Dzien ma trade'y, wiec nie moze byc oznaczony jako bez transakcji.", 422: "day_note_has_no_account: podano accountId, a notatka dnia nie nalezy do konta." } },
   { metoda: "post", sciezka: "/days/{date}/attachments", zakresy: ["write"], opis: "Zalaczniki dnia (multipart: shot, interval, caption, capturedAt, chartState, origin; query sessionId dla dnia sesji backtestu; accountId odrzucany 422, bo notatka dnia jest bez konta). PNG, JPG, WebP, AVIF, HEIC -> WebP + miniatura. Tylko dopisywanie, do 8.", parametrySciezki: ["date"], query: DzienQuery, rodzajCiala: "multipart", multipart: MULTIPART_ZALACZNIKI, odpowiedz: ZalacznikiOdpowiedz, status: 201, bledy: { 413: "Za duze cialo.", 422: "Plik odrzucony albo limit 8 zalacznikow." } },
+
+  { metoda: "put", sciezka: "/days/{date}/accounts", zakresy: ["write"], opis: "Ustala aktywne konta dnia (wielokrotne; rytual przed sesja): zestaw kont, na ktorych uzytkownik dzis handluje. AI bierze z tego konto dla trade'ow z notatki, a z konta firme, program, faze i stawke oplat. To ustalenie dnia, nie zatwierdzenie.", parametrySciezki: ["date"], cialo: KontaDniaZapisSchema, odpowiedz: KontaDniaOdpowiedz, bledy: { 422: "Nieznane albo zarchiwizowane konto." } },
+  { metoda: "get", sciezka: "/days/{date}/accounts", zakresy: ["read"], opis: "Aktywne konta dnia z kategoria (ADR-027), firma, programem i faza.", parametrySciezki: ["date"], odpowiedz: KontaDniaOdpowiedz },
+
+  { metoda: "post", sciezka: "/broker/inbox", zakresy: ["import_broker"], opis: "Przyjecie pliku z eksportu brokera (Tradovate Orders albo Cash History) od automatu tj watch-exports. WYLACZNIE token z jedynym zakresem import_broker (wydaje go uzytkownik w aplikacji w trybie sudo); read, write i propose dostaja 403. Stosuje tylko dopasowania 1:1 (z »Cofnij« w aplikacji), nigdy nie tworzy trade'ow ani nie przypisuje kont. Odpowiedz niesie SHA-256 przyjetych bajtow: automat kasuje plik dopiero, gdy jest rowny jego wlasnemu.", surowe: { contentType: "text/csv", opis: "Surowe bajty pliku CSV (UTF-8 albo UTF-16LE z BOM), do 5 MB.", maxBajtow: INBOX_MAX_BAJTOW, naglowki: [{ name: "X-Tj-Sha256", opis: "SHA-256 bajtow pliku (hex); niezgodnosc z policzonym przez serwer = 409." }] }, odpowiedz: InboxOdpowiedz, status: 201, bledy: { 200: "Ten plik (ten sam SHA-256) byl juz zaimportowany; nic sie nie zdublowalo.", 409: "sha_mismatch (naglowek nie zgadza sie z bajtami) albo account_taken.", 413: "Plik przekracza limit 5 MB, 20 000 wierszy, 64 kolumn albo 1 KB w komorce.", 415: "Zly Content-Type albo kodowanie pliku.", 422: "unknown_format (naglowki nie pasuja do zadnego obslugiwanego formatu) albo rows_invalid (bledne wiersze: plik zostaje u klienta, powod w »Do decyzji«).", 503: "broker_not_configured (brak BROKER_ID_HMAC_KEY na serwerze)." } },
+  { metoda: "get", sciezka: "/broker/inbox", zakresy: ["import_broker"], opis: "Sprawdzenie tokenu automatu: obslugiwane formaty, limit pliku i termin waznosci tokenu. Nic nie zapisuje.", odpowiedz: InboxPingOdpowiedz },
+  { metoda: "get", sciezka: "/broker/trades", zakresy: ["read"], opis: "Trade'y brokera zgrupowane z wypelnien: konto dziennika (nazwa, kategoria, firma, program, faza), kontrakt, kierunek, ilosc, czasy, srednie ceny, wynik brutto i netto, oplaty i ich zrodlo, stan dopasowania. Slepa ocena: trade z ukrytym wynikiem wychodzi z resultHidden: true i bez wyniku. Numer konta u brokera nie wychodzi (tylko ostatnie 4 znaki).", query: BrokerTradesQuery, odpowiedz: BrokerTradesListaOdpowiedz },
+  { metoda: "get", sciezka: "/broker/trades/{id}", zakresy: ["read"], opis: "Trade brokera z wypelnieniami (bez surowego wiersza pliku). Przy ukrytym wyniku tylko wypelnienia wejscia sprzed wejscia trade'a dziennika.", parametrySciezki: ["id"], odpowiedz: BrokerTradeSzczegolyOdpowiedz, bledy: { 404: "Trade brokera nie istnieje." } },
+  { metoda: "get", sciezka: "/broker/status", zakresy: ["read"], opis: "Czas ostatniego importu i wypelnienia per konto dnia, liczba trade'ow brokera bez dopasowania, trade'y dziennika bez danych z rachunku i flaga needsExport (czy przed notatka trzeba kliknac »Eksport« w Tradovate).", query: BrokerStatusQuery, odpowiedz: BrokerStatusOdpowiedz },
 
   { metoda: "get", sciezka: "/notes", zakresy: ["read"], opis: "Lista notatek (bez tresci); filtry kind, slug, externalRef, day, tradeId.", query: NotatkiListaQuery, odpowiedz: NotatkiListaOdpowiedz },
   { metoda: "post", sciezka: "/notes", zakresy: ["write"], wymagaImportuDlaOrigin: true, opis: "Tworzy notatke. Link [[Tytul]] do nieistniejacej notatki jest dozwolony. Rodzaje rule, hypothesis i setup maja wlasne trasy.", cialo: NotatkaUtworzSchema, odpowiedz: NotatkaOdpowiedz, status: 201, bledy: { 409: "Tytul, slug albo externalRef zajety (odpowiedz wskazuje istniejaca notatke).", 422: "Rodzaj zarzadzany przez wlasna trase (useInstead)." } },
@@ -316,6 +339,7 @@ export function zbudujOpenApi(): Record<string, unknown> {
     const parametry: unknown[] = [
       ...(e.parametrySciezki ?? []).map((nazwa) => ({ name: nazwa, in: "path", required: true, schema: { type: "string" } })),
       ...(e.query ? parametryQuery(e.query) : []),
+      ...(e.surowe?.naglowki ?? []).map((h) => ({ name: h.name, in: "header", required: false, description: h.opis, schema: { type: "string" } })),
       ...(e.ifMatch ? [{ name: "If-Match", in: "header", required: true, description: "Numer rewizji (rev) z ostatniego odczytu notatki.", schema: { type: "string" } }] : []),
     ];
     const operacja: Record<string, unknown> = {
@@ -343,6 +367,12 @@ export function zbudujOpenApi(): Record<string, unknown> {
     };
     if (e.cialo) {
       operacja.requestBody = { required: true, content: { "application/json": { schema: jsonSchema(e.cialo, "input") } } };
+    } else if (e.surowe) {
+      operacja.requestBody = {
+        required: true,
+        description: `${e.surowe.opis} Limit ${e.surowe.maxBajtow} B.`,
+        content: { [e.surowe.contentType]: { schema: { type: "string", format: "binary" } } },
+      };
     } else if (e.rodzajCiala === "multipart") {
       operacja.requestBody = {
         required: true,
@@ -357,7 +387,7 @@ export function zbudujOpenApi(): Record<string, unknown> {
       title: "Dziennik tradingowy API v2",
       version: WERSJA_KONTRAKTU,
       description:
-        "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); zakresu zatwierdzania nie ma.",
+        "Kontrakt generowany z schematow zod (src/lib/api-v2/contract). Autoryzacja: Authorization: Bearer tj_<prefiks>_<sekret>. Zakresy: read, write, propose oraz import (dodatkowy: tylko z nim wolno deklarowac origin vault-import i mentor; nadaje go wylacznie uzytkownik recznie w aplikacji, nigdy logowanie urzadzenia); import_broker to osobny, samodzielny zakres tokenu automatu z folderu Pobrane (otwiera tylko /broker/inbox, wydaje go uzytkownik w trybie sudo); zakresu zatwierdzania nie ma.",
     },
     servers: [{ url: "/api/v2" }],
     paths,

@@ -89,3 +89,32 @@ export function dopasuj(broker: TradeBrokeraDoDopasowania[], dziennik: KandydatD
     return { brokerTradeId: b.id, stan: "jeden_do_jednego", tradeId: d.id, kandydaci: ids, powod: null };
   });
 }
+
+export type PrzesunieciePodejrzane = { godziny: number; dopasowan: number; bazowo: number };
+
+/**
+ * Wykrywa podejrzenie, ze czasy w pliku sa w innej strefie niz zalozona (ADR-034 pkt 2): przesuniecie o PELNE godziny,
+ * ktore daje wyraznie wiecej dopasowan 1:1 niz brak przesuniecia. Tylko ostrzega; nigdy nie przesuwa sam.
+ * Warunek: co najmniej dwa dopasowania po przesunieciu i co najmniej dwa razy tyle, co bez niego.
+ */
+export function wykryjPrzesunieciaStrefy(
+  broker: TradeBrokeraDoDopasowania[],
+  dziennik: KandydatDziennika[],
+  zakresGodzin = 14,
+): PrzesunieciePodejrzane | null {
+  const ile1do1 = (przesuniecieGodzin: number): number =>
+    dopasuj(
+      broker.map((b) => ({ ...b, entryTime: new Date(b.entryTime.getTime() + przesuniecieGodzin * 3_600_000) })),
+      dziennik,
+    ).filter((d) => d.stan === "jeden_do_jednego").length;
+  const bazowo = ile1do1(0);
+  let najlepsze: PrzesunieciePodejrzane | null = null;
+  for (let h = -zakresGodzin; h <= zakresGodzin; h += 1) {
+    if (h === 0) continue;
+    const ile = ile1do1(h);
+    if (ile >= 2 && ile >= 2 * Math.max(bazowo, 1) && (najlepsze === null || ile > najlepsze.dopasowan)) {
+      najlepsze = { godziny: h, dopasowan: ile, bazowo };
+    }
+  }
+  return najlepsze;
+}

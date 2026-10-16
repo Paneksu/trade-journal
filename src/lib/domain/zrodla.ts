@@ -7,7 +7,7 @@
 
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
 
-export type ZrodloTradu = "form" | "tradingview" | "fxreplay";
+export type ZrodloTradu = "form" | "tradingview" | "fxreplay" | "broker";
 
 /** Plakietka zrodla; `null` dla trade'a wpisanego recznie (nie ma czym go oznaczac). */
 export function nazwaZrodla(zrodlo: ZrodloTradu): string | null {
@@ -16,6 +16,8 @@ export function nazwaZrodla(zrodlo: ZrodloTradu): string | null {
       return "TradingView";
     case "fxreplay":
       return "FX Replay";
+    case "broker":
+      return "Z rachunku";
     default:
       return null;
   }

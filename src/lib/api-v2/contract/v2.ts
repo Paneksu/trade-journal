@@ -17,8 +17,8 @@ export const ScopeSchema = z.enum(SCOPES);
 /** Logowanie urzadzenia nie moze prosic o `import` (zakres nadaje tylko uzytkownik recznie w UI). */
 export const ScopeUrzadzeniaSchema = z.enum(SCOPES_URZADZEN, {
   error: (i) =>
-    typeof i.input === "string" && i.input === "import"
-      ? "zakres »import« nie jest dostępny przez logowanie urządzenia: nadaje go użytkownik ręcznie w aplikacji (Ustawienia → Urządzenia → token importu)"
+    typeof i.input === "string" && (i.input === "import" || i.input === "import_broker")
+      ? `zakres »${i.input}« nie jest dostępny przez logowanie urządzenia: nadaje go użytkownik ręcznie w aplikacji (Ustawienia → Urządzenia → token importu albo token importu z rachunku)`
       : "dozwolone zakresy logowania urządzenia: read, write, propose",
 });
 
