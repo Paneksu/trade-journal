@@ -63,12 +63,9 @@ export function PolaczUrzadzenie() {
           ))}
         </fieldset>
         {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "haslo" && (
-          <div className="max-w-xs space-y-1">
-            <Label htmlFor="haslo" hint="2FA jest wyłączone, więc nadanie dostępu potwierdzasz hasłem (włącz 2FA w Ustawienia → Bezpieczeństwo)">
-              Hasło
-            </Label>
-            <Input id="haslo" name="haslo" type="password" autoComplete="current-password" />
-          </div>
+          <p role="status" className="text-xs text-muted">
+            Włącz 2FA, żeby łączyć urządzenia: <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>. Odrzucenie nie wymaga 2FA.
+          </p>
         )}
         {(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "sudo" && (
           <p role="status" className="text-xs text-muted">
@@ -78,7 +75,7 @@ export function PolaczUrzadzenie() {
         )}
         {decyzja.error && <ErrorMessage>{decyzja.error}</ErrorMessage>}
         <div className="flex gap-2">
-          <Button type="submit" name="decyzja" value="zatwierdz" variant="primary" size="m">
+          <Button type="submit" name="decyzja" value="zatwierdz" variant="primary" size="m" disabled={(decyzja.potwierdzenie ?? znaleziony.potwierdzenie) === "haslo"}>
             Zatwierdź urządzenie
           </Button>
           <Button type="submit" name="decyzja" value="odrzuc" variant="danger" size="m">

@@ -141,7 +141,7 @@ Lista urządzeń nie pokazuje kodów oczekujących żądań (tylko liczbę, adre
 oznacza nazwę jako podaną przez urządzenie i ostrzega, gdy adres żądania różni się od adresu przeglądarki.
 Globalny limit: 20 niezatwierdzonych żądań naraz (`429 too_many_pending`); wygasłe żądania są sprzątane po
 10 minutach. Zatwierdzenie urządzenia i utworzenie tokenu importu wymagają **sudo** (kod TOTP lub zapasowy, 10 min);
-tokenu importu bez włączonego 2FA nie da się utworzyć wcale, a zatwierdzenie żądania sprzed wyłączenia 2FA potwierdza się hasłem (ADR-031); odrzucenie i unieważnienie nie wymagają. Każda decyzja zostawia wpis w
+tokenu importu bez włączonego 2FA nie da się utworzyć wcale, a zatwierdzenie urządzenia bez włączonego 2FA jest zablokowane tym samym komunikatem (ADR-030, ADR-031); odrzucenie i unieważnienie nie wymagają. Każda decyzja zostawia wpis w
 `auth_events` (`device_requested`, `device_approved`, `device_denied`, `token_created`, `token_revoked`; bez kodów i haseł).
 `device/start` jest zamknięte do włączenia 2FA: bez TOTP w ustawieniach zwraca `403 device_login_requires_2fa` («Włącz 2FA, żeby łączyć urządzenia»), tak samo tworzenie tokenu importu w UI (ADR-030). `DEVICE_LOGIN_DISABLED=1` zamyka `device/start` dodatkowo (np. na czas awarii).
 

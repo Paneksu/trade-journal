@@ -37,8 +37,9 @@ describe("lista urządzeń nie ujawnia kodów oczekujących żądań", () => {
   it("akcje zatwierdzenia i tworzenia tokenu importu wymagają potwierdzenia (sudo albo hasło) i zostawiają wpis w auth_events", () => {
     const akcje = zrodlo("../actions/devices.ts");
     expect(akcje).not.toMatch(/WARUNEK SCALENIA/); // TODO z fazy 2 zamknięte
-    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, String\(d\.get\("haslo"\)/);
-    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja, haslo\)/);
+    expect(akcje).toMatch(/wymagajPotwierdzenia\(sesja\)/);
+    expect(akcje).toContain("KOMUNIKAT_WYMAGANE_2FA");
+    expect(akcje).not.toContain("verifyPassword");
     for (const rodzaj of ["device_approved", "device_denied", "token_created", "token_revoked"]) {
       expect(akcje, rodzaj).toContain(`"${rodzaj}"`);
     }

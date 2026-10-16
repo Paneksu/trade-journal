@@ -102,35 +102,30 @@ describe.skipIf(!MOZNA_NA_BAZIE)("sudo/hasło przy nadawaniu dostępu urządzeni
   const zdarzenia = (rodzaj: string) => sql`select kind, ip, user_agent, token_id, detail from auth_events where kind = ${rodzaj} and id > ${odId} order by id desc limit 5`;
 
   describe("zatwierdzenie urządzenia", () => {
-    it("2FA wyłączone: bez hasła i z błędnym hasłem nic nie zatwierdza; poprawne hasło zatwierdza i zostawia wpis bez hasła", async () => {
+    it("2FA wyłączone: zatwierdzenie jest ZABLOKOWANE nawet z poprawnym hasłem (ADR-030, 17.10.2026), nic się nie zmienia; odrzucenie działa", async () => {
       const { zatwierdzUrzadzenie } = await import("./devices");
       const z = await noweZadanie("hasło");
 
-      const brak = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"] }));
-      expect(brak.error).toContain("hasło");
-      expect(brak.potwierdzenie).toBe("haslo");
-
-      const zle = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"], haslo: "zle-haslo" }));
-      expect(zle.error).toBe("Nieprawidłowe hasło.");
-      const [przed] = await sql`select approved_at from device_codes where id = ${z.id}`;
+      for (const haslo of [undefined, "zle-haslo", HASLO]) {
+        const pola: Record<string, string | string[]> = { id: String(z.id), scope: ["read"] };
+        if (haslo) pola.haslo = haslo;
+        const w = await zatwierdzUrzadzenie({}, forma(pola));
+        expect(w.error).toBe("Włącz 2FA, żeby łączyć urządzenia");
+        expect(w.potwierdzenie).toBe("haslo");
+        expect(w.ok).toBeUndefined();
+      }
+      const [przed] = await sql`select approved_at, granted_scopes, denied_at from device_codes where id = ${z.id}`;
       expect(przed.approved_at).toBeNull();
-      const bledy = await zdarzenia("login_fail");
-      expect(bledy[0].detail.kontekst).toBe("potwierdzenie_urzadzenia");
+      expect(przed.granted_scopes).toBeNull();
+      expect(przed.denied_at).toBeNull();
+      expect(await zdarzenia("device_approved")).toHaveLength(0);
+      expect(await zdarzenia("login_fail")).toHaveLength(0); // hasło nie jest już sprawdzane, więc nie liczy błędów
 
-      const ok = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"], haslo: HASLO }));
-      expect(ok.ok, ok.error).toBe(true);
-      const [po] = await sql`select approved_at, granted_scopes from device_codes where id = ${z.id}`;
-      expect(po.approved_at).not.toBeNull();
-      expect(po.granted_scopes).toEqual(["read"]);
-
-      const [wpis] = await zdarzenia("device_approved");
-      expect(wpis.ip).toBe("203.0.113.50");
-      expect(wpis.user_agent).toBe("vitest");
-      expect(wpis.detail.zakresy).toEqual(["read"]);
-      const wszystko = JSON.stringify(await sql`select * from auth_events where id > ${odId}`);
-      expect(wszystko).not.toContain(HASLO);
-      expect(wszystko).not.toContain(z.userCode);
-      expect(wszystko).not.toContain(z.deviceCode);
+      const odrzut = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), decyzja: "odrzuc" }));
+      expect(odrzut.ok, odrzut.error).toBe(true);
+      const [po] = await sql`select approved_at, denied_at from device_codes where id = ${z.id}`;
+      expect(po.approved_at).toBeNull();
+      expect(po.denied_at).not.toBeNull();
     });
 
     it("2FA włączone bez aktywnego sudo: zatwierdzenie odrzucone z komunikatem o sudo, nic się nie zmienia", async () => {
@@ -138,7 +133,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("sudo/hasło przy nadawaniu dostępu urządzeni
       try {
         const { zatwierdzUrzadzenie } = await import("./devices");
         const z = await noweZadanie("bez sudo");
-        const w = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"], haslo: HASLO }));
+        const w = await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"] }));
         expect(w.error).toContain("sudo");
         expect(w.potwierdzenie).toBe("sudo");
         const [d] = await sql`select approved_at from device_codes where id = ${z.id}`;
@@ -205,8 +200,8 @@ describe.skipIf(!MOZNA_NA_BAZIE)("sudo/hasło przy nadawaniu dostępu urządzeni
     it("2FA wyłączone: token importu jest ZABLOKOWANY nawet z poprawnym hasłem (ADR-030, 17.10.2026), nic nie powstaje", async () => {
       const { utworzTokenImportuAkcja } = await import("./devices");
       const [{ przed }] = await sql`select count(*)::int as przed from api_tokens where created_via = 'ui' and name like 'token importu%'`;
-      for (const haslo of ["", "zle", HASLO]) {
-        const w = await utworzTokenImportuAkcja(haslo);
+      for (let i = 0; i < 2; i++) {
+        const w = await utworzTokenImportuAkcja();
         expect(w.error).toBe("Włącz 2FA, żeby łączyć urządzenia");
         expect(w.potwierdzenie).toBe("haslo");
         expect(w.token).toBeUndefined();
@@ -221,7 +216,7 @@ describe.skipIf(!MOZNA_NA_BAZIE)("sudo/hasło przy nadawaniu dostępu urządzeni
       try {
         const { utworzTokenImportuAkcja } = await import("./devices");
         const [{ przed }] = await sql`select count(*)::int as przed from api_tokens where name like 'token importu%'`;
-        const bez = await utworzTokenImportuAkcja(HASLO);
+        const bez = await utworzTokenImportuAkcja();
         expect(bez.error).toContain("sudo");
         expect(bez.token).toBeUndefined();
         const [{ po }] = await sql`select count(*)::int as po from api_tokens where name like 'token importu%'`;
@@ -252,7 +247,10 @@ describe.skipIf(!MOZNA_NA_BAZIE)("sudo/hasło przy nadawaniu dostępu urządzeni
       expect(req.detail.clientName).toBe(`cykl ${znacznik}`);
       expect(req.detail.zakresy).toEqual(["read"]);
 
-      await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"], haslo: HASLO }));
+      await wlacz2fa(); // zatwierdzenie wymaga 2FA i sudo (ADR-030, 17.10.2026)
+      sudo.doKiedy = Date.now() + 60_000;
+      await zatwierdzUrzadzenie({}, forma({ id: String(z.id), scope: ["read"] }));
+      await wylacz2fa();
       await sql`update device_codes set last_polled_at = now() - interval '10 seconds' where id = ${z.id}`;
       const { POST } = await import("@/app/api/v2/device/token/route");
       const res = await POST(zadanie("/device/token", { metoda: "POST", cialo: { deviceCode: z.deviceCode }, ip: unikalnyIp() }), undefined);
