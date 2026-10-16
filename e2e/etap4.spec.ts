@@ -154,7 +154,6 @@ test.describe("UI v2: Kalendarz, Backtest, Ustawienia, PWA", () => {
 
   test("Arkusz „+” na telefonie: notatka dopisuje się do dnia, zdjęcie z aparatu trafia do dnia jako manual", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 });
-    const [konto] = await sql`select id from accounts order by sort_order, id limit 1`;
     await page.goto("/");
     await page.getByRole("button", { name: "Szybki wpis" }).click();
     await expect(page.getByRole("dialog", { name: "Szybki wpis" })).toBeVisible();
@@ -169,7 +168,7 @@ test.describe("UI v2: Kalendarz, Backtest, Ustawienia, PWA", () => {
       await page.getByRole("textbox", { name: /Notatka dnia/ }).fill(`Szybki wpis ${RUN}`);
       await page.getByRole("button", { name: "Dopisz do dnia" }).click();
       await expect(page.getByText("Dopisano do notatki dnia.")).toBeVisible();
-      ;[notatka] = await sql<{ id: number; day: string; post_session: string }[]>`select id, day::text, post_session from day_notes where account_id = ${konto.id} and backtest_session_id is null and post_session like ${`%${wpis}`}`;
+      ;[notatka] = await sql<{ id: number; day: string; post_session: string }[]>`select id, day::text, post_session from day_notes where account_id is null and backtest_session_id is null and post_session like ${`%${wpis}`}`;
       expect(notatka?.post_session.endsWith(wpis)).toBe(true);
 
       await page.getByRole("button", { name: "Wróć do wyboru" }).click();
@@ -188,11 +187,31 @@ test.describe("UI v2: Kalendarz, Backtest, Ustawienia, PWA", () => {
       await axe(page, "arkusz szybkiego wpisu @375");
     } finally {
       // Przywracamy notatkę sprzed testu: zdejmujemy dopisek; jeśli był jedyną treścią, kasujemy wpis.
-      const [n] = await sql<{ id: number; post_session: string }[]>`select id, post_session from day_notes where account_id = ${konto.id} and post_session like ${`%${wpis}`}`;
+      const [n] = await sql<{ id: number; post_session: string }[]>`select id, post_session from day_notes where account_id is null and post_session like ${`%${wpis}`}`;
       if (n) {
         const reszta = n.post_session.slice(0, -wpis.length).replace(/\n\n$/, "");
         await sql`update day_notes set post_session = ${reszta || null} where id = ${n.id}`;
       }
+    }
+  });
+
+  test("Notatka dnia jest jedna i bez konta: kalendarz czyta wpis z API/rytuału i zapisuje w to samo miejsce", async ({ page }) => {
+    const DZIEN = "2018-05-07";
+    await sql`delete from day_notes where day = ${DZIEN} and backtest_session_id is null`;
+    try {
+      // Tak zapisuje rytuał na „Dziś” i PUT /api/v2/days/:date: notatka bez konta.
+      await sql`insert into day_notes (day, account_id, pre_session) values (${DZIEN}, null, ${`Plan z API ${RUN}`})`;
+      await page.goto(`/calendar?miesiac=2018-05&dzien=${DZIEN}`);
+      await expect(page.locator("#preSession")).toHaveValue(`Plan z API ${RUN}`);
+      await page.locator("#postSession").fill(`Po sesji z kalendarza ${RUN}`);
+      await page.getByRole("button", { name: "Zapisz notatkę" }).click();
+      await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible();
+      const wiersze = await sql`select account_id, pre_session, post_session from day_notes where day = ${DZIEN} and backtest_session_id is null`;
+      expect(wiersze).toHaveLength(1);
+      expect(wiersze[0].account_id).toBeNull();
+      expect(wiersze[0].post_session).toBe(`Po sesji z kalendarza ${RUN}`);
+    } finally {
+      await sql`delete from day_notes where day = ${DZIEN} and backtest_session_id is null`;
     }
   });
 

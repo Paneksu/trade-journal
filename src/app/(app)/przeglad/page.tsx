@@ -4,7 +4,7 @@ import { ArrowDownRight, ArrowUpRight, ChevronLeft, ChevronRight, CircleDollarSi
 import { FormularzPrzegladu } from "@/components/etap3/formularze";
 import { SlupkiR, type Slupek } from "@/components/etap3/slupki-r";
 import { Markdown } from "@/components/trade/markdown";
-import { Chip, ChipProcesu, LiczbaBohater, NaglowekStrony, Strona } from "@/components/ui/v2";
+import { Chip, ChipProcesu, LiczbaBohater, NaglowekStrony, Strona, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { dodajDni } from "@/lib/api-v2/przeglady";
@@ -205,10 +205,10 @@ async function WidokTygodnia({ tydzien }: { tydzien: string }) {
 
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <Kolumna ikona={<ArrowUpRight className="size-4 text-muted" aria-hidden />} tytul="Najlepszy proces">
-          {d.najlepsze.length === 0 ? <p className="text-karta text-muted">Brak ocenionych trade&apos;ów.</p> : <ul>{d.najlepsze.map((t) => <WierszTradu key={t.id} t={t} />)}</ul>}
+          {d.najlepsze.length === 0 ? <PustyStan tytul="Brak ocenionych trade'ów w tym tygodniu." akcja={{ href: "/trades", etykieta: "Oceń proces w Trade'ach" }} className="py-6" /> : <ul>{d.najlepsze.map((t) => <WierszTradu key={t.id} t={t} />)}</ul>}
         </Kolumna>
         <Kolumna ikona={<ArrowDownRight className="size-4 text-muted" aria-hidden />} tytul="Najgorszy proces">
-          {d.najgorsze.length === 0 ? <p className="text-karta text-muted">Brak ocenionych trade&apos;ów.</p> : <ul>{d.najgorsze.map((t) => <WierszTradu key={t.id} t={t} />)}</ul>}
+          {d.najgorsze.length === 0 ? <PustyStan tytul="Brak ocenionych trade'ów w tym tygodniu." akcja={{ href: "/trades", etykieta: "Oceń proces w Trade'ach" }} className="py-6" /> : <ul>{d.najgorsze.map((t) => <WierszTradu key={t.id} t={t} />)}</ul>}
         </Kolumna>
         <Kolumna ikona={<CircleDollarSign className="size-4 text-muted" aria-hidden />} tytul="Ile kosztowała gra poza planem" wyrozniona>
           <dl className="space-y-3">
@@ -347,7 +347,7 @@ async function WidokMiesiaca({ miesiac }: { miesiac: string }) {
       </div>
       <div className="mt-6">
         {slupki.length === 0 ? (
-          <p className="text-karta text-muted">Brak zamkniętych trade&apos;ów w tym miesiącu.</p>
+          <PustyStan tytul="Brak zamkniętych trade'ów w tym miesiącu." akcja={{ href: "/trades/new", etykieta: "Dodaj trade" }} />
         ) : (
           <SlupkiR slupki={slupki} srednia={srednia} etykieta={`Wynik w R dzień po dniu, ${monthName(miesiac)}`} opisSredniej={`Średnia na dzień z handlem: ${rValue(srednia)}`} />
         )}

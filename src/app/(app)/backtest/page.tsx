@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { SessionForm } from "@/components/backtest/session-form";
-import { Chip, Karta, NaglowekStrony, Strona } from "@/components/ui/v2";
+import { Chip, Karta, NaglowekStrony, Strona, PustyStan } from "@/components/ui/v2";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { RODZAJ_SESJI_NAZWY } from "@/lib/domain/zrodla";
@@ -56,7 +56,7 @@ export default async function BacktestPage({ searchParams }: { searchParams: Pro
         podtytul="Każda sesja ma własne założenia i własną próbkę. Trade'y z sesji nie mieszają się z dziennikiem realnym, chyba że włączysz widok „razem”."
       />
 
-      <Karta className="p-0 sm:p-0">
+      <Karta id="nowa-sesja" className="p-0 sm:p-0">
         <SessionForm strategies={strategies} instruments={instruments} compact />
       </Karta>
 
@@ -140,7 +140,7 @@ export default async function BacktestPage({ searchParams }: { searchParams: Pro
           Sesje <span className="num text-muted">{sessions.length}</span>
         </h2>
         {sessions.length === 0 ? (
-          <p className="text-karta text-muted">Nie masz jeszcze żadnej sesji. Zacznij od założeń: strategia, instrument, interwał i zakres danych; trade&apos;y dopiero potem.</p>
+          <PustyStan tytul="Nie masz jeszcze żadnej sesji." opis="Zacznij od założeń: strategia, instrument, interwał i zakres danych; trade'y dopiero potem." akcja={{ href: "#nowa-sesja", etykieta: "Załóż pierwszą sesję" }} />
         ) : (
           <ul className="karta divide-y divide-line">
             {sessions.map((s) => {

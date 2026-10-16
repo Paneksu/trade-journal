@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Chip, NaglowekStrony, Pigulka } from "@/components/ui/v2";
+import { Chip, NaglowekStrony, Pigulka, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { percent, rValue } from "@/lib/format";
@@ -36,7 +36,7 @@ export default async function PlaybookPage() {
           </>
         }
       />
-      {karty.length === 0 && <p className="karta p-6 text-meta text-muted">Brak setupów. Agent zakłada je przez łącznik, a Ty zatwierdzasz pierwszą wersję.</p>}
+      {karty.length === 0 && <PustyStan tytul="Brak setupów." opis="Agent zakłada je przez łącznik, a Ty zatwierdzasz pierwszą wersję w „Do decyzji”." akcja={{ href: "/decyzje", etykieta: "Otwórz Do decyzji" }} />}
       {grupy.map(([status, lista]) => (
         <section key={status} aria-label={NAZWY[status]}>
           <h2 className="flex h-9 items-center gap-2 border-y border-line bg-panel px-3 text-meta text-text">

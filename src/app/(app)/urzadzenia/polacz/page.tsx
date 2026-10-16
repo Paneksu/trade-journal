@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Strona } from "@/components/ui/v2";
 import { PolaczUrzadzenie } from "@/components/settings/devices";
 import { Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
@@ -11,10 +12,10 @@ export default async function PolaczUrzadzeniePage() {
   await requireSession();
 
   return (
-    <div className="space-y-4">
+    <Strona className="styl-v2 space-y-4">
       <header>
         <p className="etykieta">Urządzenia</p>
-        <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Połącz urządzenie</h1>
+        <h1 className="text-tytul font-medium tracking-tight text-text">Połącz urządzenie</h1>
       </header>
       <Panel
         title="Logowanie kodem urządzenia"
@@ -27,6 +28,6 @@ export default async function PolaczUrzadzeniePage() {
       >
         <PolaczUrzadzenie />
       </Panel>
-    </div>
+    </Strona>
   );
 }

@@ -1,4 +1,5 @@
 import { TradeForm } from "@/components/trades/trade-form";
+import { Strona } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { toLocalInput } from "@/lib/domain/calc";
 import { fieldsForScope } from "@/lib/fields/fields";
@@ -50,10 +51,10 @@ export default async function NewTradePage({
     ) ?? (activeInstruments.length > 0 ? activeInstruments : instruments)[0];
 
   return (
-    <div className="space-y-4">
+    <Strona className="styl-v2 space-y-4">
       <header>
         <p className="etykieta">Dziennik</p>
-        <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
+        <h1 className="text-tytul font-medium tracking-tight text-text">
           {statusMissed
             ? "Trade, którego nie wziąłem"
             : sessionId
@@ -86,6 +87,6 @@ export default async function NewTradePage({
           status: statusMissed ? "missed" : undefined,
         }}
       />
-    </div>
+    </Strona>
   );
 }

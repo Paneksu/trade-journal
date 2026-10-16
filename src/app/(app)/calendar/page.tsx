@@ -6,7 +6,7 @@ import { ScreenshotUploader } from "@/components/screenshots/screenshot-uploader
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { UnitSwitch } from "@/components/layout/toolbar";
 import { TradeList } from "@/components/trades/trade-list";
-import { Karta, Strona } from "@/components/ui/v2";
+import { Karta } from "@/components/ui/v2";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
 import { localDate } from "@/lib/domain/calc";
@@ -15,7 +15,7 @@ import { computeStats, dailyPnl } from "@/lib/domain/stats";
 import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getProgi } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
-import { getDayNotes, getDayScreenshots } from "@/lib/queries/journal";
+import { getNotatkiDnia, getZrzutyDnia } from "@/lib/queries/journal";
 import { closedOnly, getTrades } from "@/lib/queries/trades";
 import { longDate, money, monthName, percent, plural, pnlClass, rValue, tradesCount } from "@/lib/format";
 
@@ -41,7 +41,8 @@ export default async function CalendarPage({
   ]);
 
   const account = accounts[0];
-  const notes = await getDayNotes(from, to, account?.id);
+  // Jedna notatka dnia bez konta (r2, 16.10.2026): ta sama, którą piszą rytuał na „Dziś” i AI przez API.
+  const notes = await getNotatkiDnia(from, to);
   const currency = account?.currency ?? settings.baseCurrency;
   const progi = await getProgi();
   const closed = closedOnly(monthTrades);
@@ -58,7 +59,7 @@ export default async function CalendarPage({
   const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status));
 
   const note = day ? notes.find((n) => n.day === day) : undefined;
-  const dayShots = day ? await getDayScreenshots(note?.id) : [];
+  const dayShots = day ? await getZrzutyDnia(day) : [];
 
   const tradingDays = days.length;
   const winningDays = days.filter((d) => d.pnl > 0).length;
@@ -109,11 +110,11 @@ export default async function CalendarPage({
   ];
 
   /*
-   * UI v2 (etap 4, wzór 11 Missive Calendar): nagłówek z miesiącem i strzałkami wokół „dziś”, pasek liczb miesiąca,
-   * siatka bez odstępów z liniami 1 px na całą szerokość treści, pod nią panel dnia (trade'y, zrzuty, notatka).
+   * UI v2 (etap 4, wzór 11 Missive Calendar; r2): nagłówek z miesiącem i strzałkami wokół „dziś”, zaraz pod nim
+   * siatka na całą szerokość treści (bez kontenera 968 px), pod siatką legenda i pasek liczb miesiąca, potem panel dnia.
    */
   return (
-    <Strona className="space-y-5">
+    <div className="w-full space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-meta text-muted">Kalendarz</p>
@@ -125,17 +126,6 @@ export default async function CalendarPage({
         </div>
       </header>
 
-      <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-line py-4 sm:grid-cols-3 lg:grid-cols-6">
-        {kpi.map((k) => (
-          <div key={k.klucz} data-kpi={k.klucz} className="min-w-0">
-            <dt className="text-meta text-muted">{k.etykieta}</dt>
-            <dd className={cx("num mt-0.5 text-sekcja", k.ton || "text-text")} data-wartosc>
-              {k.wartosc}
-            </dd>
-            {k.pod && <dd className="text-meta text-muted">{k.pod}</dd>}
-          </div>
-        ))}
-      </dl>
 
       <section aria-label={`Siatka miesiąca: ${monthName(month)}`}>
         <MonthGrid
@@ -163,6 +153,18 @@ export default async function CalendarPage({
           {powody.length > 0 && <span>Powody pauz: {powody.map((p) => `${p.label} ${p.count}`).join(" · ")}</span>}
         </p>
       </section>
+
+      <dl aria-label="Podsumowanie miesiąca" className="grid grid-cols-2 gap-x-6 gap-y-4 border-b border-line pb-5 sm:grid-cols-3 lg:grid-cols-6">
+        {kpi.map((k) => (
+          <div key={k.klucz} data-kpi={k.klucz} className="min-w-0">
+            <dt className="text-meta text-muted">{k.etykieta}</dt>
+            <dd className={cx("num mt-0.5 text-sekcja", k.ton || "text-text")} data-wartosc>
+              {k.wartosc}
+            </dd>
+            {k.pod && <dd className="text-meta text-muted">{k.pod}</dd>}
+          </div>
+        ))}
+      </dl>
 
       {day && (
         <section aria-labelledby="dzien-h" className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
@@ -196,7 +198,7 @@ export default async function CalendarPage({
 
             <Karta tytul="Zrzuty dnia">
               <p className="-mt-2 mb-3 text-meta text-muted">Także dzień bez transakcji ma czego dowodzić.</p>
-              <ScreenshotUploader key={day} cel={{ typ: "dzien", day, accountId: account?.id ?? null }} shots={dayShots} opis={`dzień ${day}`} />
+              <ScreenshotUploader key={day} cel={{ typ: "dzien", day, accountId: null }} shots={dayShots} opis={`dzień ${day}`} />
             </Karta>
           </div>
 
@@ -205,7 +207,7 @@ export default async function CalendarPage({
             <DayNoteForm
               key={day}
               day={day}
-              accountId={account?.id ?? null}
+              accountId={null}
               hasTrades={dayRealne.length > 0}
               values={{
                 preSession: note?.preSession,
@@ -220,6 +222,6 @@ export default async function CalendarPage({
           </Karta>
         </section>
       )}
-    </Strona>
+    </div>
   );
 }

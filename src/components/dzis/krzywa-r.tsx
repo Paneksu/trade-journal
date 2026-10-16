@@ -7,13 +7,13 @@ import type { DzienWykresu } from "@/lib/queries/dzis";
  * a wykres kształt. Barwa stalowa (viz-8), bo akcent jest zarezerwowany dla akcji i stanu aktywnego,
  * a zieleń/czerwień dla wyniku pojedynczego trade'a.
  */
-export function KrzywaR({ punkty }: { punkty: DzienWykresu[] }) {
+export function KrzywaR({ punkty, pustyTekst = "Za mało zamkniętych dni w ostatnich 30, żeby narysować krzywą." }: { punkty: DzienWykresu[]; pustyTekst?: string }) {
   const W = 472;
   const H = 150;
   if (punkty.length < 2) {
     return (
       <div className="flex h-[150px] items-center justify-center border-t border-line text-meta text-faint">
-        Za mało zamkniętych dni w ostatnich 30, żeby narysować krzywą.
+        {pustyTekst}
       </div>
     );
   }

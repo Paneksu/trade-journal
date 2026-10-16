@@ -97,6 +97,7 @@ Status marki: częściowa (system wizualny aplikacji jest, logo nie ma).
 | 17 | Etap 2 UI v2 (Mózg: kolejka Do decyzji, listy, notatki z edytorem, profil; Playbook) przyjęty, dalej etap 3 | Słowa użytkownika: «Akceptuję, dalej etap 3» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-15 |
 | 18 | Ekran /strategies zostaje poza nawigacją (strategie sesji backtestu), link z Playbooka | Słowa użytkownika: «OK, zostaw» | Strategie opisują sesje backtestu, karty setupów je zastępują w nawigacji | 2026-10-15 |
 | 19 | Etap 3 UI v2 (Przegląd tygodnia i miesiąca, Prop: konta i konto, Statystyki v2) przyjęty, dalej etap 4 | Słowa użytkownika: «Akceptuję, dalej etap 4» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-16 |
+| 20 | Etap 4 UI v2 (Kalendarz, Backtest, Ustawienia, PWA z arkuszem „+”) przyjęty, dalej runda szlifu r2 | Słowa użytkownika: «Akceptuję» | Bramka twarda 0 przy 1440 i 375, pary r1 | 2026-10-16 |
 
 ## Znak
 Zestaw: `docs/design/znak/runda-4-fvg/v1-bycza-ce/` (favicon.svg, favicon-16/32.png, apple-touch-icon-180.png, icon-192/512.png, icon-maskable-192/512.png, glif.svg do nagłówka). Generator: `docs/audyt/robocze/generuj-znak-r4.mjs`. Wdrożenie w fazie 5 (PWA), do tego czasu w kodzie nic.

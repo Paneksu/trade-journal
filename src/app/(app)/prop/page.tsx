@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { KomorkaBufora, ProgOstrzezenia, RODZAJE_KSIEGI, TYPY_DD, wR } from "@/components/etap3/prop-wspolne";
-import { Chip, LiczbaBohater, NaglowekStrony, Strona } from "@/components/ui/v2";
+import { Chip, LiczbaBohater, NaglowekStrony, Strona, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { money, moneyShort, percent, pnlClass, shortDate } from "@/lib/format";
@@ -235,7 +235,7 @@ async function WidokKsiegi() {
         </div>
       </div>
       {k.wpisy.length === 0 ? (
-        <p className="mt-8 text-karta text-muted">Księga jest pusta. Wpisy dodasz na ekranie konta.</p>
+        <PustyStan className="mt-8" tytul="Księga jest pusta." opis="Opłaty za evale, resety i wypłaty dopisujesz na ekranie konta; wtedy zobaczysz realny zwrot." akcja={{ href: "/prop", etykieta: "Wybierz konto" }} />
       ) : (
         <table className="mt-8 w-full text-karta">
           <thead>

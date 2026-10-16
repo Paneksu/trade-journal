@@ -1,13 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { dayNotes, instruments, trades } from "@/lib/db/schema";
 import { dzienHandlowyTeraz } from "@/lib/api-v2/prop-konta";
-import { getAccounts } from "@/lib/queries/dictionaries";
 import { celKonfliktuNotatkiDnia } from "@/lib/trades/day-notes";
 
 import { addDayScreenshots } from "./journal";
@@ -17,15 +16,10 @@ import { addTradeScreenshots } from "./trades";
  * Szybkie wpisy z telefonu (UI v2, etap 4, PWA): arkusz „+” w dolnym pasku. Notatka DOPISUJE się do „Po sesji”
  * dzisiejszej notatki dnia (nic nie nadpisuje: nastrój, energia i plan zostają), zdjęcie idzie istniejącym
  * uploadem do dnia albo trade'u (origin = manual z domyślnej kolumny; zrzuty AI i z łącznika zostają nietknięte).
- * Konto notatki = to samo, które pokazuje kalendarz (pierwsze konto), żeby wpis był widoczny w panelu dnia.
+ * Notatka dnia jest jedna i bez konta (runda r2, 16.10.2026): tę samą czytają kalendarz, „Dziś” i API v2.
  */
 
 export type SzybkiStan = { ok?: boolean; komunikat?: string; error?: string };
-
-async function kontoKalendarza(): Promise<number | null> {
-  const konta = await getAccounts();
-  return konta[0]?.id ?? null;
-}
 
 export async function szybkaNotatka(_p: SzybkiStan, d: FormData): Promise<SzybkiStan> {
   await requireSession();
@@ -34,18 +28,24 @@ export async function szybkaNotatka(_p: SzybkiStan, d: FormData): Promise<Szybki
   const tekst = typeof surowy === "string" ? surowy.replace(/\r\n/g, "\n") : "";
   if (tekst.trim().length === 0) return { error: "Wpisz choć jedno zdanie." };
   const dzien = dzienHandlowyTeraz();
-  const konto = await kontoKalendarza();
-  const [obecna] = await db
-    .select({ postSession: dayNotes.postSession })
+  // Jedna notatka dnia bez konta (r2): gdy jej jeszcze nie ma, a dzień ma starszy wpis na koncie z kalendarza,
+  // nowa notatka przejmuje jego treść, żeby dopisek nie ukrył tego, co już było zapisane.
+  const wpisy = await db
+    .select()
     .from(dayNotes)
-    .where(and(eq(dayNotes.day, dzien), konto ? eq(dayNotes.accountId, konto) : isNull(dayNotes.accountId), isNull(dayNotes.backtestSessionId)))
-    .limit(1);
-  const po = obecna?.postSession?.trim() ? `${obecna.postSession}\n\n${tekst}` : tekst;
+    .where(and(eq(dayNotes.day, dzien), isNull(dayNotes.backtestSessionId)))
+    .orderBy(asc(dayNotes.id));
+  const bezKonta = wpisy.find((w) => w.accountId === null);
+  const baza = bezKonta ?? wpisy[0];
+  const po = baza?.postSession?.trim() ? `${baza.postSession}\n\n${tekst}` : tekst;
+  const przejete = !bezKonta && baza
+    ? { preSession: baza.preSession, mood: baza.mood, energy: baza.energy, dayRating: baza.dayRating, noTrade: baza.noTrade, noTradeReason: baza.noTradeReason }
+    : {};
   const teraz = new Date();
   await db
     .insert(dayNotes)
-    .values({ day: dzien, accountId: konto, backtestSessionId: null, postSession: po, updatedAt: teraz })
-    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(konto, null), set: { postSession: po, updatedAt: teraz } });
+    .values({ day: dzien, accountId: null, backtestSessionId: null, ...przejete, postSession: po, updatedAt: teraz })
+    .onConflictDoUpdate({ ...celKonfliktuNotatkiDnia(null, null), set: { postSession: po, updatedAt: teraz } });
   revalidatePath("/", "layout");
   return { ok: true, komunikat: "Dopisano do notatki dnia." };
 }
@@ -80,9 +80,8 @@ export async function szybkieZdjecie(_p: SzybkiStan, d: FormData): Promise<Szybk
   const dalej = new FormData();
   dalej.append("shot", plik);
   if (cel === "dzien") {
+    // Notatka dnia bez konta (r2): ta sama, którą czyta kalendarz, rytuał i API.
     dalej.append("day", dzienHandlowyTeraz());
-    const konto = await kontoKalendarza();
-    if (konto) dalej.append("accountId", String(konto));
     const w = await addDayScreenshots(dalej);
     return w.error ? { error: w.error } : { ok: true, komunikat: "Zdjęcie dodane do dnia." };
   }

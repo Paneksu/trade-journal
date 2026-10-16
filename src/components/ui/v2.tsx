@@ -181,3 +181,36 @@ export function ChipProcesu({ ocena }: { ocena: "A" | "B" | "C" | null }) {
     </span>
   );
 }
+
+/**
+ * Pusty stan UI v2 (runda r2): jedno zdanie, co tu będzie, i JEDNO działanie, które to zmienia.
+ * Bez ilustracji: forma wzorów (Mercury, Linear) to tekst wyśrodkowany w ramie przerywanej.
+ */
+export function PustyStan({
+  tytul,
+  opis,
+  akcja,
+  className,
+}: {
+  tytul: string;
+  opis?: ReactNode;
+  akcja?: { href: string; etykieta: string };
+  className?: string;
+}) {
+  return (
+    <div className={cx("flex flex-col items-center gap-2 rounded-[var(--radius-panel)] border border-dashed border-line-strong px-5 py-8 text-center", className)} data-pusty-stan>
+      <p className="text-karta text-text">{tytul}</p>
+      {opis && <p className="max-w-md text-meta text-muted">{opis}</p>}
+      {akcja && (
+        <Link href={akcja.href} className={cx(klasaPigulki(false), "mt-2")}>
+          {akcja.etykieta}
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/** Szkielet ładowania (runda r2): szare bloki w miejscu treści zamiast pustego ekranu; pulsowanie wyłącza reduced-motion. */
+export function Szkielet({ className }: { className?: string }) {
+  return <div aria-hidden className={cx("animate-pulse rounded-[var(--radius-tab)] bg-surface-2", className)} />;
+}

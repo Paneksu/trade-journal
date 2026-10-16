@@ -122,3 +122,34 @@ export async function countTradesOnDay(day: string): Promise<number> {
     );
   return row?.ile ?? 0;
 }
+
+/**
+ * Notatki dnia dziennika w zakresie: JEDNA na dzień (runda r2, 16.10.2026, decyzja sesji głównej: notatka dnia
+ * jest bez konta, bo tak zapisują ją rytuał na „Dziś” i AI przez `PUT /api/v2/days/:date`). Starsze wpisy
+ * kalendarza leżą na pierwszym koncie: gdy dzień nie ma notatki bez konta, pokazujemy ten starszy wpis, a pierwszy
+ * zapis z kalendarza tworzy już notatkę bez konta. Sesje backtestu mają własne notatki i tu nie wchodzą.
+ */
+export async function getNotatkiDnia(from: string, to: string): Promise<DayNote[]> {
+  const wiersze = await db
+    .select()
+    .from(dayNotes)
+    .where(and(gte(dayNotes.day, from), lte(dayNotes.day, to), isNull(dayNotes.backtestSessionId)))
+    .orderBy(asc(dayNotes.day), asc(dayNotes.id));
+  const poDniu = new Map<string, DayNote>();
+  for (const w of wiersze) {
+    const obecna = poDniu.get(w.day);
+    if (!obecna || (obecna.accountId !== null && w.accountId === null)) poDniu.set(w.day, w);
+  }
+  return [...poDniu.values()];
+}
+
+/** Zrzuty dnia dziennika ze wszystkich jego notatek (bez konta i starszych z kontem), bez sesji backtestu. */
+export async function getZrzutyDnia(day: string) {
+  return db
+    .select({ s: screenshots })
+    .from(screenshots)
+    .innerJoin(dayNotes, eq(screenshots.dayNoteId, dayNotes.id))
+    .where(and(eq(dayNotes.day, day), isNull(dayNotes.backtestSessionId)))
+    .orderBy(asc(screenshots.sortOrder), asc(screenshots.id))
+    .then((w) => w.map((x) => x.s));
+}

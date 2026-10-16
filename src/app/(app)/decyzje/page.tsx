@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 
 import { DecyzjaReguly, DecyzjaSetupu, DecyzjaSprzecznosci, DecyzjaSugestii, PotwierdzenieReguly } from "@/components/decyzje/formularze";
 import { Markdown } from "@/components/trade/markdown";
-import { Chip, NaglowekStrony } from "@/components/ui/v2";
+import { Chip, NaglowekStrony, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { linkZDowodu } from "@/lib/api-v2/luki";
 import { cx } from "@/lib/classes";
@@ -158,7 +158,7 @@ export default async function DoDecyzjiPage({ searchParams }: { searchParams: Pr
               Jedna naraz <span className="num">{kolejka.length}</span>
             </p>
             {kolejka.length === 0 ? (
-              <p className="text-meta text-muted">Brak propozycji reguł, setupów i sprzeczności.</p>
+              <PustyStan tytul="Nic nie czeka na decyzję." opis="Propozycje reguł, setupów i sprzeczności pojawią się tu, gdy AI je zgłosi." akcja={{ href: "/mozg", etykieta: "Przejdź do Mózgu" }} />
             ) : (
               <ol className="space-y-1">
                 {kolejka.map((p, i) => (

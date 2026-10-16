@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ChevronRight, Plus } from "lucide-react";
 
-import { Chip, NaglowekStrony, Pigulka } from "@/components/ui/v2";
+import { Chip, NaglowekStrony, Pigulka, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
 import { cx } from "@/lib/classes";
 import { shortDate } from "@/lib/format";
@@ -99,7 +99,7 @@ export default async function MozgPage({ searchParams }: { searchParams: Promise
           ))}
           <span className="num ml-auto text-muted">zestaw reguł v{rulesVersion}</span>
         </nav>
-        {grupy.length === 0 && <p className="py-10 text-center text-meta text-muted">Brak reguł w tym filtrze.</p>}
+        {grupy.length === 0 && <PustyStan tytul="Brak reguł w tym filtrze." akcja={{ href: "/mozg", etykieta: "Pokaż wszystkie reguły" }} />}
         {grupy.map(([s, lista]) => (
           <Grupa key={s} tytul={STATUSY_REGUL[s]} liczba={lista.length}>
             {lista.map((r) => (

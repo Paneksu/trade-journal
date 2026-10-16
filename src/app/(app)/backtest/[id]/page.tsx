@@ -1,15 +1,17 @@
 import Link from "next/link";
-import { Strona } from "@/components/ui/v2";
+import { Karta, klasaPigulki, LiczbaBohater, Strona } from "@/components/ui/v2";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 
 import { MonthGrid } from "@/components/calendar/month-grid";
 import { MonthNav } from "@/components/calendar/month-nav";
-import { EquityChart, RHistogram } from "@/components/charts/lazy";
+import { RHistogram } from "@/components/charts/lazy";
+import { KrzywaR } from "@/components/dzis/krzywa-r";
+import { KafleStatystyk } from "@/components/etap3/statystyki-v2";
+import { kafleZTradow } from "@/lib/queries/statystyki-v2";
 import { NoTradeDayForm } from "@/components/backtest/no-trade-days";
 import { SessionForm } from "@/components/backtest/session-form";
 import { DeleteSessionButton } from "@/components/backtest/session-actions";
-import { KpiRow } from "@/components/stats/kpi-row";
 import { SampleBar } from "@/components/stats/kpi";
 import { TradeList } from "@/components/trades/trade-list";
 import { DataPoint, Panel } from "@/components/ui/base";
@@ -20,7 +22,7 @@ import { backtestSessions } from "@/lib/db/schema";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, reasonName } from "@/lib/domain/day-log";
 import { assessSample } from "@/lib/domain/sample-size";
-import { computeStats, dailyPnl, equityCurve, rHistogram } from "@/lib/domain/stats";
+import { computeStats, dailyPnl, rHistogram } from "@/lib/domain/stats";
 import { czyPominiety } from "@/lib/domain/status";
 import { getAccounts, getInstruments, getProgi, getStrategies } from "@/lib/queries/dictionaries";
 import { EMPTY_FILTERS } from "@/lib/queries/filters";
@@ -70,13 +72,12 @@ export default async function BacktestSessionPage({
     : [];
   const liveStats = computeStats(liveTrades, progi);
 
-  const curve = equityCurve(closed, session.startingBalance).map((p) => ({
-    index: p.index,
-    equity: p.equity,
-    equityR: p.equityR,
-    drawdown: p.drawdown,
-    day: p.time ? localDate(p.time, settings.timezone) : null,
-  }));
+
+  // Krzywa R dzień po dniu i kafle z przedziałem (te same funkcje co Statystyki i API v2).
+  const krzywaSesji: { dzien: string; r: number; suma: number }[] = [];
+  for (const d of dailyPnl(closed)) krzywaSesji.push({ dzien: d.day, r: d.r, suma: (krzywaSesji.at(-1)?.suma ?? 0) + d.r });
+  const zR = closed.filter((t) => t.rMultiple !== null);
+  const kafle = zR.length > 0 ? kafleZTradow(zR.map((t) => ({ r: t.rMultiple as number, wynik: t.wynik }))) : null;
 
   const strategy = strategies.find((s) => s.id === session.strategyId);
   const instrument = instruments.find((i) => i.id === session.instrumentId);
@@ -144,7 +145,7 @@ export default async function BacktestSessionPage({
         <div className="flex items-center gap-2">
           <Link
             href={`/trades/new?sesja=${session.id}`}
-            className="inline-flex h-9 items-center rounded-[var(--radius-control)] bg-accent px-3.5 text-sm font-semibold text-bg transition-colors duration-150 hover:bg-accent-strong"
+            className={klasaPigulki(true)}
           >
             Dodaj trade do sesji
           </Link>
@@ -156,14 +157,23 @@ export default async function BacktestSessionPage({
         <SampleBar {...sample} />
       </div>
 
-      <KpiRow stats={stats} currency={currency} />
+      {/* UI v2 (r2): kafle z n i przedziałem 95% (wzór 10) zamiast starego rzędu KPI i krzywa R w stylu „Dziś”
+          (stalowa linia, R zamiast dolarów) zamiast pomarańczowej krzywej kapitału. */}
+      {kafle && <KafleStatystyk s={kafle} />}
 
       {closed.length > 0 && (
-        <Panel title="Krzywa kapitału sesji">
-          <div className="px-2 py-3">
-            <EquityChart points={curve} unit="cash" currency={currency} />
+        <Karta className="overflow-hidden px-0 pb-0 sm:px-0 sm:pb-0">
+          <div className="px-5 sm:px-6">
+            <p className="mb-3 text-karta text-text">Krzywa R sesji</p>
+            <LiczbaBohater tekst={rValue(stats.sumR)} />
+            <p className={cx("num text-meta", pnlClass(stats.pnl))}>
+              {money(stats.pnl, { currency, sign: true })} · n={stats.count}
+            </p>
           </div>
-        </Panel>
+          <div className="mt-4">
+            <KrzywaR punkty={krzywaSesji} pustyTekst="Krzywa pojawi się od dwóch dni z zamkniętymi trade'ami." />
+          </div>
+        </Karta>
       )}
 
       {/* Kalendarz sesji - ten sam komponent co na pulpicie i w kalendarzu

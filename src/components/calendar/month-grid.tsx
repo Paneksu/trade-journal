@@ -105,7 +105,7 @@ export function MonthGrid({
           const dzis = day === today;
           if (obcy) {
             return (
-              <div key={day} aria-hidden className={cx("min-h-14 border-r border-b border-line p-1 text-center sm:min-h-28", weekend && "bg-bg/40")}>
+              <div key={day} aria-hidden className={cx("min-h-14 border-r border-b border-line p-1 text-center sm:min-h-28 xl:min-h-32", weekend && "bg-bg/40")}>
                 <span className="num text-meta text-faint">{numer}</span>
               </div>
             );
@@ -129,7 +129,7 @@ export function MonthGrid({
               title={opis}
               aria-current={selected === day ? "date" : undefined}
               className={cx(
-                "przejscie relative flex min-h-14 flex-col items-center gap-0.5 border-r border-b border-line px-0.5 pt-1 pb-1.5 hover:bg-surface-2 sm:min-h-28 sm:px-1.5",
+                "przejscie relative flex min-h-14 flex-col items-center gap-0.5 border-r border-b border-line px-0.5 pt-1 pb-1.5 hover:bg-surface-2 sm:min-h-28 xl:min-h-32 sm:px-1.5",
                 "focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2",
                 weekend && "bg-bg/40",
                 selected === day && "bg-surface-2 ring-1 ring-inset ring-line-strong",

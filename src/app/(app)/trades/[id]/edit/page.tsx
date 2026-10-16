@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Strona } from "@/components/ui/v2";
 import { notFound } from "next/navigation";
 
 import { TradeForm } from "@/components/trades/trade-form";
@@ -40,7 +41,7 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
     ]);
 
   return (
-    <div className="space-y-4">
+    <Strona className="styl-v2 space-y-4">
       <header>
         <p className="etykieta">
           <Link href={`/trades/${trade.id}`} className="hover:text-text">
@@ -48,7 +49,7 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           </Link>{" "}
           / edycja
         </p>
-        <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">
+        <h1 className="text-tytul font-medium tracking-tight text-text">
           Edytuj trade na {trade.instrumentSymbol}
         </h1>
       </header>
@@ -102,6 +103,6 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
           })),
         }}
       />
-    </div>
+    </Strona>
   );
 }

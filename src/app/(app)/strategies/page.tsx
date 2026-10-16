@@ -1,4 +1,5 @@
 import { StrategyForm } from "@/components/strategies/strategy-form";
+import { Strona } from "@/components/ui/v2";
 import { EmptyState, Panel } from "@/components/ui/base";
 import { requireSession } from "@/lib/auth/guard";
 import { getInstruments, getStrategies } from "@/lib/queries/dictionaries";
@@ -11,10 +12,10 @@ export default async function StrategiesPage() {
   const [strategies, instruments] = await Promise.all([getStrategies(), getInstruments()]);
 
   return (
-    <div className="space-y-4">
+    <Strona className="styl-v2 space-y-4">
       <header>
         <p className="etykieta">Warsztat</p>
-        <h1 className="text-xl font-semibold tracking-tight text-text sm:text-2xl">Strategie</h1>
+        <h1 className="text-tytul font-medium tracking-tight text-text">Strategie</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
           Strategia to nazwa plus checklista wejścia. Od 2026-08-29 opisuje SESJĘ BACKTESTU,
           nie pojedynczy trade — w dzienniku typ zagrania nazywa tag „Styl wejścia”.
@@ -64,6 +65,6 @@ export default async function StrategiesPage() {
           ))}
         </div>
       )}
-    </div>
+    </Strona>
   );
 }
