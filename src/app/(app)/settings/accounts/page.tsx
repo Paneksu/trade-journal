@@ -1,5 +1,7 @@
 import { AccountForm, NewAccount } from "@/components/settings/forms";
+import { StawkiKonta } from "@/components/polaczenia/wynik-netto";
 import { Panel } from "@/components/ui/base";
+import { kontaZeStawkami } from "@/lib/queries/broker";
 import { requireSession } from "@/lib/auth/guard";
 import { getAccounts } from "@/lib/queries/dictionaries";
 import { FAZA_PROP_NAZWY } from "@/lib/domain/kategorie";
@@ -16,7 +18,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 export default async function AccountsSettingsPage() {
   await requireSession();
-  const accounts = await getAccounts();
+  const [accounts, stawki] = await Promise.all([getAccounts(), kontaZeStawkami()]);
 
   return (
     <div className="space-y-4">
@@ -47,6 +49,15 @@ export default async function AccountsSettingsPage() {
               sortOrder: a.sortOrder,
             }}
           />
+          {a.type === "prop" ? (
+            <p className="border-t border-line px-4 py-3 text-xs text-muted">Stawka opłat tego konta prop pochodzi z reguł: ustawisz ją przy przypięciu presetu na ekranie konta w Prop.</p>
+          ) : (
+            <div className="border-t border-line px-4 py-3">
+              <p className="mb-2 text-sm font-semibold text-text">Stawki opłat</p>
+              <p className="mb-3 text-xs text-faint">Opłata za kontrakt w obie strony (prowizja, giełda, NFA). Puste pole znaczy „brak stawki”, a wynik zostaje brutto z flagą.</p>
+              {stawki.find((s) => s.id === a.id) && <StawkiKonta konto={stawki.find((s) => s.id === a.id)!} />}
+            </div>
+          )}
         </Panel>
       ))}
     </div>

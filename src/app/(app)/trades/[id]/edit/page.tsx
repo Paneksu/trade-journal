@@ -4,6 +4,7 @@ import { czyWynikUkryty } from "@/lib/api-v2/ukrycie-wyniku";
 import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 
+import { stawkiDlaFormularza } from "@/lib/queries/broker";
 import { TradeForm } from "@/components/trades/trade-form";
 import { requireSession } from "@/lib/auth/guard";
 import { toLocalInput } from "@/lib/domain/calc";
@@ -68,6 +69,7 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
       </header>
 
       <TradeForm
+        stawki={await stawkiDlaFormularza()}
         accounts={accounts}
         instruments={instruments}
         sessions={sessions}

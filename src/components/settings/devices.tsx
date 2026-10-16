@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Button, Checkbox, ErrorMessage, Input, Label, SuccessMessage } from "@/components/ui/base";
-import { type Potwierdzenie, odrzucOczekujace, uniewaznUrzadzenie, utworzTokenImportuAkcja, type TokenImportuState, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
+import { type Potwierdzenie, odrzucOczekujace, uniewaznUrzadzenie, utworzTokenBrokeraAkcja, utworzTokenImportuAkcja, type TokenImportuState, zatwierdzUrzadzenie, znajdzKod, type PolaczState } from "@/lib/actions/devices";
 import { czyInnyAdres } from "@/lib/api-v2/adres";
 import { dateTime } from "@/lib/format";
 
@@ -203,6 +203,77 @@ export function TokenImportuPrzycisk({ potwierdzenie }: { potwierdzenie: Potwier
           <p className="text-xs text-faint">Ważny do {dateTime(stan.expiresAt)}. Zakresy: read, write, propose, import.</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Token automatu eksportów z rachunku (`import_broker`, ADR-034 pkt 3). Jedyny zakres: wysyłanie plików z folderu Pobrane.
+ * Wydawanie jak token importu: sudo albo hasło przy wyłączonym 2FA; token pokazujemy jeden raz.
+ */
+export function TokenBrokeraPrzycisk({ potwierdzenie }: { potwierdzenie: Potwierdzenie }) {
+  const [pending, start] = useTransition();
+  const [stan, ustawStan] = useState<TokenImportuState>({});
+  const [haslo, ustawHaslo] = useState("");
+  const [kopia, ustawKopie] = useState<string | null>(null);
+  const wymagane = stan.potwierdzenie ?? potwierdzenie;
+
+  const kopiuj = async () => {
+    try {
+      await navigator.clipboard.writeText(stan.token ?? "");
+      ustawKopie("Skopiowano do schowka.");
+    } catch {
+      ustawKopie("Nie udało się skopiować. Zaznacz token i skopiuj ręcznie.");
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {wymagane === "haslo" && (
+        <div className="max-w-xs">
+          <Label htmlFor="haslo-brokera" hint="2FA jest wyłączone: potwierdź hasłem">Hasło</Label>
+          <Input id="haslo-brokera" data-testid="token-brokera-haslo" type="password" autoComplete="current-password" value={haslo} onChange={(e) => ustawHaslo(e.target.value)} />
+        </div>
+      )}
+      {wymagane === "sudo" && (
+        <p role="status" className="text-xs text-muted">
+          Wydanie tokenu automatu wymaga trybu sudo: <a href="/settings/security" className="text-accent underline">Ustawienia → Bezpieczeństwo</a>.
+        </p>
+      )}
+      <Button
+        type="button"
+        variant="secondary"
+        size="m"
+        data-testid="token-brokera-wydaj"
+        disabled={pending}
+        onClick={() => {
+          if (!window.confirm("Wydać token automatu eksportów? Służy tylko do wysyłania plików z folderu Pobrane, ważny 90 dni. Pokażę go tylko raz.")) return;
+          start(async () => {
+            const w = await utworzTokenBrokeraAkcja(haslo);
+            ustawHaslo("");
+            ustawKopie(null);
+            ustawStan(w);
+          });
+        }}
+      >
+        {pending ? "Chwila…" : "Wydaj token"}
+      </Button>
+      <div role="status" aria-live="polite">
+        {stan.error && <ErrorMessage>{stan.error}</ErrorMessage>}
+        {stan.token && (
+          <div className="space-y-2 rounded-[var(--radius-control)] border border-line-strong bg-surface-2 p-3 text-sm" data-testid="token-brokera-pokaz">
+            <p className="text-text">Skopiuj token teraz. Nie pokażę go drugi raz.</p>
+            <code className="block break-all font-mono text-xs text-text" data-testid="token-brokera">{stan.token}</code>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="secondary" size="m" data-testid="token-brokera-kopiuj" onClick={kopiuj}>
+                Kopiuj token
+              </Button>
+              {kopia && <span className="text-xs text-muted">{kopia}</span>}
+            </div>
+            <p className="text-xs text-faint">Ważny do {dateTime(stan.expiresAt)}. W terminalu wpisz <code className="font-mono">tj watch-exports login</code> i wklej token.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

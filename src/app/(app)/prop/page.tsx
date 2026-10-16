@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
+import { ZakladkiProp } from "@/components/etap3/zakladki-prop";
 import { KomorkaBufora, ProgOstrzezenia, RODZAJE_KSIEGI, TYPY_DD, wR } from "@/components/etap3/prop-wspolne";
 import { Chip, LiczbaBohater, NaglowekStrony, Strona, PustyStan } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
@@ -16,32 +17,6 @@ export const metadata = { title: "Prop — Dziennik tradingowy" };
  * (do DD i limitu dnia) w R i $. Wiersz konta prowadzi do ekranu konta (wzór 7b). Marka: R przed $, Plex Mono,
  * progi 50/75/90 jako pigułki, czerwień dopiero od 90%.
  */
-
-const ZAKLADKI = [
-  { klucz: "konta", e: "Konta" },
-  { klucz: "presety", e: "Presety firm" },
-  { klucz: "ksiega", e: "Księga kosztów" },
-] as const;
-
-function Zakladki({ aktywna }: { aktywna: string }) {
-  return (
-    <nav aria-label="Widoki prop" className="mt-5 flex gap-6 overflow-x-auto border-b border-line">
-      {ZAKLADKI.map((z) => (
-        <Link
-          key={z.klucz}
-          href={z.klucz === "konta" ? "/prop" : `/prop?widok=${z.klucz}`}
-          aria-current={aktywna === z.klucz ? "page" : undefined}
-          className={cx(
-            "przejscie -mb-px border-b-2 py-2.5 text-karta whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2",
-            aktywna === z.klucz ? "border-accent text-text" : "border-transparent text-muted hover:text-text",
-          )}
-        >
-          {z.e}
-        </Link>
-      ))}
-    </nav>
-  );
-}
 
 async function WidokKont() {
   const d = await kontaProp();
@@ -275,7 +250,7 @@ export default async function PropPage({ searchParams }: { searchParams: Promise
   return (
     <Strona>
       <NaglowekStrony tytul="Prop" podtytul="Ile zostało do limitów, ile kosztują evale, ile wraca w wypłatach." />
-      <Zakladki aktywna={widok} />
+      <ZakladkiProp aktywna={widok} />
       {widok === "konta" ? <WidokKont /> : widok === "presety" ? <WidokPresetow /> : <WidokKsiegi />}
     </Strona>
   );

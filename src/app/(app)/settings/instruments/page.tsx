@@ -1,5 +1,7 @@
 import { InstrumentForm, NewInstrument } from "@/components/settings/forms";
+import { KlasaInstrumentu } from "@/components/polaczenia/wynik-netto";
 import { Panel } from "@/components/ui/base";
+import { instrumentyZKlasa } from "@/lib/queries/broker";
 import { requireSession } from "@/lib/auth/guard";
 import { getInstruments } from "@/lib/queries/dictionaries";
 import { money, price } from "@/lib/format";
@@ -8,7 +10,7 @@ export const metadata = { title: "Instrumenty — Dziennik tradingowy" };
 
 export default async function InstrumentsSettingsPage() {
   await requireSession();
-  const instruments = await getInstruments();
+  const [instruments, klasy] = await Promise.all([getInstruments(), instrumentyZKlasa()]);
 
   return (
     <div className="space-y-4">
@@ -45,6 +47,13 @@ export default async function InstrumentsSettingsPage() {
               sortOrder: i.sortOrder,
             }}
           />
+          {klasy.find((k) => k.id === i.id) && (
+            <div className="border-t border-line px-4 py-3">
+              <p className="mb-1 text-sm font-semibold text-text">Klasa kontraktu</p>
+              <p className="mb-2 text-xs text-faint">Mini albo micro: od niej zależy, którą stawkę opłat dostanie trade. Bez klasy wynik zostaje brutto.</p>
+              <KlasaInstrumentu instrument={klasy.find((k) => k.id === i.id)!} />
+            </div>
+          )}
         </Panel>
       ))}
     </div>

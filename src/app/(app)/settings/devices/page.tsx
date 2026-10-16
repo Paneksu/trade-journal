@@ -1,9 +1,10 @@
 import Link from "next/link";
 
-import { OdrzucOczekujacePrzycisk, TokenImportuPrzycisk, UniewaznPrzycisk } from "@/components/settings/devices";
+import { OdrzucOczekujacePrzycisk, TokenBrokeraPrzycisk, TokenImportuPrzycisk, UniewaznPrzycisk } from "@/components/settings/devices";
 import { Badge, EmptyState, Panel } from "@/components/ui/base";
 import { listaTokenow, oczekujaceKody, DNI_NIEAKTYWNOSCI } from "@/lib/api-v2/urzadzenia";
 import { requireSession } from "@/lib/auth/guard";
+import { stanAutomatu } from "@/lib/queries/broker";
 import { stanSudo } from "@/lib/auth/zadanie";
 import { dateTime } from "@/lib/format";
 
@@ -16,10 +17,54 @@ export default async function DevicesSettingsPage() {
   const sesja = await requireSession();
   const sudo = await stanSudo(sesja);
   const potwierdzenie = sudo.stan === "aktywny" ? "aktywne" : sudo.stan === "wymagany" ? "sudo" : "haslo";
-  const [tokeny, oczekujace] = await Promise.all([listaTokenow(), oczekujaceKody()]);
+  const [tokeny, oczekujace, automat] = await Promise.all([listaTokenow(), oczekujaceKody(), stanAutomatu()]);
 
   return (
     <div className="space-y-4">
+      <div id="automat-eksportow" className="scroll-mt-20">
+        <Panel
+          title="Automat eksportów z rachunku"
+          description="Po kliknięciu Eksport w platformie automat sam wyśle plik z folderu Pobrane do dziennika."
+        >
+          <div className="space-y-3 px-4 py-3">
+            <p className="text-sm text-muted">
+              Token służy tylko do wysyłania plików z folderu Pobrane. Niczego więcej nie otworzy: nie czyta trade&apos;ów, notatek ani ustawień. Jest ważny 90 dni i osobny od tokenu, którym pracuje AI.
+            </p>
+            {!automat.skonfigurowane && (
+              <p role="alert" className="text-sm text-loss">Serwer nie ma klucza importu z rachunku (BROKER_ID_HMAC_KEY), więc automat nie będzie mógł niczego przyjąć.</p>
+            )}
+            <TokenBrokeraPrzycisk potwierdzenie={potwierdzenie} />
+            <div className="space-y-1 text-xs text-faint">
+              <p>Instalacja automatu na komputerze: <code className="font-mono text-muted">tj watch-exports install</code> (raz; uruchamia się przy logowaniu do Windows).</p>
+              <p>Logowanie tokenem: <code className="font-mono text-muted">tj watch-exports login</code>.</p>
+            </div>
+          </div>
+          {automat.tokeny.length === 0 ? (
+            <p className="border-t border-line px-4 py-3 text-sm text-muted" data-testid="token-brokera-brak">Nie wydano jeszcze żadnego tokenu automatu.</p>
+          ) : (
+            <ul className="border-t border-line" data-testid="token-brokera-lista">
+              {automat.tokeny.map((t) => {
+                const aktywny = !t.revoked && !t.expired;
+                return (
+                  <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3 last:border-0">
+                    <div className="min-w-0 text-sm">
+                      <p className="text-text">{t.name}</p>
+                      <p className="font-mono text-xs text-faint">tj_{t.prefix}_… · wydany {dateTime(t.createdAt)}</p>
+                      <p className="text-xs text-muted">
+                        ważny do {t.expiresAt ? dateTime(t.expiresAt) : "bez terminu"} · ostatnie użycie {t.lastUsedAt ? dateTime(t.lastUsedAt) : "nigdy"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge>{t.revoked ? "unieważniony" : t.expired ? "wygasł" : "aktywny"}</Badge>
+                      {aktywny && <UniewaznPrzycisk id={t.id} nazwa={t.name} />}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+      </div>
       <Panel
         title="Urządzenia z dostępem do API"
         description="Każde urządzenie (łącznik tj, asystent AI) ma własny token z zakresami. Unieważnienie działa od razu, bez restartu."

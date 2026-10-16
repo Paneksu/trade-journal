@@ -13,6 +13,7 @@ import {
   getTags,
 } from "@/lib/queries/dictionaries";
 import { lastUsed } from "@/lib/queries/trades";
+import { stawkiDlaFormularza } from "@/lib/queries/broker";
 
 export const metadata = { title: "Nowy trade — Dziennik tradingowy" };
 
@@ -64,6 +65,7 @@ export default async function NewTradePage({
       </header>
 
       <TradeForm
+        stawki={await stawkiDlaFormularza()}
         accounts={active.length > 0 ? active : accounts}
         instruments={activeInstruments.length > 0 ? activeInstruments : instruments}
         sessions={sessions.filter((s) => s.status === "running")}

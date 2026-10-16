@@ -14,7 +14,9 @@ import { KafleStatystyk, SekcjaStatystykV2 } from "@/components/etap3/statystyki
 import { NaglowekStrony, Strona } from "@/components/ui/v2";
 import { kafleZTradow, statystykiV2 } from "@/lib/queries/statystyki-v2";
 import { DataPoint, EmptyState, Panel } from "@/components/ui/base";
+import Link from "next/link";
 import { requireSession } from "@/lib/auth/guard";
+import { stanOplat } from "@/lib/queries/broker";
 import { localDate } from "@/lib/domain/calc";
 import { scoreDiscipline } from "@/lib/domain/discipline";
 import { findEdges } from "@/lib/domain/edge-finder";
@@ -71,7 +73,7 @@ export default async function StatsPage({
       getRegulyOcen(),
     ]);
 
-  const [progi, v2] = await Promise.all([getProgi(), statystykiV2()]);
+  const [progi, v2, oplaty] = await Promise.all([getProgi(), statystykiV2(), stanOplat()]);
   const closed = closedOnly(trades);
   const stats = computeStats(closed, progi);
   const pominiete = trades.filter((t) => czyPominiety(t.status));
@@ -132,6 +134,16 @@ export default async function StatsPage({
           </>
         }
       />
+
+      {oplaty.bezOplat > 0 && (
+        <p className="text-meta text-muted" data-testid="stats-bez-oplat">
+          Część historii bez opłat (<span className="num">{oplaty.bezOplat}</span> z <span className="num">{oplaty.razem}</span> trade&apos;ów), więc te wyniki są brutto.{" "}
+          <Link href="/prop/polaczenia#wynik-netto" className="przejscie underline underline-offset-2 hover:text-text">
+            Przelicz historię
+          </Link>
+          .
+        </p>
+      )}
 
       <FilterBar
         accounts={accounts}

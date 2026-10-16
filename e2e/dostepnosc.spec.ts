@@ -24,6 +24,8 @@ const EKRANY = [
   { nazwa: "urządzenia (tokeny API)", adres: "/settings/devices" },
   { nazwa: "połącz urządzenie", adres: "/urzadzenia/polacz" },
   { nazwa: "dzień w kalendarzu", adres: "/calendar?miesiac=2020-03&dzien=2020-03-03" },
+  { nazwa: "prop: połączenia (dane z rachunku)", adres: "/prop/polaczenia" },
+  { nazwa: "ustawienia: konta ze stawkami opłat", adres: "/settings/accounts" },
 ];
 
 for (const ekran of EKRANY) {

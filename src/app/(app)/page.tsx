@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, ChevronRight, Lock, Plus } from "lucide-react";
 
+import { KontaDnia } from "@/components/dzis/konta-dnia";
+import { RachunekDzis } from "@/components/dzis/rachunek";
 import { KrzywaR } from "@/components/dzis/krzywa-r";
 import { ChecklistaRegul, FormularzPoSesji, FormularzPrzedSesja, Rozwijane } from "@/components/dzis/formularze";
 import { ChipProcesu, Karta, LiczbaBohater, NaglowekSekcji, NaglowekStrony, PasekZuzycia, Pigulka, Strona } from "@/components/ui/v2";
@@ -9,6 +11,7 @@ import { cx } from "@/lib/classes";
 import { maWynik } from "@/lib/domain/status";
 import { money, pnlClass, rValue, timeOnly } from "@/lib/format";
 import { daneDzis } from "@/lib/queries/dzis";
+import { kontaDnia, stanAutomatu, uzgodnioneZRachunku } from "@/lib/queries/broker";
 import { procesISetupy } from "@/lib/queries/ui-v2";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 
@@ -68,6 +71,7 @@ function KartaPomocnicza({
 export default async function DzisPage() {
   const settings = await requireSession();
   const d = await daneDzis();
+  const [dniaKonta, rachunekUzgodnione, automat] = await Promise.all([kontaDnia(d.dzis), uzgodnioneZRachunku(5, 30), stanAutomatu()]);
   const notatka = d.dzien.dayNote;
   const procesy = await procesISetupy(d.tradeyDnia.map((t) => t.id));
   const lacznieDecyzji = d.doDecyzji.reguly + d.doDecyzji.setupy + d.doDecyzji.sugestie + d.doDecyzji.prop;
@@ -276,6 +280,14 @@ export default async function DzisPage() {
         </KartaPomocnicza>
       </div>
 
+      <Karta tytul="Rachunek" id="rachunek" akcje={<Link href="/prop/polaczenia" className="przejscie inline-flex items-center gap-0.5 text-meta text-muted hover:text-text">Połączenia <ChevronRight size={14} aria-hidden /></Link>}>
+        <RachunekDzis
+          automat={{ skonfigurowane: automat.skonfigurowane, aktywnyToken: automat.tokeny.some((t) => !t.revoked && !t.expired) }}
+          wiersze={rachunekUzgodnione}
+          strefa={settings.timezone ?? "Europe/Warsaw"}
+        />
+      </Karta>
+
       {/* Sekcja „Sesja” w 2 kartach (wzór: Money movement, Money in | Money out). */}
       <div className="space-y-4 pt-5">
         <NaglowekSekcji>Sesja</NaglowekSekcji>
@@ -283,6 +295,7 @@ export default async function DzisPage() {
             szerokość w dwóch kolumnach: bez pustej połowy karty (bramka etapu 1, runda 2). */}
         <div className={cx("grid gap-6", !d.dzien.resultHidden && "lg:grid-cols-2")}>
           <Karta id="przed-sesja" tytul="Przed sesją">
+            <KontaDnia dzien={d.dzis} konta={dniaKonta.konta} wczoraj={dniaKonta.wczoraj} />
             <Rozwijane etykieta="Uzupełnij rytuał">
             <FormularzPrzedSesja
               dzien={d.dzis}

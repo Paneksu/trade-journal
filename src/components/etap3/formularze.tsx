@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
 
 import { Checkbox, ErrorMessage, Input, Label, Select, SuccessMessage, Textarea } from "@/components/ui/base";
@@ -77,7 +77,19 @@ export function FormularzPrzegladu({ weekStart, poprzednie }: { weekStart: strin
   );
 }
 
-export type PresetOpcja = { id: number; etykieta: string; firm: string; doWeryfikacji: boolean; wiekDni: number };
+export type PresetOpcja = {
+  id: number;
+  etykieta: string;
+  firm: string;
+  doWeryfikacji: boolean;
+  wiekDni: number;
+  /** Stawka opłat round turn za kontrakt (centy) i źródło z presetu (ADR-034 pkt 5). */
+  feeMiniCents?: number | null;
+  feeMicroCents?: number | null;
+  feeSourceUrl?: string | null;
+};
+
+const naUsd = (c: number | null | undefined): string => (c === null || c === undefined ? "" : (c / 100).toFixed(2).replace(".", ","));
 
 const TYPY_DD = [
   { v: "", e: "z presetu" },
@@ -98,9 +110,14 @@ function Pole({ id, etykieta, nazwa, hint, typ = "text", inputMode }: { id: stri
   );
 }
 
-export function FormularzPresetu({ accountId, presety, dzis }: { accountId: number; presety: PresetOpcja[]; dzis: string }) {
+export function FormularzPresetu({ accountId, presety, dzis, onZapisano }: { accountId: number; presety: PresetOpcja[]; dzis: string; onZapisano?: () => void }) {
   const [stan, akcja] = useActionState<Etap3State, FormData>(przypnijPreset, {});
   const [wybrany, setWybrany] = useState("");
+  const [feeMini, setFeeMini] = useState("");
+  const [feeMicro, setFeeMicro] = useState("");
+  useEffect(() => {
+    if (stan.ok) onZapisano?.();
+  }, [stan.ok, onZapisano]);
   const preset = presety.find((p) => String(p.id) === wybrany) ?? null;
   const firmy = [...new Set(presety.map((p) => p.firm))];
   const p = (n: string) => `${n}-${accountId}`;
@@ -110,7 +127,12 @@ export function FormularzPresetu({ accountId, presety, dzis }: { accountId: numb
       <div className="grid gap-4 sm:grid-cols-[1fr_12rem]">
         <div className="space-y-1">
           <Label htmlFor={p("preset")}>Preset firmy</Label>
-          <Select id={p("preset")} name="presetId" value={wybrany} onChange={(e) => setWybrany(e.target.value)}>
+          <Select id={p("preset")} name="presetId" value={wybrany} onChange={(e) => {
+              setWybrany(e.target.value);
+              const nowy = presety.find((x) => String(x.id) === e.target.value);
+              setFeeMini(naUsd(nowy?.feeMiniCents));
+              setFeeMicro(naUsd(nowy?.feeMicroCents));
+            }}>
             <option value="">Bez presetu (wpisuję ręcznie)</option>
             {firmy.map((f) => (
               <optgroup key={f} label={f}>
@@ -128,6 +150,15 @@ export function FormularzPresetu({ accountId, presety, dzis }: { accountId: numb
           {preset && (
             <p className="text-meta text-muted">
               Odczytany {preset.wiekDni} dni temu{preset.doWeryfikacji ? "; wartości do sprawdzenia z regulaminem" : ""}.
+              {preset.feeSourceUrl && (
+                <>
+                  {" "}Źródło stawki opłat:{" "}
+                  <a href={preset.feeSourceUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-text">
+                    strona firmy
+                  </a>
+                  .
+                </>
+              )}
             </p>
           )}
         </div>
@@ -138,6 +169,23 @@ export function FormularzPresetu({ accountId, presety, dzis }: { accountId: numb
           <Input id={p("od")} name="validFrom" type="date" defaultValue={dzis} required />
         </div>
       </div>
+      <fieldset className="space-y-2" data-testid="preset-oplaty">
+        <legend className="etykieta mb-1 block">Opłaty transakcyjne (podpowiedziane z presetu, możesz zmienić)</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor={p("fee-mini")}>Opłata za kontrakt mini (USD, w obie strony)</Label>
+            <Input id={p("fee-mini")} name="feeMini" inputMode="decimal" autoComplete="off" value={feeMini} onChange={(e) => setFeeMini(e.target.value)} placeholder={preset ? "brak w presecie" : "brak stawki"} className="num" />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={p("fee-micro")}>Opłata za kontrakt micro (USD, w obie strony)</Label>
+            <Input id={p("fee-micro")} name="feeMicro" inputMode="decimal" autoComplete="off" value={feeMicro} onChange={(e) => setFeeMicro(e.target.value)} placeholder={preset ? "brak w presecie" : "brak stawki"} className="num" />
+          </div>
+        </div>
+        <p className="text-meta text-muted">
+          Stawka liczy opłaty trade&apos;ów bez kwoty z rachunku. Puste pole znaczy „z presetu”{preset ? "" : " (bez presetu: brak stawki)"}.
+          {!preset && " Źródło stawki wpisz w nadpisaniach poniżej."}
+        </p>
+      </fieldset>
       <details className="group">
         <summary className="przejscie cursor-pointer text-karta text-muted hover:text-text">Nadpisz wartości presetu (puste pole = wartość z presetu)</summary>
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -161,6 +209,9 @@ export function FormularzPresetu({ accountId, presety, dzis }: { accountId: numb
           <Pole id={p("micro")} nazwa="maxMicro" etykieta="Maks. kontraktów micro" inputMode="numeric" />
           <div className="sm:col-span-3">
             <Pole id={p("zrodlo")} nazwa="sourceUrl" etykieta="Źródło (adres regulaminu)" typ="url" />
+          </div>
+          <div className="sm:col-span-3">
+            <Pole id={p("zrodlo-fee")} nazwa="feeSourceUrl" etykieta="Źródło stawki opłat (adres https)" typ="url" />
           </div>
         </div>
       </details>

@@ -150,14 +150,16 @@ test.describe("UI v2: szkielet, Dziś, lista i szczegół trade'a", () => {
     await pole.fill(tekst);
     await expect(pole).toHaveValue(tekst);
     await page.getByRole("button", { name: "Zapisz rytuał" }).click();
-    await expect(page.getByRole("status")).toContainText("Zapisano");
+    // 17.10.2026: na Dziś są teraz trzy obszary role=status (rytuał, konta dnia, rachunek), więc szukamy tego z komunikatem
+    await expect(page.getByRole("status").filter({ hasText: "Zapisano" })).toBeVisible();
     const nowe = await sql`select id, text from user_words where role = 'day.invalidation' and id > ${przed.id ?? 0}`;
     try {
       expect(nowe).toHaveLength(1);
       expect(nowe[0].text).toBe(tekst);
       // Drugi zapis tej samej treści nie mnoży wpisów.
       await page.getByRole("button", { name: "Zapisz rytuał" }).click();
-      await expect(page.getByRole("status")).toContainText("Zapisano");
+      // 17.10.2026: na Dziś są teraz trzy obszary role=status (rytuał, konta dnia, rachunek), więc szukamy tego z komunikatem
+    await expect(page.getByRole("status").filter({ hasText: "Zapisano" })).toBeVisible();
       const [{ n }] = await sql`select count(*)::int as n from user_words where role = 'day.invalidation' and id > ${przed.id ?? 0}`;
       expect(n).toBe(1);
     } finally {

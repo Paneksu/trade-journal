@@ -343,7 +343,10 @@ test("kwota z brokera na kawałku liczy cenę wyjścia zgodnie z siatką tickow�
 
   await expect(page).toHaveURL(/\/trades\/\d+$/);
   await expect(page.getByText(/\+255,00\s?USD/).first()).toBeVisible();
-  await expect(page.getByText(/\+260,00\s?USD/)).toHaveCount(0);
+  // 17.10.2026 (ADR-034): karta pokazuje teraz obok wyniku z rachunku takze »Wynik wyliczony« z cen (260,00), wiec 260 moze byc
+  // tylko tam, a nie jako wynik trade'a. Wynik trade'a (naglowek) to 255.
+  await expect(page.getByText("Wynik wyliczony")).toBeVisible();
+  await expect(page.getByText(/\+260,00\s?USD/)).toHaveCount(1);
 
   // Edycja wraca z wypelniona kwota (po rozwinieciu "kwota i notatka"), a
   // jej skasowanie oddaje wynik siatce.

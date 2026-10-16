@@ -269,7 +269,7 @@ test.describe("ocena AI w interfejsie", () => {
     await expect(faza).toHaveValue("eval");
 
     await faza.selectOption("funded");
-    await sekcja.getByRole("button", { name: /Zapisz/ }).click();
+    await sekcja.getByRole("button", { name: /^Zapisz$/ }).click();
     await expect(sekcja.getByText("Zapisano konto.")).toBeVisible();
     const [po] = await sql`select prop_phase from accounts where id = ${kontoId}`;
     expect(po.prop_phase).toBe("funded");
@@ -277,7 +277,7 @@ test.describe("ocena AI w interfejsie", () => {
     // Zmiana typu chowa pole, a zapis czyści fazę (CHECK w bazie trzyma ją tylko przy prop).
     await sekcja.getByLabel("Typ").selectOption("demo");
     await expect(sekcja.getByLabel("Faza konta prop")).toHaveCount(0);
-    await sekcja.getByRole("button", { name: /Zapisz/ }).click();
+    await sekcja.getByRole("button", { name: /^Zapisz$/ }).click();
     await expect(sekcja.getByText("Zapisano konto.")).toBeVisible();
     // Komunikat "Zapisano" z poprzedniego zapisu wisi dalej, więc czekamy na bazę, nie na komunikat.
     const konto = async () =>
@@ -288,7 +288,7 @@ test.describe("ocena AI w interfejsie", () => {
     await sekcja.getByLabel("Typ").selectOption("prop");
     await expect(sekcja.getByLabel("Faza konta prop")).toHaveValue("");
     await sekcja.getByLabel("Faza konta prop").selectOption("eval");
-    await sekcja.getByRole("button", { name: /Zapisz/ }).click();
+    await sekcja.getByRole("button", { name: /^Zapisz$/ }).click();
     await expect(sekcja.getByText("Zapisano konto.")).toBeVisible();
     await expect.poll(konto).toMatchObject({ type: "prop", prop_phase: "eval" });
   });

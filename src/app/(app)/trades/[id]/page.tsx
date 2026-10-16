@@ -22,6 +22,7 @@ import { dateTime, duration, int, longDate, money, num, percent, pnlClass, price
 import { getFields } from "@/lib/queries/dictionaries";
 import { getOceny } from "@/lib/queries/oceny";
 import { getScreenshots, getTrade } from "@/lib/queries/trades";
+import { daneRachunkuTradu } from "@/lib/queries/broker";
 import { MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
 import { PrzejscieStrony, Wejscie } from "@/components/ui/ruch";
@@ -133,6 +134,8 @@ export default async function TradePage({
 
   const zrodlo = nazwaZrodla(trade.source);
   const pokazWynik = maWynik(trade.status) && !ukryty;
+  // Dane rachunku tylko przy widocznym wyniku (ślepa ocena): nic z nich nie trafia do HTML, gdy wynik jest ukryty.
+  const rachunek = pokazWynik ? await daneRachunkuTradu(tradeId) : null;
   const czesciowoZamkniete = trade.status === "open" && trade.exitCount > 0 && !ukryty;
   const filled = fields.filter((f) => trade.custom?.[f.key] !== undefined);
   const slowaNotatki = s.userWords.filter((w) => !ROLE_W_PLANIE.has(w.role ?? ""));
@@ -203,6 +206,13 @@ export default async function TradePage({
                     {trade.status === "missed" && <span className="ml-1.5 text-grupa font-semibold tracking-wide text-accent uppercase">hipot.</span>}
                     {czesciowoZamkniete && <span className="ml-1.5 text-grupa font-semibold tracking-wide text-accent uppercase">częściowo</span>}
                   </p>
+                  {rachunek && (
+                    <Badge
+                      title={rachunek.zrodlo === "z_rachunku" ? "Kwota netto pochodzi z rachunku brokera" : "Wynik wyliczony z cen trade'a minus opłaty ze stawki"}
+                    >
+                      <span data-testid="trade-zrodlo-wyniku">{rachunek.zrodlo === "z_rachunku" ? "z rachunku" : "wyliczony"}</span>
+                    </Badge>
+                  )}
                 </>
               )}
             </div>
@@ -369,6 +379,39 @@ export default async function TradePage({
 
           {aktywna === "przebieg" && (
             <section aria-label="Przebieg" className="space-y-6">
+              {rachunek && (
+                <div className="karta p-5 sm:p-6" data-testid="trade-wynik-netto">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-karta text-text">Wynik netto</h2>
+                    {rachunek.brokerTradeId !== null && (
+                      <Link href="/prop/polaczenia#uzgodnione" className="przejscie text-meta text-muted underline underline-offset-2 hover:text-text">
+                        Dopasowany do rachunku (Połączenia)
+                      </Link>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-4">
+                    <DataPoint label="Źródło wyniku">{rachunek.zrodlo === "z_rachunku" ? "z rachunku" : "wyliczony"}</DataPoint>
+                    <DataPoint label="Opłaty">
+                      {rachunek.fees === null ? <span className="font-sans text-meta text-muted">opłaty nieznane (brak stawki)</span> : money(rachunek.fees, { currency: trade.currency })}
+                    </DataPoint>
+                    <DataPoint label="Wynik wyliczony" valueClassName={pnlClass(rachunek.pnlEstimate)}>{money(rachunek.pnlEstimate, { currency: trade.currency, sign: true })}</DataPoint>
+                    {rachunek.brokerAmount !== null && (
+                      <DataPoint label="Wynik z rachunku" valueClassName={pnlClass(rachunek.brokerAmount)}>{money(rachunek.brokerAmount, { currency: trade.currency, sign: true })}</DataPoint>
+                    )}
+                  </div>
+                  {rachunek.roznicaCenty !== null && (
+                    <p className="mt-4 text-meta text-muted" data-testid="trade-poslizg">
+                      Poślizg i opłaty: <span className={cx("num", pnlClass(rachunek.roznicaCenty))}>{money(rachunek.roznicaCenty, { currency: trade.currency, sign: true })}</span>
+                      {rachunek.poslizgCenty !== null && rachunek.roznicaOplatCenty !== null && (
+                        <>
+                          {" "}(poślizg ceny <span className="num">{money(rachunek.poslizgCenty, { currency: trade.currency, sign: true })}</span>, różnica opłat <span className="num">{money(rachunek.roznicaOplatCenty, { currency: trade.currency, sign: true })}</span>)
+                        </>
+                      )}
+                      . To różnica między kwotą z rachunku a wynikiem wyliczonym z cen w dzienniku.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="karta">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-5 p-5 sm:grid-cols-4 sm:p-6">
                   {/* Czas giełdy instrumentu (ADR-022). */}

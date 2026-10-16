@@ -114,6 +114,9 @@ export default async function KontoPropPage({ params }: { params: Promise<{ id: 
     etykieta: `${p.program} · ${p.phase} · ${money(p.accountSizeCents, { decimals: 0 })}`,
     doWeryfikacji: p.needsVerification,
     wiekDni: p.ageDays,
+    feeMiniCents: p.feeRtMiniCents,
+    feeMicroCents: p.feeRtMicroCents,
+    feeSourceUrl: p.feeSourceUrl,
   }));
 
   return (

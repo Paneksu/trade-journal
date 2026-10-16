@@ -227,6 +227,7 @@ export function TradeForm({
   values,
   backtestSessionId,
   progi,
+  stawki,
 }: {
   accounts: FormAccount[];
   instruments: FormInstrument[];
@@ -238,6 +239,8 @@ export function TradeForm({
   backtestSessionId?: number | null;
   /** Progi BE z ustawien - liczone przez serwerowego rodzica (ADR-011). */
   progi: Progi;
+  /** Stawki opłat do podglądu wyniku netto (z `stawkiDlaFormularza()`); zapis i tak liczy serwer. */
+  stawki?: { konta: Record<number, { mini: number | null; micro: number | null }>; instrumenty: Record<number, "mini" | "micro" | null> };
 }) {
   const [state, formAction] = useActionState<FormState, FormData>(saveTrade, { ok: false });
   const [stay, setStay] = useState(false);
@@ -522,6 +525,10 @@ export function TradeForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wyjscia, entryPrice, direction, spec, contracts, netTarget]);
 
+  /* Stawka opłat round turn (centy za kontrakt): konto x klasa instrumentu. Brak klasy albo stawki = wynik brutto. */
+  const klasaInstrumentu = stawki?.instrumenty[instrumentId] ?? null;
+  const feeRtCents = klasaInstrumentu ? (stawki?.konta[accountId]?.[klasaInstrumentu] ?? null) : null;
+
   const preview = useMemo(() => {
     if (!spec) return null;
     const entry = parse(entryPrice);
@@ -540,8 +547,9 @@ export function TradeForm({
       mfe: null,
       entryTime: new Date(),
       brokerAmount: brokerCents,
+      feeRtCents,
     });
-  }, [spec, direction, entryPrice, contracts, stopLoss, brokerCents, previewExits]);
+  }, [spec, direction, entryPrice, contracts, stopLoss, brokerCents, previewExits, feeRtCents]);
 
   /* Kategoria (zysk/strata/be) liczona tym samym `wynikTrade`, co statystyki -
      zeby podglad w formularzu nigdy nie klamal wobec tego, co pokaze tabela
@@ -806,8 +814,8 @@ export function TradeForm({
                   i ceny kawalkow, i ich kwoty (ADR-016). Osobna sprawa od
                   kwoty per-kawalek w repeaterze wyjsc nizej. */}
               <div className="space-y-1.5">
-                <Label htmlFor="brokerAmount" hint="Nadpisuje wynik całego trade'a">
-                  Kwota z brokera ({currency})
+                <Label htmlFor="brokerAmount" hint="To kwota netto, po prowizjach i opłatach, tak jak na rachunku. Nadpisuje wynik całego trade'a.">
+                  Kwota z rachunku (po opłatach) ({currency})
                 </Label>
                 <Input
                   id="brokerAmount"
@@ -1133,6 +1141,14 @@ export function TradeForm({
                 {money(preview?.pnl ?? null, { currency, sign: true })}
               </DataPoint>
               <DataPoint label="Ryzyko">{money(preview?.riskAmount ?? null, { currency })}</DataPoint>
+              {feeRtCents !== null && preview && preview.exitCount > 0 && (
+                <DataPoint label="Opłaty (wg stawki)">
+                  <span data-testid="podglad-oplaty">{money(preview.fees, { currency })}</span>
+                </DataPoint>
+              )}
+              {feeRtCents === null && preview && preview.exitCount > 0 && (
+                <p className="col-span-2 text-xs text-faint">Brak stawki opłat dla tego konta i instrumentu, więc wynik jest brutto.</p>
+              )}
               <DataPoint
                 label="Wynik w R"
                 valueClassName={
