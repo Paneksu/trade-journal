@@ -2,13 +2,14 @@ import "server-only";
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { db } from "@/lib/db";
-import { hypothesisVariants, noteAdditions, noteRevisions, notes, rules, ruleVersions, screenshots, userWords } from "@/lib/db/schema";
+import { hypothesisVariants, noteRevisions, notes, rules, ruleVersions, screenshots, userWords } from "@/lib/db/schema";
 import { listaLuk } from "@/lib/api-v2/luki";
 import { listaNotatek, szczegolyNotatki } from "@/lib/api-v2/notatki";
 import { odczytajProfil } from "@/lib/api-v2/profil";
 import { listaHipotez, listaRegul } from "@/lib/api-v2/reguly";
 import { zSlow } from "@/lib/api-v2/slowa";
-import { ukryteSlowa } from "@/lib/api-v2/ukrycie-wyniku";
+import { sqlNotatkaUkryta, ukryteSlowa } from "@/lib/api-v2/ukrycie-wyniku";
+import { listaDopiskow } from "@/lib/api-v2/mentor";
 
 /**
  * Odczyty ekranów Mózgu (UI v2, etap 2). Tylko odczyt przez istniejące moduły API v2 (te same filtry ślepej oceny
@@ -106,7 +107,13 @@ export async function profilMozgu() {
 
 /** Tytuły notatek do podpowiadania `[[` w edytorze. */
 export async function tytulyNotatek(): Promise<{ id: number; title: string; kind: string }[]> {
-  return db.select({ id: notes.id, title: notes.title, kind: notes.kind }).from(notes).where(isNull(notes.archivedAt)).orderBy(asc(notes.title)).limit(1000);
+  // Ślepa ocena (review 16.10.2026): tytuł notatki ukrytej (po wejściu trade'a z werdyktem) nie trafia do podpowiedzi.
+  return db
+    .select({ id: notes.id, title: notes.title, kind: notes.kind })
+    .from(notes)
+    .where(and(isNull(notes.archivedAt), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${notes.createdAt}`, sql`${notes.updatedAt}`, sql`${notes.day}`)}`))
+    .orderBy(asc(notes.title))
+    .limit(1000);
 }
 
 /** Widok notatki: treść, linki i backlinki (API), rewizje, załączniki, dopiski, słowa użytkownika (najnowsze rewizje). */
@@ -121,8 +128,16 @@ export async function notatkaDoWidoku(id: number) {
       .where(eq(noteRevisions.noteId, id))
       .orderBy(desc(noteRevisions.rev))
       .limit(30),
-    db.select().from(screenshots).where(eq(screenshots.noteId, id)).orderBy(asc(screenshots.sortOrder), asc(screenshots.id)),
-    db.select().from(noteAdditions).where(and(eq(noteAdditions.noteId, id), isNull(noteAdditions.revertedAt))).orderBy(asc(noteAdditions.id)),
+    // Ślepa ocena (review 16.10.2026): załączniki zrobione po wejściu trade'a z ukrytym wynikiem (trade notatki albo dzień) nie wychodzą.
+    db
+      .select({ s: screenshots })
+      .from(screenshots)
+      .innerJoin(notes, eq(notes.id, screenshots.noteId))
+      .where(and(eq(screenshots.noteId, id), sql`not ${sqlNotatkaUkryta(sql`${notes.tradeId}`, sql`${screenshots.createdAt}`, sql`${screenshots.createdAt}`, sql`${notes.day}`)}`))
+      .orderBy(asc(screenshots.sortOrder), asc(screenshots.id))
+      .then((w) => w.map((x) => x.s)),
+    // Dopiski przez wspólną funkcję API (ta sama reguła ukrycia, bez cofniętych).
+    listaDopiskow(db, id),
     db.select().from(userWords).where(eq(userWords.noteId, id)).orderBy(asc(userWords.id)),
   ]);
 
@@ -161,7 +176,7 @@ export async function notatkaDoWidoku(id: number) {
     ...n,
     rewizje: rewizje.map((r) => ({ ...r, changedAt: r.changedAt.toISOString() })),
     zalaczniki: zalaczniki.map((z) => ({ id: z.id, file: z.file, thumbnail: z.thumbnail, width: z.width, height: z.height, interval: z.interval, origin: z.origin })),
-    dopiski: dopiski.map((d) => ({ id: d.id, bodyMd: d.bodyMd, origin: d.origin, tradeId: d.tradeId, createdAt: d.createdAt.toISOString() })),
+    dopiski: (dopiski?.additions ?? []).filter((d) => d.revertedAt === null).map((d) => ({ id: d.id, bodyMd: d.bodyMd, origin: d.origin, tradeId: d.tradeId, createdAt: d.createdAt })),
     slowa,
     regula,
   };

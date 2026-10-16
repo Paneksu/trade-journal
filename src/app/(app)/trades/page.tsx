@@ -66,14 +66,15 @@ export default async function TradesPage({
       kierunek: t.direction,
       kontrakty: t.contracts,
       status: t.status,
-      pnl: t.pnl,
-      r: t.rMultiple,
+      // Ślepa ocena (blokery review 16.10.2026): ukryty wynik zerujemy na serwerze, nie w komponencie klienta.
+      pnl: i?.ukryty ? null : t.pnl,
+      r: i?.ukryty ? null : t.rMultiple,
       waluta: t.currency,
       setup: i?.setup ?? null,
       proces: i?.proces ?? null,
       ukryty: i?.ukryty ?? false,
       zrzuty: t.screenshotCount,
-      wynik: t.wynik,
+      wynik: i?.ukryty ? null : t.wynik,
     };
   });
 

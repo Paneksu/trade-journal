@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Strona } from "@/components/ui/v2";
+import { PustyStan, Strona } from "@/components/ui/v2";
+import { czyWynikUkryty } from "@/lib/api-v2/ukrycie-wyniku";
+import { db } from "@/lib/db";
 import { notFound } from "next/navigation";
 
 import { TradeForm } from "@/components/trades/trade-form";
@@ -27,6 +29,17 @@ export default async function EditTradePage({ params }: { params: Promise<{ id: 
 
   const trade = await getTrade(tradeId);
   if (!trade) notFound();
+
+  // Ślepa ocena (blokery review 16.10.2026): formularz edycji zawiera wyjścia i wynik, więc przy otwartym trade'ie
+  // z werdyktem AI nie renderujemy go wcale (ani w HTML, ani w RSC).
+  if (await czyWynikUkryty(db, tradeId)) {
+    return (
+      <Strona className="space-y-6">
+        <h1 className="text-tytul font-medium tracking-tight text-text">Edycja zablokowana</h1>
+        <PustyStan tytul="Edycja jest zablokowana, dopóki trade z werdyktem AI jest otwarty: formularz pokazałby wynik i wyjścia. Wyjście dopisze łącznik (TradingView, FX Replay); po zamknięciu edycja wróci." akcja={{ href: `/trades/${tradeId}`, etykieta: "Wróć do trade'a" }} />
+      </Strona>
+    );
+  }
 
   const [accounts, instruments, sessions, tags, categories, fields, shots, progi] =
     await Promise.all([

@@ -6,6 +6,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
+import { czyWynikUkryty } from "@/lib/api-v2/ukrycie-wyniku";
 import { screenshots, tradeTags, trades } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami, type Interwal } from "@/lib/domain/interwaly";
 import type { TagSzkicu, TradeDraft, WyjscieSzkicu } from "@/lib/domain/trade-draft";
@@ -134,6 +135,8 @@ export async function saveTrade(_previous: FormState, data: FormData): Promise<F
   await requireSession();
   const id = integer(data, "id");
   const backtestSessionId = optionalId(data, "backtestSessionId");
+  // Ślepa ocena (review 16.10.2026): edycja otwartego trade'a z werdyktem AI jest zablokowana także po stronie serwera.
+  if (id && (await czyWynikUkryty(db, id))) return { ok: false, error: "Edycja jest zablokowana, dopóki trade z werdyktem AI jest otwarty: formularz pokazałby wynik i wyjścia. Wyjście dopisze łącznik (TradingView, FX Replay); po zamknięciu edycja wróci." };
 
   // Limit sprawdzamy przed zapisem, zeby nie zostawic trade'a z polowa zdjec.
   const nowe = zrzutyNoweZInterwalami(data);

@@ -174,7 +174,7 @@ export default async function TradePage({
                 <span className="num text-sekcja text-faint">×{num(trade.contracts, 0)}</span>
               </h1>
               <div className="flex items-center gap-2">
-                <AkcjeTradu id={trade.id} />
+                <AkcjeTradu id={trade.id} edycja={!ukryty} />
               </div>
             </div>
 

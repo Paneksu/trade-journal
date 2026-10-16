@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { Lock } from "lucide-react";
+
+import { ukryteTrady } from "@/lib/api-v2/ukrycie-wyniku";
+import { db } from "@/lib/db";
 
 import { cx } from "@/lib/classes";
 import { maWynik } from "@/lib/domain/status";
@@ -11,13 +15,15 @@ import { dateTime, money, pnlClass, rValue, wynikClass } from "@/lib/format";
  * Zwiezla lista trade'ow do pulpitu i podgladu dnia.
  * Pelna tabela z filtrami i kolumnami zyje w `trades-table.tsx`.
  */
-export function TradeList({
+export async function TradeList({
   trades,
   emptyText = "Brak trade'ów w tym zakresie.",
 }: {
   trades: TradeRecord[];
   emptyText?: string;
 }) {
+  // Ślepa ocena (blokery review 16.10.2026): dla otwartego trade'a z werdyktem AI ani R, ani kwota nie trafiają do HTML.
+  const ukryte = await ukryteTrady(db, trades.map((t) => t.id));
   if (trades.length === 0) {
     return <p className="py-4 text-karta text-muted">{emptyText}</p>;
   }
@@ -31,6 +37,7 @@ export function TradeList({
            przypadek dostaje wlasna galaz, z etykieta mowiaca wprost, ze to nie
            jest wynik zamknietego trade'a (ta sama logika co karta trade'a). */
         const czesciowoZamkniete = t.status === "open" && t.exitCount > 0;
+        const ukryty = ukryte.has(t.id);
         return (
         <li key={t.id}>
           {/* UI v2 (etap 4): wiersz w dwóch liniach jak księga (wzór 14c), żeby mieścił się w karcie panelu dnia
@@ -50,6 +57,12 @@ export function TradeList({
               <span className="num block text-meta text-muted">{dateTime(t.entryTime, t.exchangeTimezone)}</span>
             </span>
 
+            {ukryty ? (
+              <span className="flex shrink-0 items-center gap-1.5 text-meta text-muted">
+                <Lock size={13} className="text-accent" aria-hidden />
+                wynik po zamknięciu
+              </span>
+            ) : (
             <span className="shrink-0 text-right">
               <span className={cx("num block text-karta", pnlClass(t.rMultiple))}>{rValue(t.rMultiple)}</span>
               <span
@@ -65,6 +78,7 @@ export function TradeList({
                 {czesciowoZamkniete && <span className="ml-1 text-accent">częściowo</span>}
               </span>
             </span>
+            )}
           </Link>
         </li>
         );

@@ -32,14 +32,15 @@ export type WierszKsiegi = {
   kierunek: string;
   kontrakty: number;
   status: StatusTrade;
-  pnl: number;
+  /** null przy ukrytym wyniku (ślepa ocena): wartości nie wychodzą z serwera ani w HTML, ani w RSC. */
+  pnl: number | null;
   r: number | null;
   waluta: string;
   setup: string | null;
   proces: "A" | "B" | "C" | null;
   ukryty: boolean;
   zrzuty: number;
-  wynik: "zysk" | "strata" | "be";
+  wynik: "zysk" | "strata" | "be" | null;
 };
 
 /**

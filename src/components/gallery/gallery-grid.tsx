@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { ImageOff } from "lucide-react";
+import { ImageOff, Lock } from "lucide-react";
+
+import { ukryteTrady } from "@/lib/api-v2/ukrycie-wyniku";
+import { db } from "@/lib/db";
 
 import { Badge } from "@/components/ui/base";
 import { cx } from "@/lib/classes";
@@ -32,10 +35,15 @@ const PASEK_KOLOR: Record<"zysk" | "strata" | "be" | "missed", string> = {
  * przez trase za sesja, wiec `next/image` odpada; zwykly `<img>` z `width`,
  * `height` i `loading="lazy"` daje to samo bez przeskoku ukladu.
  */
-export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
+export async function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
+  // Ślepa ocena (blokery review 16.10.2026): otwarty trade z werdyktem AI dostaje kłódkę zamiast miniatury, wyniku i R
+  // (jak na Dziś); kolor paska i słowo wyniku też by go zdradziły.
+  const ukryte = await ukryteTrady(db, trades.map((t) => t.id));
   return (
     <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-3">
       {trades.map((t) => {
+        const ukryty = ukryte.has(t.id);
+        if (ukryty) return <KafelUkryty key={t.id} t={t} />;
         const pominiety = czyPominiety(t.status);
         const klucz = pominiety ? "missed" : t.wynik;
         // Przy 375px "NIE WZIĘTY" zostawia zero znakow na symbol instrumentu
@@ -159,5 +167,30 @@ export function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
         );
       })}
     </ul>
+  );
+}
+
+function KafelUkryty({ t }: { t: TradeRecord }) {
+  return (
+    <li>
+      <Link
+        href={`/trades/${t.id}`}
+        className="przejscie group flex h-full overflow-hidden rounded-[var(--radius-panel)] border border-line bg-surface hover:border-faint focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <div className="w-1.5 shrink-0 bg-line-strong" aria-hidden />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="flex aspect-video items-center justify-center bg-surface-2">
+            <Lock className="h-6 w-6 text-accent" aria-label="zrzut ukryty do zamknięcia" />
+          </div>
+          <div className="flex flex-1 flex-col gap-1.5 p-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-sm font-semibold text-text">{t.instrumentSymbol}</span>
+              <span className="shrink-0 text-xs text-muted">wynik po zamknięciu</span>
+            </div>
+            <p className="text-xs text-faint">{longDate(t.tradingDay)}</p>
+          </div>
+        </div>
+      </Link>
+    </li>
   );
 }

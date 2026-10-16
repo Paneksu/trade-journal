@@ -37,14 +37,17 @@ export function DeleteTradeButton({ id }: { id: number }) {
 }
 
 /** Akcje w nagłówku karty: przyciski od `sm`, menu „…” na telefonie. */
-export function AkcjeTradu({ id }: { id: number }) {
+/** `edycja = false` przy ukrytym wyniku (ślepa ocena, review 16.10.2026): bez linku „Edytuj”. */
+export function AkcjeTradu({ id, edycja = true }: { id: number; edycja?: boolean }) {
   const { pending, usun } = useUsun(id);
   return (
     <>
       <div className="hidden items-center gap-2 sm:flex">
-        <Link href={`/trades/${id}/edit`} className={NEUTRALNY}>
-          Edytuj
-        </Link>
+        {edycja && (
+          <Link href={`/trades/${id}/edit`} className={NEUTRALNY}>
+            Edytuj
+          </Link>
+        )}
         <DeleteTradeButton id={id} />
       </div>
       <DropdownMenu.Root>
@@ -60,11 +63,13 @@ export function AkcjeTradu({ id }: { id: number }) {
             sideOffset={6}
             className="karta z-[var(--z-dropdown)] min-w-44 p-1 shadow-[var(--shadow-pop)]"
           >
+            {edycja && (
             <DropdownMenu.Item asChild>
               <Link href={`/trades/${id}/edit`} className={cx("flex h-10 items-center gap-2 rounded-[6px] px-3 text-karta text-text outline-none data-[highlighted]:bg-surface-2")}>
                 <Pencil size={15} aria-hidden /> Edytuj
               </Link>
             </DropdownMenu.Item>
+            )}
             <DropdownMenu.Item
               disabled={pending}
               onSelect={usun}

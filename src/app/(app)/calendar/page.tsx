@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Lock } from "lucide-react";
 
 import { DayNoteForm } from "@/components/calendar/day-note-form";
 import { MonthNav } from "@/components/calendar/month-nav";
@@ -9,6 +10,8 @@ import { TradeList } from "@/components/trades/trade-list";
 import { Karta } from "@/components/ui/v2";
 import { cx } from "@/lib/classes";
 import { requireSession } from "@/lib/auth/guard";
+import { ukryteTrady, wejscieTradu } from "@/lib/api-v2/ukrycie-wyniku";
+import { db } from "@/lib/db";
 import { localDate } from "@/lib/domain/calc";
 import { journalCoverage, monthBounds, noTradeBreakdown, reasonName } from "@/lib/domain/day-log";
 import { computeStats, dailyPnl } from "@/lib/domain/stats";
@@ -58,8 +61,15 @@ export default async function CalendarPage({
      pominietymi) zostaje bez zmian dla TradeList - lista dnia ma je pokazywac. */
   const dayRealne = dayTrades.filter((t) => !czyPominiety(t.status));
 
-  const note = day ? notes.find((n) => n.day === day) : undefined;
-  const dayShots = day ? await getZrzutyDnia(day) : [];
+  /* Ślepa ocena (blokery review 16.10.2026): dzień z otwartym trade'em z werdyktem AI ma zablokowany panel notatki
+     (jak „Po sesji” na Dziś), a zrzuty dnia zrobione po najwcześniejszym wejściu takiego trade'a nie wychodzą.
+     Formularza nie dostajemy z pustymi wartościami: zapis nadpisałby ukryte pola. */
+  const ukryteDnia = day ? await ukryteTrady(db, dayTrades.map((t) => t.id)) : new Set<number>();
+  const wejsciaUkrytych = (await Promise.all([...ukryteDnia].map((id) => wejscieTradu(db, id)))).filter((d): d is Date => d !== null);
+  const granicaZrzutow = wejsciaUkrytych.length > 0 ? Math.min(...wejsciaUkrytych.map((d) => d.getTime())) : null;
+  const dzienZablokowany = ukryteDnia.size > 0;
+  const note = day && !dzienZablokowany ? notes.find((n) => n.day === day) : undefined;
+  const dayShots = day ? (await getZrzutyDnia(day)).filter((s) => granicaZrzutow === null || s.createdAt.getTime() <= granicaZrzutow) : [];
 
   const tradingDays = days.length;
   const winningDays = days.filter((d) => d.pnl > 0).length;
@@ -202,24 +212,33 @@ export default async function CalendarPage({
             </Karta>
           </div>
 
-          <Karta tytul="Notatka dnia">
-            {/* Klucz z dnia: bez niego przejście na inny dzień zostawia w polach starą treść. */}
-            <DayNoteForm
-              key={day}
-              day={day}
-              accountId={null}
-              hasTrades={dayRealne.length > 0}
-              values={{
-                preSession: note?.preSession,
-                postSession: note?.postSession,
-                mood: note?.mood,
-                energy: note?.energy,
-                dayRating: note?.dayRating,
-                noTrade: note?.noTrade,
-                noTradeReason: note?.noTradeReason,
-              }}
-            />
-          </Karta>
+          {dzienZablokowany ? (
+            <section aria-label="Notatka dnia" className="karta flex items-center gap-3 px-5 py-3.5 sm:px-6" data-zablokowany-dzien>
+              <Lock size={15} className="shrink-0 text-accent" aria-hidden />
+              <p className="text-meta text-muted">
+                <span className="text-karta text-text">Notatka dnia</span> · zablokowana, dopóki trade z werdyktem AI jest otwarty.
+              </p>
+            </section>
+          ) : (
+            <Karta tytul="Notatka dnia">
+              {/* Klucz z dnia: bez niego przejście na inny dzień zostawia w polach starą treść. */}
+              <DayNoteForm
+                key={day}
+                day={day}
+                accountId={null}
+                hasTrades={dayRealne.length > 0}
+                values={{
+                  preSession: note?.preSession,
+                  postSession: note?.postSession,
+                  mood: note?.mood,
+                  energy: note?.energy,
+                  dayRating: note?.dayRating,
+                  noTrade: note?.noTrade,
+                  noTradeReason: note?.noTradeReason,
+                }}
+              />
+            </Karta>
+          )}
         </section>
       )}
     </div>
