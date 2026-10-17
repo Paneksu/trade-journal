@@ -29675,7 +29675,7 @@
             }
           },
           "403": {
-            "description": "device_login_disabled (przelacznik DEVICE_LOGIN_DISABLED=1)",
+            "description": "device_login_requires_2fa (w ustawieniach nie jest wlaczone TOTP: «Włącz 2FA, żeby łączyć urządzenia») albo device_login_disabled (dodatkowy przelacznik DEVICE_LOGIN_DISABLED=1)",
             "content": {
               "application/json": {
                 "schema": {

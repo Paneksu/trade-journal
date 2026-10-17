@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 
+import { KOMUNIKAT_WYMAGANE_2FA } from "@/lib/api-v2/logowanie-urzadzen";
 import { odrzucKod, odrzucWszystkieOczekujace, uniewaznToken, utworzTokenImportu, utworzTokenImportuBrokera, ZAKRESY_TOKENU_IMPORTU, zatwierdzKod, znajdzKodDoZatwierdzenia } from "@/lib/api-v2/urzadzenia";
 import { checkRateLimit, clearAttempts, recordFailedAttempt } from "@/lib/auth/guard";
 import { requireSession } from "@/lib/auth/guard";
-import { verifyPassword } from "@/lib/auth/password";
-import { KOMUNIKAT_SUDO, sprawdzBlokade, stanSudo, wyczyscBlokade, zapiszNiepowodzenie, zdarzenie } from "@/lib/auth/zadanie";
+import { KOMUNIKAT_SUDO, stanSudo, zdarzenie } from "@/lib/auth/zadanie";
 import type { Settings } from "@/lib/db/schema";
 
 /*
@@ -16,8 +16,10 @@ import type { Settings } from "@/lib/db/schema";
  * "zatwierdzaj" nie ma - agent z tokenem nigdy nie zatwierdzi reguly.
  *
  * SUDO (ADR-031, domkniete po scaleniu z faza 1): zatwierdzenie urzadzenia i utworzenie tokenu
- * importu wymagaja trybu sudo (kod TOTP albo zapasowy, 10 minut). Gdy 2FA jest wylaczone, nie ma
- * czym podniesc uprawnien, wiec akcja sama zada hasla (stan "nie_dotyczy", jak zmiana hasla).
+ * importu wymagaja trybu sudo (kod TOTP albo zapasowy, 10 minut).
+ * Decyzja sesji glownej (autoryzacja z 17.10.2026, ADR-030): bez wlaczonego 2FA zatwierdzenie
+ * urzadzenia i token importu sa ZABLOKOWANE (komunikat «Wlacz 2FA, zeby laczyc urzadzenia»);
+ * wczesniej wystarczalo haslo. Slowa uzytkownika 15.10.2026: «Zamkniete do wlaczenia 2FA».
  * Odrzucenie i uniewaznienie sudo NIE wymagaja: odcinanie dostepu ma byc latwiejsze niz jego nadanie.
  * Kazda decyzja zostawia wpis w auth_events (bez kodow i hasel).
  */
@@ -32,7 +34,7 @@ export type KodWidok = {
   expiresAt: string;
 };
 
-/** Czego akcja zada przed nadaniem dostepu: sudo juz aktywne, haslo (2FA wylaczone) albo wejscie w sudo. */
+/** Czego akcja zada przed nadaniem dostepu: sudo juz aktywne, wejscie w sudo albo "haslo" = 2FA wylaczone (blokada, nazwa historyczna). */
 export type Potwierdzenie = "aktywne" | "haslo" | "sudo";
 
 async function rodzajPotwierdzenia(s: Pick<Settings, "totpEnabledAt" | "sessionVersion">): Promise<Potwierdzenie> {
@@ -40,21 +42,12 @@ async function rodzajPotwierdzenia(s: Pick<Settings, "totpEnabledAt" | "sessionV
   return st.stan === "aktywny" ? "aktywne" : st.stan === "wymagany" ? "sudo" : "haslo";
 }
 
-/** `null` = wolno; w przeciwnym razie komunikat dla uzytkownika. Liczy bledy hasla do wspolnej blokady. */
-async function wymagajPotwierdzenia(s: Settings, haslo: string): Promise<string | null> {
+/** `null` = wolno; w przeciwnym razie komunikat dla uzytkownika. Bez 2FA nie ma sciezki z haslem: jest blokada. */
+async function wymagajPotwierdzenia(s: Settings): Promise<string | null> {
   const rodzaj = await rodzajPotwierdzenia(s);
   if (rodzaj === "aktywne") return null;
   if (rodzaj === "sudo") return KOMUNIKAT_SUDO;
-  if (haslo === "") return "Podaj hasło, żeby potwierdzić nadanie dostępu.";
-  const blokada = await sprawdzBlokade(false);
-  if (blokada.zablokowany) return blokada.komunikat;
-  if (!s.passwordHash || !(await verifyPassword(haslo, s.passwordHash))) {
-    await zapiszNiepowodzenie(false);
-    await zdarzenie("login_fail", { kontekst: "potwierdzenie_urzadzenia" });
-    return "Nieprawidłowe hasło.";
-  }
-  await wyczyscBlokade();
-  return null;
+  return KOMUNIKAT_WYMAGANE_2FA;
 }
 
 export type PolaczState = {
@@ -123,7 +116,9 @@ export async function zatwierdzUrzadzenie(_p: PolaczState, d: FormData): Promise
     return { ok: true, wynik: "Urządzenie odrzucone. Terminal dostanie odmowę." };
   }
 
-  const brak = await wymagajPotwierdzenia(sesja, String(d.get("haslo") ?? ""));
+  // Decyzja sesji glownej (17.10.2026, ADR-030): zatwierdzenie urzadzenia wymaga wlaczonego 2FA. Odrzucenie wyzej nie.
+  if (!sesja.totpEnabledAt) return { error: KOMUNIKAT_WYMAGANE_2FA, potwierdzenie: "haslo" };
+  const brak = await wymagajPotwierdzenia(sesja);
   if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
 
   const zakresy = d.getAll("scope").map(String);
@@ -157,11 +152,13 @@ export type TokenImportuState = { token?: string; prefix?: string; expiresAt?: s
 /**
  * Jedyna droga do zakresu "import" (Slowa uzytkownika 15.10.2026): reczny przycisk w UI, za sesja.
  * Token (24 h) jest pokazywany RAZ w odpowiedzi tej akcji i nigdzie nie jest zapisany w jawnej postaci.
- * Wymaga sudo (albo hasla przy wylaczonym 2FA), tak jak zatwierdzenie urzadzenia.
+ * Wymaga sudo. Bez wlaczonego 2FA jest ZABLOKOWANE (Slowa uzytkownika 15.10.2026: «Zamkniete do
+ * wlaczenia 2FA»; w kodzie od 17.10.2026): nie pytamy o haslo, tylko mowimy, co wlaczyc.
  */
-export async function utworzTokenImportuAkcja(haslo = ""): Promise<TokenImportuState> {
+export async function utworzTokenImportuAkcja(): Promise<TokenImportuState> {
   const sesja = await requireSession();
-  const brak = await wymagajPotwierdzenia(sesja, haslo);
+  if (!sesja.totpEnabledAt) return { error: KOMUNIKAT_WYMAGANE_2FA, potwierdzenie: "haslo" };
+  const brak = await wymagajPotwierdzenia(sesja);
   if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
   const t = await utworzTokenImportu();
   await zdarzenie("token_created", { tokenId: t.id, via: "ui", zakresy: ZAKRESY_TOKENU_IMPORTU, tokenImportu: true });
@@ -171,11 +168,12 @@ export async function utworzTokenImportuAkcja(haslo = ""): Promise<TokenImportuS
 
 /**
  * Token automatu importu z rachunku (`import_broker`, ADR-034 pkt 3): osobny od tokenu, ktorym pracuje AI. Wydawany wylacznie
- * tutaj, w trybie sudo (albo po hasle przy wylaczonym 2FA), pokazywany RAZ. Unieważnienie (`uniewaznUrzadzenie`) sudo nie wymaga.
+ * tutaj, w trybie sudo, pokazywany RAZ. Bez wlaczonego 2FA ZABLOKOWANY jak token importu (ADR-030; scalenie z R3 17.10.2026:
+ * sciezka z haslem zostala usunieta w calej aplikacji). Unieważnienie (`uniewaznUrzadzenie`) sudo nie wymaga.
  */
-export async function utworzTokenBrokeraAkcja(haslo = ""): Promise<TokenImportuState> {
+export async function utworzTokenBrokeraAkcja(): Promise<TokenImportuState> {
   const sesja = await requireSession();
-  const brak = await wymagajPotwierdzenia(sesja, haslo);
+  const brak = await wymagajPotwierdzenia(sesja);
   if (brak) return { error: brak, potwierdzenie: await rodzajPotwierdzenia(sesja) };
   const t = await utworzTokenImportuBrokera();
   await zdarzenie("token_created", { tokenId: t.id, via: "ui", zakresy: ["import_broker"], tokenBrokera: true });

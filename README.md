@@ -85,7 +85,7 @@ Uruchamiaj je wyłącznie na bazie lokalnej — dopisują trade'y i pola.
 | `SESSION_SECRET` | co najmniej 32 znaki; podpisuje ciasteczko sesji |
 | `OWNER_PASSWORD` | hasło zakładane przez `npm run seed` (potem można je zmienić w ustawieniach) |
 | `UPLOADS_DIR` | katalog na zrzuty ekranu; w Dockerze `/data/zrzuty` |
-| `TOTP_ENC_KEY` | 32 losowe bajty (base64url albo 64 znaki hex); szyfruje sekret 2FA w bazie. Bez niej nie da się włączyć 2FA (logowanie samym hasłem działa dalej). **Nie zmieniaj po włączeniu 2FA**: sekret przestanie się odszyfrowywać |
+| `TOTP_ENC_KEY` | opcjonalna: 32 losowe bajty (base64url albo 64 znaki hex); szyfruje sekret 2FA w bazie. Bez niej klucz jest wyprowadzany z `SESSION_SECRET` (HKDF, ADR-031), a start loguje ostrzeżenie. **Nie zmieniaj ani `TOTP_ENC_KEY`, ani (gdy jej nie ma) `SESSION_SECRET` po włączeniu 2FA**: sekret przestanie się odszyfrowywać |
 
 ## Jak to jest zbudowane
 

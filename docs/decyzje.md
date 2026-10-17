@@ -1473,6 +1473,24 @@ urządzenia muszą działać bez klienta VPN).
   blokada 8 prób dawała się omijać jednym nagłówkiem.
 - **Kopia lokalnej bazy:** `npm run db:backup` robi `pg_dump` tylko, gdy `DATABASE_URL` jest lokalny.
 
+**Decyzja sesji głównej (autoryzacja z 17.10.2026): klucz 2FA wyprowadzany z `SESSION_SECRET`, gdy brak `TOTP_ENC_KEY`.**
+Uzasadnienie: użytkownik nie ma dostępu do ustawiania zmiennych w Coolify, więc wymóg osobnej `TOTP_ENC_KEY`
+uniemożliwiał włączenie 2FA. Mechanizm: `kluczGlowny()` w `lib/auth/totp.ts`. Jawny `TOTP_ENC_KEY` (niepusty) ma
+pierwszeństwo, a gdy jest ustawiony, ale błędny, aplikacja rzuca błąd zamiast po cichu przełączyć źródło. Gdy go nie ma,
+klucz główny to `HKDF-SHA256(SESSION_SECRET, salt = puste, info = "tj-totp-v1", 32 B)`; z niego dalej, tą samą ścieżką co
+dotąd, powstają osobne podklucze (szyfrowanie sekretu, HMAC kodów zapasowych). Przy starcie serwera (produkcja) w logu
+pojawia się ostrzeżenie `[auth] OSTRZEŻENIE: ... wyprowadzony z SESSION_SECRET`. Skutek: **zmiana `SESSION_SECRET`
+unieważnia sekret TOTP i kody zapasowe** (logowanie kodem przestaje działać), więc trzeba wtedy wyłączyć 2FA w bazie
+(SQL z sekcji 9 `docs/wdrozenie-coolify.md`) i włączyć je ponownie. Dodanie `TOTP_ENC_KEY` po włączeniu 2FA działa tak samo
+jak jego zmiana: też unieważnia. Osłabienie: jeden sekret robi za podpis sesji i za źródło klucza szyfrującego; wyciek
+samej bazy nadal nie daje ani sekretu, ani sprawdzenia kodów zapasowych (klucz leży poza bazą). Odwracalne: ustawienie
+`TOTP_ENC_KEY` przed włączeniem 2FA oddziela oba sekrety.
+Kto zna `SESSION_SECRET`, i tak podrobi sesję (podpis ciasteczka), więc wspólny sekret prawie nie poszerza powierzchni ataku.
+**Odwracalne, gdy pojawi się dostęp do zmiennych w Coolify:** ustawić `TOTP_ENC_KEY`, wyłączyć i ponownie włączyć 2FA.
+**Procedura po rotacji `SESSION_SECRET`** (bez `TOTP_ENC_KEY`): logowanie kodem przestaje działać (błąd konfiguracji w logach),
+więc wyłącz 2FA SQL-em z sekcji 9 `docs/wdrozenie-coolify.md` (UPDATE `settings` + DELETE `auth_backup_codes`), zaloguj się hasłem
+i włącz 2FA ponownie (nowy QR i nowe kody zapasowe).
+
 ---
 
 ## ADR-032 — łącznik `Paneksu/tj-connector` jako plugin Claude Code; AI steruje wykresem, nigdy nie składa zleceń (2026-10-14)
@@ -1751,11 +1769,12 @@ Decyzje gustu podjęte przy wdrożeniu API v2 (odwracalne; pełny kontrakt: `doc
 - **Phishing kodem urządzenia:** lista bez kodów, globalny limit 20 żądań, sprzątanie po 10 min, ostrzeżenie o innym IP, osobny przełącznik `DEVICE_LOGIN_DISABLED`. Sudo przy zatwierdzaniu zostaje WARUNKIEM scalenia/publicznego wystawienia (faza 1).
 - **Wspólna funkcja tokenu v2** (`sprawdzTokenV2`) obsługuje `withApi` i `withIngest`: `API_V2_DISABLED=1` odcina też `/api/ingest/**` dla tokenów v2.
 - **Zakres `import` (2026-10-15, Słowa użytkownika: «Osobny zakres „import”»; rozstrzyga ustalenie N1 z ponownego audytu):** pochodzenie `vault-import` (z `nImported` i `vaultStatus`) oraz `mentor` wolno zadeklarować tylko tokenem z zakresem `import`; bez niego 403. Zakres jest dodatkowy (sam nic nie otwiera), nadaje go wyłącznie użytkownik ręcznie w UI (przycisk „token importu”, pokazywany raz, domyślnie 24 h), nigdy logowanie kodem urządzenia (`device/start` odrzuca go 400, CHECK `device_codes_requested_scopes` bez `import`). CHECK `api_tokens_scopes` rozszerzony do czterech zakresów (migracja 0017, jeszcze niewdrożona, więc edytowana w miejscu). Zakresu „zatwierdź” nadal nie ma. TODO(faza 1): sudo przed utworzeniem tokenu importu.
-- **Scalenie z faza 1 (2026-10-15):** zatwierdzenie urzadzenia i utworzenie tokenu importu wymagaja sudo (ADR-031) albo hasla przy wylaczonym 2FA, z wpisami w `auth_events`; FK `auth_events.token_id` -> `api_tokens` przez osobna migracje 0019 (0016 i 0017 sa w historii i nie sa edytowane); plan fazy 2b przesuniety o jeden numer (0020-0027); `tj_forbid_update`: 0018 zastepuje definicje z 0016 (to samo zachowanie TJ409).
+- **Scalenie z faza 1 (2026-10-15):** zatwierdzenie urzadzenia i utworzenie tokenu importu wymagaja sudo (ADR-031) - od 17.10.2026 bez wlaczonego 2FA sa zablokowane, sciezka z haslem usunieta - z wpisami w `auth_events`; FK `auth_events.token_id` -> `api_tokens` przez osobna migracje 0019 (0016 i 0017 sa w historii i nie sa edytowane); plan fazy 2b przesuniety o jeden numer (0020-0027); `tj_forbid_update`: 0018 zastepuje definicje z 0016 (to samo zachowanie TJ409).
 - **Po code review scalonej gałęzi (2026-10-15), decyzje użytkownika:**
   - **B1, tokeny** (Słowa użytkownika: «Dopisać teraz»): „Wyloguj pozostałe przeglądarki” i „Wyłącz 2FA” mają opcję „unieważnij też wszystkie tokeny urządzeń” (`revoked_at = now()`, `revoked_reason = 'logout_all'`, wpis `token_revoked` dla każdego tokenu); etykieta mówi, że przycisk dotyczy sesji przeglądarek.
   - **Wydanie** (Słowa użytkownika: «Dwa wdrożenia»): najpierw R1 (`feat/domena-totp`), potem R2 (`feat/notatki-api-v2`).
-  - **Logowanie urządzeń** (Słowa użytkownika: «Zamknięte do włączenia 2FA»): przed R2 `DEVICE_LOGIN_DISABLED=1`, zdjąć po włączeniu 2FA i pierwszym `tj login`.
+  - **Logowanie urządzeń** (Słowa użytkownika: «Zamknięte do włączenia 2FA»): ~~przed R2 `DEVICE_LOGIN_DISABLED=1`, zdjąć po włączeniu 2FA i pierwszym `tj login`~~ (zastąpione, patrz niżej).
+  - **Decyzja sesji głównej (autoryzacja z 17.10.2026): warunek pilnuje kod, nie zmienna.** Uzasadnienie: użytkownik nie ma dostępu do ustawiania zmiennych w Coolify, więc `DEVICE_LOGIN_DISABLED=1` było nie do wykonania, a bez niego aplikacja byłaby publicznie otwarta na `device/start`. Skutek: `POST /api/v2/device/start` zwraca **403 `device_login_requires_2fa`** («Włącz 2FA, żeby łączyć urządzenia»), dopóki `settings.totp_enabled_at` jest puste; tak samo akcja „Utwórz token importu” i **zatwierdzenie urządzenia** w UI (komunikat zamiast pola hasła, przycisk „Zatwierdź urządzenie” wyłączony; wcześniej przy wyłączonym 2FA wystarczało hasło, ta ścieżka jest usunięta z kodu). Po włączeniu 2FA obie drogi otwierają się same, bez zmiennej i bez wdrożenia. `DEVICE_LOGIN_DISABLED=1` zostaje jako dodatkowy, ręczny wyłącznik (sprawdzany pierwszy, kod `device_login_disabled`). Odrzucanie żądania i unieważnianie tokenów działają bez 2FA (odcinanie dostępu ma być łatwiejsze niż jego nadanie). Kod: `lib/api-v2/logowanie-urzadzen.ts`.
   - `user_words.source = 'vault-import'` wymaga zakresu `import` (konsekwencja decyzji «Osobny zakres „import”»).
 
 - **Faza 2b (2026-10-15), decyzje smaku wykonawcy (do przeglądu użytkownika):**

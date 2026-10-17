@@ -159,8 +159,8 @@ function EnableTotpFlow({
     <form action={startAction} className="space-y-3">
       {!kluczOk && (
         <ErrorMessage>
-          Serwer nie ma poprawnego TOTP_ENC_KEY, więc 2FA nie da się teraz włączyć. Ustaw zmienną
-          w panelu wdrożeniowym (docs/wdrozenie-coolify.md, sekcja 9).
+          Serwer nie ma ani poprawnego TOTP_ENC_KEY, ani SESSION_SECRET (min. 32 znaki), z którego
+          można wyprowadzić klucz, więc 2FA nie da się teraz włączyć (docs/wdrozenie-coolify.md, sekcja 9).
         </ErrorMessage>
       )}
       {potwierdzenie.wygaslo && <ErrorMessage>{potwierdzenie.error}</ErrorMessage>}

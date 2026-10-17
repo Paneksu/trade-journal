@@ -89,6 +89,21 @@ export async function nowyToken(
 export const sha256Hex = (b: Buffer | string) =>
   createHash("sha256").update(typeof b === "string" ? Buffer.from(b, "utf8") : b).digest("hex");
 
+/**
+ * Wlacza 2FA w ustawieniach (sztuczny sekret; CHECK `settings_totp_zgodne` go dopuszcza) i zwraca funkcje
+ * przywracajaca poprzedni stan. Potrzebne testom `device/start`, ktore od 17.10.2026 sa zamkniete do
+ * wlaczenia 2FA (ADR-030). Pliki testow ida po kolei (`fileParallelism: false`), wiec stan nie koliduje.
+ */
+export async function wlaczDwaFaDlaTestu(sql: Sql): Promise<() => Promise<void>> {
+  await sql`insert into settings (id) values (1) on conflict (id) do nothing`;
+  const [przed] = await sql`select totp_secret_enc, totp_enabled_at, totp_last_step from settings where id = 1`;
+  await sql`update settings set totp_secret_enc = 'v1.sekret-testowy', totp_enabled_at = now() where id = 1`;
+  return async () => {
+    await sql`update settings set totp_secret_enc = ${przed.totp_secret_enc}, totp_enabled_at = ${przed.totp_enabled_at},
+              totp_last_step = ${przed.totp_last_step} where id = 1`;
+  };
+}
+
 /** Kontekst Next dla tras z segmentem dynamicznym. */
 export const parametry = <T extends Record<string, string>>(p: T) => ({ params: Promise.resolve(p) });
 
