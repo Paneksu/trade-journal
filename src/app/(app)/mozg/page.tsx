@@ -251,7 +251,7 @@ export default async function MozgPage({ searchParams }: { searchParams: Promise
               Werdykty AI zmienione przez Ciebie: <span className="text-text">{profil.verdicts.changedByUser}</span> z {profil.verdicts.aiVerdicts}
             </p>
           </div>
-          <Link href="/mozg/profil" className="przejscie inline-flex items-center gap-0.5 text-karta text-muted hover:text-text">
+          <Link href="/mozg/profil" className="przejscie inline-flex min-h-6 items-center gap-0.5 text-karta text-muted hover:text-text">
             Profil i słownik <ChevronRight size={15} aria-hidden />
           </Link>
         </aside>

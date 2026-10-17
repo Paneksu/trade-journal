@@ -246,6 +246,92 @@ test.describe("Dane z rachunku: import, ukrycie wyniku, automat 1:1", () => {
     await expect(page.getByTestId("broker-do-decyzji-puste")).toBeVisible();
   });
 
+  /** Wspolny start dla scenariuszy »Do decyzji« i »Konta u brokera«: czysty stan brokera i dziennika konta testowego. */
+  async function czystyStart() {
+    await sprzatnijDaneBrokera();
+    await sql`delete from trade_reviews where trade_id in (select id from trades where account_id = ${kontoId})`;
+    await sql`delete from trade_exits where trade_id in (select id from trades where account_id = ${kontoId})`;
+    await sql`delete from trades where account_id = ${kontoId}`;
+  }
+
+  async function wyslijPlikTokenem() {
+    const api = await pwRequest.newContext({ baseURL: BASE, extraHTTPHeaders: { authorization: `Bearer ${tokenBrokera}` } });
+    const r = await api.post("/api/v2/broker/inbox", {
+      headers: { "content-type": "text/csv", "x-file-sha256": createHash("sha256").update(ORDERS, "utf8").digest("hex") },
+      data: Buffer.from(ORDERS, "utf8"),
+    });
+    expect(r.status(), await r.text()).toBe(201);
+    await api.dispose();
+  }
+
+  test("Do decyzji: dwa pasujace trade'y dziennika to »niejednoznaczne«, »Dopasuj do #id« dopasowuje wybrany jako reczne i ustawia kwote z rachunku", async ({ page }) => {
+    test.setTimeout(120_000);
+    await czystyStart();
+    const a = await wstawTradeA();
+    // drugi trade w oknie +-120 s od wejscia z rachunku: dopasowanie 1:1 jest niemozliwe, decyduje uzytkownik
+    const [b2] = await sql`
+      insert into trades (account_id, instrument_id, direction, status, entry_time, entry_price, contracts, pnl, pnl_estimate,
+                          trading_day, market_session, exit_count, closed_contracts, source)
+      values (${kontoId}, ${mnqId}, 'long', 'closed', ${`${DZIEN}T13:31:05Z`}, 20100, 3, 7200, 7200, ${DZIEN}, 'rth', 1, 3, 'form')
+      returning id`;
+    await sql`insert into trade_exits (trade_id, sort_order, exit_time, exit_price, contracts) values (${b2.id}, 0, ${`${DZIEN}T13:34:50Z`}, 20112.5, 3)`;
+    expect((await sql`select count(*)::int as n from broker_accounts where account_id = ${kontoId}`)[0].n).toBe(1); // przypisanie przezylo sprzatanie
+
+    await wyslijPlikTokenem();
+    const dwuznaczne = await sql`select id from broker_trades where match_state = 'ambiguous' and trade_id is null`;
+    expect(dwuznaczne.length, "plik ma dac dokladnie jeden trade brokera w oknie obu trade'ow dziennika").toBe(1);
+    const btId = dwuznaczne[0].id as number;
+    expect((await sql`select broker_amount from trades where id = ${a}`)[0].broker_amount).toBeNull(); // nic nie dopasowano samo
+
+    await page.goto("/prop/polaczenia");
+    const wiersz = page.getByTestId(`broker-do-decyzji-${btId}`);
+    await expect(wiersz).toBeVisible({ timeout: 30_000 });
+    await expect(wiersz).toContainText("Niejednoznaczne");
+    // oba trade'y sa kandydatami, przycisk jest dla kazdego
+    await expect(page.getByTestId(`broker-dopasuj-${btId}-${b2.id}`)).toBeVisible();
+    await page.getByTestId(`broker-dopasuj-${btId}-${a}`).click();
+
+    // dowod z bazy: dopasowanie reczne do WYBRANEGO trade'a, kwota z rachunku tylko u niego
+    await expect.poll(async () => (await sql`select match_state from broker_trades where id = ${btId}`)[0].match_state, { timeout: 30_000 }).toBe("matched");
+    const [bt] = await sql`select trade_id, match_kind, match_state from broker_trades where id = ${btId}`;
+    expect(bt).toMatchObject({ trade_id: a, match_kind: "user", match_state: "matched" });
+    expect((await sql`select broker_amount from trades where id = ${a}`)[0].broker_amount).not.toBeNull();
+    expect((await sql`select broker_amount from trades where id = ${b2.id}`)[0].broker_amount).toBeNull();
+    await expect(page.getByTestId(`broker-do-decyzji-${btId}`)).toHaveCount(0, { timeout: 30_000 }); // wiersz zniknal z »Do decyzji«
+  });
+
+  test("Konta u brokera: nowe konto z pliku przypisujemy do konta dziennika z listy, a trade'y brokera dopasowuja sie 1:1", async ({ page }) => {
+    test.setTimeout(120_000);
+    await czystyStart();
+    const a = await wstawTradeA();
+    // konto u brokera od zera: nieprzypisane (jak po pierwszym imporcie pliku z nowego rachunku)
+    await sql.begin(async (tx) => {
+      await tx`select set_config('tj.actor', 'ui', true)`;
+      await tx`delete from broker_accounts where account_id = ${kontoId}`;
+    });
+    await wyslijPlikTokenem();
+    const [ba] = await sql`select id, account_id from broker_accounts order by id desc limit 1`;
+    expect(ba.account_id).toBeNull();
+    expect((await sql`select count(*)::int as n from broker_trades where trade_id is not null`)[0].n).toBe(0); // bez konta nic sie nie dopasowalo
+    expect((await sql`select broker_amount from trades where id = ${a}`)[0].broker_amount).toBeNull();
+
+    await page.goto("/prop/polaczenia");
+    const wiersz = page.getByTestId(`broker-konto-${ba.id}`);
+    await expect(wiersz).toBeVisible({ timeout: 30_000 });
+    await expect(wiersz).toContainText("Nie przypisane do konta dziennika");
+    await expect(page.getByTestId(`broker-przypisz-zapisz-${ba.id}`)).toBeDisabled(); // bez wyboru z listy nie da sie zapisac
+    await page.getByTestId(`broker-przypisz-konto-${ba.id}`).selectOption(String(kontoId));
+    await page.getByTestId(`broker-przypisz-zapisz-${ba.id}`).click();
+
+    // dowod z bazy: przypisanie zapisane, trade A dopasowany 1:1 z kwota z rachunku
+    await expect.poll(async () => (await sql`select account_id from broker_accounts where id = ${ba.id}`)[0].account_id, { timeout: 30_000 }).toBe(kontoId);
+    const [bt] = await sql`select id, match_kind, match_state from broker_trades where trade_id = ${a}`;
+    expect(bt).toMatchObject({ match_state: "matched" });
+    expect((await sql`select broker_amount from trades where id = ${a}`)[0].broker_amount).not.toBeNull();
+    await expect(page.getByTestId(`broker-konto-${ba.id}`)).toContainText("E2E broker");
+    await expect(page.getByTestId(`broker-odepnij-${ba.id}`)).toBeVisible();
+  });
+
   test("telefon 375 px: Polaczenia, Dzis i ustawienia kont bez poziomego przewijania", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
     const przewiniete: string[] = [];

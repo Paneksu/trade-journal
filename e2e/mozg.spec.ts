@@ -20,7 +20,22 @@ test.describe.configure({ mode: "serial" });
 async function axe(page: Page, opis: string) {
   await page.waitForLoadState("networkidle");
   const wynik = await new AxeBuilder({ page }).withTags(AXE_TAGI).analyze();
-  const bledy = wynik.violations.map((v) => `${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} el. [${v.nodes[0]?.target.join(" ")}]`);
+  // 17.10.2026: przy 375 px dolny pasek (position: fixed, decyzja 22 w kierunek.md: zostaje) przykrywa to, co lezy tuz przy dolnej
+  // krawedzi pierwszego ekranu, a axe liczy wtedy cel dotyku jako zasloniety. Taki cel przewijamy na srodek ekranu i sprawdzamy ponownie
+  // TYLKO regule target-size: element naprawde za maly albo przykryty czymkolwiek innym niz pasek nadal jest bledem.
+  const bledy: string[] = [];
+  for (const v of wynik.violations) {
+    if (v.id !== "target-size") {
+      bledy.push(`${v.id} (${v.impact}): ${v.help} — ${v.nodes.length} el. [${v.nodes[0]?.target.join(" ")}] ${v.nodes[0]?.html.slice(0, 160)}`);
+      continue;
+    }
+    for (const n of v.nodes) {
+      const sel = String(n.target[0]);
+      await page.evaluate((s) => document.querySelector(s)?.scrollIntoView({ block: "center" }), sel);
+      const ponownie = await new AxeBuilder({ page }).include(sel).withRules(["target-size"]).analyze();
+      if (ponownie.violations.length > 0) bledy.push(`${v.id} (${v.impact}): ${v.help} — [${sel}] ${n.html.slice(0, 160)}`);
+    }
+  }
   expect(bledy, `${opis}\n${bledy.join("\n")}`).toEqual([]);
 }
 

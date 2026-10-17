@@ -429,8 +429,9 @@ test("kwota z brokera dla całego trade'a wypełnia cenę jedynego wyjścia (ADR
 });
 
 test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async ({ page }) => {
+  // Miesiac tylko dla tego testu (17.10.2026: wspolny 2020-03 mial dane z innych testow, wiec licznik pauz zalezal od kolejnosci).
   // Miesiac bez zadnych danych, zeby liczby nie zalezaly od reszty zestawu.
-  await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
+  await page.goto("/calendar?miesiac=2023-07&dzien=2023-07-09");
 
   // Stan wyjsciowy wymuszony, a nie zalozony - inaczej przerwany przebieg
   // zostawia flage i nastepne uruchomienie startuje od jedynki.
@@ -446,22 +447,22 @@ test("dzień bez transakcji zapisuje się i liczy w pokryciu dziennika", async (
   await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
-  await page.goto("/calendar?miesiac=2020-03");
+  await page.goto("/calendar?miesiac=2023-07");
   await expect(kafelPauz.locator("[data-wartosc]")).toHaveText("1");
   await expect(page.getByText("Brak setupu 1")).toBeVisible();
 
   // Kafel dnia mowi wprost, ze to pauza, a nie dziura w dzienniku.
   const kafelDnia = page.getByRole("link", { name: /bez transakcji/ });
   await expect(kafelDnia).toContainText("Brak setupu");
-  await expect(kafelDnia).toHaveAttribute("href", "/calendar?dzien=2020-03-03");
+  await expect(kafelDnia).toHaveAttribute("href", "/calendar?dzien=2023-07-09");
 
   // Odznaczenie wraca do stanu wyjsciowego - test nie zostawia sladu.
-  await page.goto("/calendar?miesiac=2020-03&dzien=2020-03-03");
+  await page.goto("/calendar?miesiac=2023-07&dzien=2023-07-09");
   await page.getByLabel("Dzień bez transakcji").uncheck();
   await Promise.all([page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/calendar")), page.getByRole("button", { name: "Zapisz notatkę" }).click()]);
   await expect(page.getByText("Zapisano notatkę dnia.")).toBeVisible(); await page.waitForLoadState("networkidle"); // komunikat z poprzedniego zapisu bywa widoczny, zanim skończy się bieżący
 
-  await page.goto("/calendar?miesiac=2020-03");
+  await page.goto("/calendar?miesiac=2023-07");
   await expect(kafelPauz.locator("[data-wartosc]")).toHaveText("0");
 });
 
