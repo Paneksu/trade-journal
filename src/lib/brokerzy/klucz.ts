@@ -3,8 +3,10 @@ import { createHash, createHmac, hkdfSync } from "node:crypto";
 
 /**
  * Konto u brokera w bazie to HMAC-SHA256 (klucz `BROKER_ID_HMAC_KEY`) i ostatnie 4 znaki, nigdy numer jawnie (ADR-034 pkt 2).
- * Klucz: 32 bajty losowe, base64url (43 znaki) albo hex (64 znaki). Brak klucza = import wylaczony (blad konfiguracji, nie
- * ciche zapisanie numeru w innej postaci). Zmiana klucza oznacza nowe skroty kont: stare konta nie zostana rozpoznane.
+ * Klucz: 32 bajty losowe, base64url (43 znaki) albo hex (64 znaki) w `BROKER_ID_HMAC_KEY`; gdy jej brak, wynika z `SESSION_SECRET` (HKDF,
+ * nizej). Import jest wylaczony (blad konfiguracji, nie ciche zapisanie numeru w innej postaci) dopiero, gdy brak obu: nie ma
+ * `BROKER_ID_HMAC_KEY`, a `SESSION_SECRET` po obcieciu bialych znakow ma mniej niz 32 znaki. Zmiana uzytego klucza (takze pozniejsze
+ * ustawienie `BROKER_ID_HMAC_KEY` po pierwszych importach) oznacza nowe skroty kont: stare konta nie zostana rozpoznane.
  */
 
 export class BladKonfiguracjiBrokera extends Error {
@@ -24,10 +26,12 @@ const INFO_KLUCZA_KONT = "tj-broker-id-v1";
 function kluczZSrodowiska(): Buffer {
   const surowy = (process.env.BROKER_ID_HMAC_KEY ?? "").trim();
   if (surowy === "") {
+    // KONTRAKT KLUCZA: `.trim()` na SESSION_SECRET jest czescia wyprowadzenia (spacje na brzegach nie wchodza do HKDF). Inaczej niz w
+    // token.ts i totp.ts, ktore nie obcinaja; NIE ujednolicac, bo zmiana dalaby inne skroty kont (17.10.2026, audyt HKDF).
     const sekret = (process.env.SESSION_SECRET ?? "").trim();
     if (sekret.length < 32) {
       throw new BladKonfiguracjiBrokera(
-        "Brak BROKER_ID_HMAC_KEY, a SESSION_SECRET (z którego klucz mógłby zostać wyprowadzony) nie ma co najmniej 32 znaków, więc import z brokera jest wyłączony. Naprawa: ustaw SESSION_SECRET (min. 32 znaki) albo BROKER_ID_HMAC_KEY (32 losowe bajty, base64url) w panelu wdrożeniowym i zrestartuj aplikację.",
+        "Brak BROKER_ID_HMAC_KEY, a SESSION_SECRET (z którego klucz mógłby zostać wyprowadzony) nie ma co najmniej 32 znaków (po obcięciu spacji), więc import z brokera jest wyłączony. Naprawa: ustaw SESSION_SECRET (min. 32 znaki) albo BROKER_ID_HMAC_KEY (32 losowe bajty, base64url) w panelu wdrożeniowym i zrestartuj aplikację.",
       );
     }
     return Buffer.from(hkdfSync("sha256", Buffer.from(sekret, "utf8"), Buffer.alloc(0), INFO_KLUCZA_KONT, 32));
@@ -52,6 +56,16 @@ export function skrotKonta(platforma: string, numerKonta: string, klucz: Buffer 
 
 export function sha256Hex(bajty: Uint8Array): string {
   return createHash("sha256").update(bajty).digest("hex");
+}
+
+/** Skad pochodzi klucz kont: do ostrzezenia przy starcie (bez wypisywania wartosci). `null` = import wylaczony. */
+export function zrodloKluczaKont(): "BROKER_ID_HMAC_KEY" | "SESSION_SECRET" | null {
+  try {
+    kluczZSrodowiska();
+  } catch {
+    return null;
+  }
+  return (process.env.BROKER_ID_HMAC_KEY ?? "").trim() === "" ? "SESSION_SECRET" : "BROKER_ID_HMAC_KEY";
 }
 
 /** Czy import ma skonfigurowany klucz (UI pokazuje to w Polaczeniach, zeby blad byl widoczny przed wgraniem pliku). */

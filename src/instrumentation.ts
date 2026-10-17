@@ -26,6 +26,16 @@ export async function register() {
     }
   }
 
+  // Klucz skrotow kont u brokera (ADR-034, odstepstwo 14): ostrzezenie, gdy wynika z SESSION_SECRET. Wartosci nie wypisujemy.
+  if (process.env.NODE_ENV === "production") {
+    const { zrodloKluczaKont } = await import("@/lib/brokerzy/klucz");
+    if (zrodloKluczaKont() === "SESSION_SECRET") {
+      console.warn(
+        "[broker] OSTRZEŻENIE: BROKER_ID_HMAC_KEY nie jest ustawiony, klucz skrótów kont u brokera jest wyprowadzony z SESSION_SECRET. Zmiana SESSION_SECRET zmieni skróty kont (stare konta nie zostaną rozpoznane). Jeśli ustawiasz BROKER_ID_HMAC_KEY, zrób to przed pierwszym importem: późniejsze ustawienie też zmienia skróty.",
+      );
+    }
+  }
+
   try {
     const [{ db }, { seedIfEmpty }] = await Promise.all([
       import("@/lib/db"),

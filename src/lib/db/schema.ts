@@ -2350,7 +2350,8 @@ export const propFirmPlatforms = pgTable(
 );
 
 /* Konto u brokera <-> konto dziennika. accountId NULL = konto zgloszone przez automat, czeka na przypisanie w UI.
-   Numer konta u brokera: tylko HMAC-SHA256 (klucz BROKER_ID_HMAC_KEY) i ostatnie 4 znaki. */
+   Numer konta u brokera: tylko HMAC-SHA256 i ostatnie 4 znaki. Klucz: BROKER_ID_HMAC_KEY albo, gdy jej brak, wyprowadzony z SESSION_SECRET (HKDF);
+   import wylaczony dopiero, gdy brak obu (SESSION_SECRET po obcieciu spacji krotszy niz 32 znaki). */
 export const brokerAccounts = pgTable(
   "broker_accounts",
   {

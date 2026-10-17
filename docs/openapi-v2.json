@@ -6364,7 +6364,7 @@
             "description": "Limit zapytan albo blokada."
           },
           "503": {
-            "description": "broker_not_configured (serwer nie ma klucza skrotow kont: ani BROKER_ID_HMAC_KEY, ani SESSION_SECRET o dlugosci min. 32 znakow, z ktorego klucz jest wyprowadzany).",
+            "description": "broker_not_configured (serwer nie ma klucza skrotow kont: ani BROKER_ID_HMAC_KEY, ani SESSION_SECRET o dlugosci min. 32 znakow po obcieciu spacji, z ktorego klucz jest wyprowadzany).",
             "content": {
               "application/json": {
                 "schema": {
