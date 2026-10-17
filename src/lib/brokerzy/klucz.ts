@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
 
 /**
  * Konto u brokera w bazie to HMAC-SHA256 (klucz `BROKER_ID_HMAC_KEY`) i ostatnie 4 znaki, nigdy numer jawnie (ADR-034 pkt 2).
@@ -14,12 +14,23 @@ export class BladKonfiguracjiBrokera extends Error {
   }
 }
 
+/**
+ * Decyzja sesji glownej (autoryzacja uzytkownika z 17.10.2026), ADR-034 odstepstwo 14: gdy `BROKER_ID_HMAC_KEY` nie jest ustawiony,
+ * klucz wyprowadzamy przez HKDF-SHA256 z `SESSION_SECRET` z osobnym `info`. Jawna zmienna ma pierwszenstwo. Zmiana `SESSION_SECRET`
+ * (bez jawnej zmiennej) daje nowe skroty kont: stare konta u brokera nie zostana rozpoznane, a `tj` przypisze je ponownie.
+ */
+const INFO_KLUCZA_KONT = "tj-broker-id-v1";
+
 function kluczZSrodowiska(): Buffer {
   const surowy = (process.env.BROKER_ID_HMAC_KEY ?? "").trim();
   if (surowy === "") {
-    throw new BladKonfiguracjiBrokera(
-      "Brak zmiennej środowiskowej BROKER_ID_HMAC_KEY, więc import z brokera jest wyłączony. Naprawa: ustaw 32 losowe bajty (node -e \"console.log(require('crypto').randomBytes(32).toString('base64url'))\") w panelu wdrożeniowym i zrestartuj aplikację.",
-    );
+    const sekret = (process.env.SESSION_SECRET ?? "").trim();
+    if (sekret.length < 32) {
+      throw new BladKonfiguracjiBrokera(
+        "Brak BROKER_ID_HMAC_KEY, a SESSION_SECRET (z którego klucz mógłby zostać wyprowadzony) nie ma co najmniej 32 znaków, więc import z brokera jest wyłączony. Naprawa: ustaw SESSION_SECRET (min. 32 znaki) albo BROKER_ID_HMAC_KEY (32 losowe bajty, base64url) w panelu wdrożeniowym i zrestartuj aplikację.",
+      );
+    }
+    return Buffer.from(hkdfSync("sha256", Buffer.from(sekret, "utf8"), Buffer.alloc(0), INFO_KLUCZA_KONT, 32));
   }
   const bajty = /^[0-9a-f]{64}$/i.test(surowy) ? Buffer.from(surowy, "hex") : Buffer.from(surowy, "base64url");
   if (bajty.length < 32) {

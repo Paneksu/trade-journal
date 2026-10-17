@@ -31,7 +31,7 @@ export default async function DevicesSettingsPage() {
               Token służy tylko do wysyłania plików z folderu Pobrane. Niczego więcej nie otworzy: nie czyta trade&apos;ów, notatek ani ustawień. Jest ważny 90 dni i osobny od tokenu, którym pracuje AI.
             </p>
             {!automat.skonfigurowane && (
-              <p role="alert" className="text-sm text-loss">Serwer nie ma klucza importu z rachunku (BROKER_ID_HMAC_KEY), więc automat nie będzie mógł niczego przyjąć.</p>
+              <p role="alert" className="text-sm text-loss">Serwer nie ma klucza importu z rachunku (ani BROKER_ID_HMAC_KEY, ani SESSION_SECRET o długości min. 32 znaków), więc automat nie będzie mógł niczego przyjąć.</p>
             )}
             <TokenBrokeraPrzycisk potwierdzenie={potwierdzenie} />
             <div className="space-y-1 text-xs text-faint">

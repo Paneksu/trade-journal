@@ -222,7 +222,7 @@ albo, przy wyłączonym 2FA, hasła (ADR-031); odrzucenie i unieważnienie nie w
 
 ## Zmienne środowiskowe
 
-Do importu z brokera potrzebna jest `BROKER_ID_HMAC_KEY` (32 losowe bajty; bez niej inbox i import w UI odpowiadają `503 broker_not_configured`). Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny całego v2, także tokenów v2
+Do importu z brokera służy klucz skrótów kont: `BROKER_ID_HMAC_KEY` (32 losowe bajty, opcjonalna) albo, gdy jej brak, klucz wyprowadzony z `SESSION_SECRET` (min. 32 znaki, ADR-034 odstępstwo 14); bez żadnego z nich inbox i import w UI odpowiadają `503 broker_not_configured`. Opcjonalne: `API_V2_DISABLED=1` (wyłącznik awaryjny całego v2, także tokenów v2
 na `/api/ingest/**`), `DEVICE_LOGIN_DISABLED=1` (zamyka tylko logowanie nowych urządzeń), `APP_PUBLIC_URL`
 (adres w `verificationUri`; za proxy bez niej używamy `X-Forwarded-Host`).
 

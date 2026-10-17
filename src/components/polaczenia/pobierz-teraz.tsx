@@ -105,7 +105,7 @@ export function PobierzTeraz({
       </div>
 
       {!automat.skonfigurowane && (
-        <p className="text-meta text-loss">Import z rachunku nie jest skonfigurowany na serwerze (brak klucza BROKER_ID_HMAC_KEY), więc żaden plik nie zostanie przyjęty. Ustaw klucz i uruchom serwer ponownie.</p>
+        <p className="text-meta text-loss">Import z rachunku nie jest skonfigurowany na serwerze (ani BROKER_ID_HMAC_KEY, ani SESSION_SECRET o długości min. 32 znaków), więc żaden plik nie zostanie przyjęty. Ustaw jedno z nich i uruchom serwer ponownie.</p>
       )}
       {automat.skonfigurowane && !automat.aktywnyToken && (
         <p className="text-meta text-muted">
