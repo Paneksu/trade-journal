@@ -115,7 +115,8 @@ export type TradeRecord = TradeForAnalysis & {
   rulesMetIds: string[];
   screenshotCount: number;
   /** Pierwszy zrzut w kolejnosci wyswietlania - kafel galerii. `null`, gdy brak. */
-  firstShot: { file: string; width: number | null; height: number | null } | null;
+  /** Pierwszy zrzut: pelny plik, miniatura (bywa null) i wymiary PELNEGO pliku - widok sklada z nich srcset (zrodla.ts). */
+  firstShot: { file: string; thumbnail: string | null; width: number | null; height: number | null } | null;
   /** Suma kontraktow zamknietych wyjsciami czastkowymi (trade_exits). */
   closedContracts: number;
   /** Liczba wyjsc czastkowych. */
@@ -351,7 +352,8 @@ async function screenshotSummary(ids: number[]): Promise<Map<number, ShotSummary
     .select({
       tradeId: screenshots.tradeId,
       count: sql<number>`count(*)::int`,
-      file: sql<string | null>`(array_agg(coalesce(${screenshots.thumbnail}, ${screenshots.file}) order by ${screenshots.sortOrder}, ${screenshots.id}))[1]`,
+      file: sql<string | null>`(array_agg(${screenshots.file} order by ${screenshots.sortOrder}, ${screenshots.id}))[1]`,
+      thumbnail: sql<string | null>`(array_agg(${screenshots.thumbnail} order by ${screenshots.sortOrder}, ${screenshots.id}))[1]`,
       width: sql<number | null>`(array_agg(${screenshots.width} order by ${screenshots.sortOrder}, ${screenshots.id}))[1]`,
       height: sql<number | null>`(array_agg(${screenshots.height} order by ${screenshots.sortOrder}, ${screenshots.id}))[1]`,
     })
@@ -364,7 +366,7 @@ async function screenshotSummary(ids: number[]): Promise<Map<number, ShotSummary
     if (w.tradeId === null) continue;
     map.set(w.tradeId, {
       count: w.count,
-      first: w.file === null ? null : { file: w.file, width: w.width, height: w.height },
+      first: w.file === null ? null : { file: w.file, thumbnail: w.thumbnail, width: w.width, height: w.height },
     });
   }
   return map;

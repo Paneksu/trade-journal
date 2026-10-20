@@ -6,7 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { requireSession } from "@/lib/auth/guard";
 import { db } from "@/lib/db";
 import { dayNotes, savedViews, screenshots } from "@/lib/db/schema";
-import { deleteDayDir, deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
+import { deleteDayDir, deleteScreenshot, saveScreenshot, zapisBezstratny } from "@/lib/screenshots";
 import { isNoTradeReason, type NoTradeReason } from "@/lib/domain/day-log";
 import { czyInterwal } from "@/lib/domain/interwaly";
 import { bladLimitu } from "@/lib/screenshots-limit";
@@ -190,7 +190,7 @@ export async function addDayScreenshots(d: FormData): Promise<ActionState> {
 
   for (const file of files) {
     try {
-      const saved = await saveScreenshot({ kind: "day", id: dayNoteId }, file);
+      const saved = await saveScreenshot({ kind: "day", id: dayNoteId }, file, { bezstratnie: zapisBezstratny("manual", file.type) });
       await db.insert(screenshots).values({
         dayNoteId,
         file: saved.file,

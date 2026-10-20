@@ -4,6 +4,7 @@ import { ChevronRight, ExternalLink } from "lucide-react";
 
 import { linkiNaMarkdown } from "@/components/mozg/linki";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { zrodlaZrzutu } from "@/components/screenshots/zrodla";
 import { Markdown } from "@/components/trade/markdown";
 import { Chip, ChipProcesu } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
@@ -55,7 +56,7 @@ function Przyklady({ lista, tytul, tradePoId }: { lista: KartaSetupu["przyklady"
               <li key={p.id}>
                 <Link href={`/trades/${p.tradeId}`} className="przejscie block overflow-hidden rounded-[var(--radius-tab)] border border-line hover:border-line-strong">
                   {p.plik ? (
-                    <ObrazZrzutu src={`/api/screenshots/${p.thumbnail ?? p.plik.file}`} alt={`Zrzut ${p.plik.interval ?? ""} trade'a #${p.tradeId}`} className="aspect-video w-full object-cover" />
+                    <ObrazZrzutu loading="lazy" decoding="async" {...zrodlaZrzutu({ file: p.plik.file, thumbnail: p.thumbnail, width: p.plik.width }, "(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw")} alt={`Zrzut ${p.plik.interval ?? ""} trade'a #${p.tradeId}`} className="aspect-video w-full object-cover" />
                   ) : (
                     <span className="flex aspect-video items-center justify-center bg-surface-2 text-meta text-muted">bez zrzutu</span>
                   )}

@@ -13,6 +13,7 @@ import { INTERWALY } from "@/lib/domain/interwaly";
 import { Lightbox } from "./lightbox";
 import type { Shot } from "./typy";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { zrodlaZrzutu } from "@/components/screenshots/zrodla";
 
 /**
  * Galeria zrzutow - jedna dla karty trade'a, panelu dnia i sesji backtestu.
@@ -23,9 +24,10 @@ import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
  * na waskim ekranie robi sam CSS na podstawie szerokosci kontenera, bez
  * osobnego wariantu ukladu w JS/DOM.
  *
- * Na miejscu lezy wylacznie miniatura; pelny plik wchodzi dopiero w
- * powiekszeniu. Przy osmiu zdjeciach roznica to kilkanascie megabajtow na
- * jedno wejscie na strone.
+ * Na miejscu lezy miniatura, chyba ze kafel (razy gestosc pikseli ekranu) jest
+ * szerszy niz ona - wtedy `srcset` bierze pelny plik (zrodla.ts, 20.10.2026:
+ * rozciagnieta miniatura rozmywala wykres). Przy osmiu zdjeciach w malych
+ * kaflach roznica to kilkanascie megabajtow na jedno wejscie na strone.
  *
  * Ostatni, niepelny wiersz: bez domkniecia flex-grow rozdalby jedyny kafel w
  * wierszu na cala szerokosc kontenera (kazda linia flex-wrap rozdziela
@@ -83,7 +85,9 @@ export function ScreenshotGrid({
               >
                 { }
                 <ObrazZrzutu
-                  src={`/api/screenshots/${s.thumbnail ?? s.file}`}
+                  loading="lazy"
+                  decoding="async"
+                  {...zrodlaZrzutu(s, "(max-width: 640px) 100vw, 50vw")}
                   alt={`Zrzut ${i + 1} z ${shots.length} — ${opis}`}
                   width={s.width ?? undefined}
                   height={s.height ?? undefined}

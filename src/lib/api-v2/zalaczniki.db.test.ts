@@ -171,6 +171,33 @@ describe.skipIf(!MOZNA_NA_BAZIE)("zalaczniki, zrzuty manual i GET /me (baza loka
     expect([meta.width, meta.height]).toEqual([96, 64]);
     const [w] = await sql`select note_id, trade_id, day_note_id from screenshots where id = ${z.id}`;
     expect(w).toEqual({ note_id: noteId, trade_id: null, day_note_id: null });
+    // Zdjecie z telefonu zostaje stratne (VP8), bo bezstratnie wazyloby megabajty (20.10.2026).
+    const bajtyHeic = readFileSync(path.join(katalog(), z.file));
+    expect(bajtyHeic.includes("VP8 ", 0, "latin1")).toBe(true);
+    expect(bajtyHeic.includes("VP8L", 0, "latin1")).toBe(false);
+  });
+
+  it("zrzut wykresu (fxreplay, PNG) zapisuje sie BEZSTRATNIE: piksele pelnego pliku i miniatury rowne zrodlu (20.10.2026, rozmyte zrzuty)", async () => {
+    const nota = await wywolaj(import("@/app/api/v2/notes/route"), "POST", "/notes", { token: rw.token, cialo: { kind: "concept", title: unikat("Pojęcie z wykresem"), bodyMd: "treść" } });
+    const noteId = nota.json.id as number;
+    // Cienkie linie 1 px i ostre krawedzie: stratny WebP je rozmywa, bezstratny zachowuje co do piksela.
+    const szer = 1200;
+    const wys = 300;
+    const surowe = Buffer.alloc(szer * wys * 3, 255);
+    for (let x = 0; x < szer; x += 3) for (let y = 0; y < wys; y += 1) surowe.fill(0, (y * szer + x) * 3, (y * szer + x) * 3 + 3);
+    const png = await sharp(surowe, { raw: { width: szer, height: wys, channels: 3 } }).png().toBuffer();
+    const form = new FormData();
+    form.append("shot", plik(png, "wykres.png", "image/png"));
+    form.append("origin", "fxreplay");
+    const r = await wywolajMultipart(import("@/app/api/v2/notes/[id]/attachments/route"), `/notes/${noteId}/attachments`, rw.token, form, PARAMS({ id: String(noteId) }));
+    expect(r.status, JSON.stringify(r.json)).toBe(201);
+    const z = r.json.screenshots[0];
+    const pelny = readFileSync(path.join(katalog(), z.file));
+    expect(pelny.subarray(12, 16).toString("latin1")).toBe("VP8L");
+    const odczyt = await sharp(pelny).removeAlpha().raw().toBuffer();
+    expect(odczyt.equals(surowe)).toBe(true);
+    expect(readFileSync(path.join(katalog(), z.thumbnail)).subarray(12, 16).toString("latin1")).toBe("VP8L");
+    expect((await sharp(path.join(katalog(), z.thumbnail)).metadata()).width).toBe(560);
   });
 
   it("PNG, JPG i WebP przechodza, plik udajacy HEIC i nieobslugiwany typ = 422 z powodem; nic nie zostaje w bazie", async () => {

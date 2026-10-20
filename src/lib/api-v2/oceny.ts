@@ -3,9 +3,10 @@ import { and, asc, desc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { z } from "zod";
 
 import { db } from "@/lib/db";
-import { ruleVersions, rules, screenshots, settings, tradeReviews, tradeRuleChecks, trades } from "@/lib/db/schema";
+import { backtestSessions, ruleVersions, rules, screenshots, settings, tradeReviews, tradeRuleChecks, trades } from "@/lib/db/schema";
 import { kanonicznyJson } from "@/lib/domain/kanoniczny";
 import { moglZnacDzien } from "@/lib/domain/lookahead";
+import { czasZrzutuDlaOceny, POLE_ZEGARA_REPLAYU } from "@/lib/domain/zegar-replayu";
 
 import type { KorektaWerdyktuSchema } from "./contract/funkcje";
 import type { OcenaSchema } from "./contract/schemas";
@@ -56,8 +57,9 @@ export async function zapiszOcene(
   tokenId: number | null = null,
 ): Promise<WynikOceny> {
   const [trade] = await db
-    .select({ id: trades.id, entryTime: trades.entryTime, tradingDay: trades.tradingDay })
+    .select({ id: trades.id, entryTime: trades.entryTime, tradingDay: trades.tradingDay, rodzajSesji: backtestSessions.kind, source: trades.source })
     .from(trades)
+    .leftJoin(backtestSessions, eq(trades.backtestSessionId, backtestSessions.id))
     .where(eq(trades.id, tradeId))
     .limit(1);
   if (!trade) {
@@ -73,7 +75,8 @@ export async function zapiszOcene(
 
 /* --- Werdykt niezmienny ---------------------------------------------------------------------- */
 
-type TradeDlaWerdyktu = { id: number; entryTime: Date; tradingDay: string | null };
+/** rodzajSesji: "backtest" (replay historyczny), "forward" (biezace dane, zegar = czas rynku) albo null (trade realny). */
+type TradeDlaWerdyktu = { id: number; entryTime: Date; tradingDay: string | null; rodzajSesji: string | null; source: string };
 
 /** Wersja reguly obowiazujaca w zestawie `V`: najnowsza zatwierdzona (lub pozniej zastapiona) z numerem zestawu <= V. */
 async function wersjaRegulyWZestawie(tx: Transakcja, kod: string, zestaw: number): Promise<number | null> {
@@ -171,17 +174,31 @@ async function zapiszWerdyktNiezmienny(
   const sha = [...new Set(dowod.screenshots.map((s) => s.sha256))].sort();
   if (sha.length > 0) {
     const znalezione = await db
-      .select({ sha256: screenshots.sha256, capturedAt: screenshots.capturedAt })
+      .select({ sha256: screenshots.sha256, capturedAt: screenshots.capturedAt, chartState: screenshots.chartState })
       .from(screenshots)
       .where(and(eq(screenshots.tradeId, trade.id), inArray(screenshots.sha256, sha)));
     // Ocena »chart« nie moze opierac sie na zrzucie zrobionym PO wejsciu (audyt N3, 15.10.2026): pokazuje przyszlosc.
-    const poWejsciu = o.basis === "chart" ? znalezione.filter((z) => z.capturedAt === null || z.capturedAt.getTime() > wejscie.getTime()) : [];
+    // Backtest (20.10.2026, Slowa uzytkownika z zadania: zrzut z replayu ma byc dowodem): wejscie jest w czasie
+    // replayu, wiec porownujemy zegar replayu z chartState.replayTime, nie captured_at (inny zegar). Brak = odrzut.
+    // Sesja »forward« idzie na biezacych danych: tam zegar replayu nie istnieje, a captured_at jest wlasciwym czasem.
+    const zBacktestu = trade.rodzajSesji === "backtest" || trade.source === "fxreplay";
+    const poWejsciu =
+      o.basis === "chart"
+        ? znalezione
+            .map((z) => ({ sha256: z.sha256, czas: czasZrzutuDlaOceny(z, zBacktestu) }))
+            .filter((z) => z.czas === null || z.czas.getTime() > wejscie.getTime())
+        : [];
     if (poWejsciu.length > 0) {
+      const brak = zBacktestu ? `bez zegara replayu (chartState.${POLE_ZEGARA_REPLAYU})` : "bez znacznika czasu zrobienia";
+      const opisCzasu = zBacktestu ? "zegar replayu" : "zrobiony";
+      const wyjasnienie = zBacktestu
+        ? `Trade jest z backtestu, więc liczy się zegar replayu w chwili zrzutu (pole chartState.${POLE_ZEGARA_REPLAYU}, ISO 8601), a nie czas zegarowy capturedAt: musi być najpóźniej w chwili wejścia.`
+        : "Ocena »chart« ma powstać na moment decyzji.";
       return {
         ok: false,
         status: 422,
         kod: "look_ahead",
-        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (${z.capturedAt === null ? "bez znacznika czasu zrobienia" : `zrobiony ${z.capturedAt.toISOString()}`})`).join(", ")} nie ma dowodu, że powstał przed wejściem (${wejscie.toISOString()}): jest zrobiony po wejściu albo bez znacznika czasu. Ocena »chart« ma powstać na moment decyzji; zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
+        komunikat: `pole evidence.screenshots: zrzut sha256 ${poWejsciu.map((z) => `»${z.sha256}« (${z.czas === null ? brak : `${opisCzasu} ${z.czas.toISOString()}`})`).join(", ")} nie ma dowodu, że powstał przed wejściem (${wejscie.toISOString()}). ${wyjasnienie} Zrzut z czasu po wejściu dołącz do oceny z basis = history.`,
         dodatkowe: { afterEntry: poWejsciu.map((z) => z.sha256) },
       };
     }

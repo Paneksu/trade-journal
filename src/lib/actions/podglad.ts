@@ -24,7 +24,7 @@ export type PodgladTradu = {
   pnlCents: number | null;
   rMultiple: number | null;
   plan: { entryPrice: number; stopLoss: number; takeProfit: number | null; setup: string | null; frozenAt: string } | null;
-  zrzuty: { id: number; thumbnail: string | null; file: string; interval: string | null; origin: string }[];
+  zrzuty: { id: number; thumbnail: string | null; file: string; width: number | null; interval: string | null; origin: string }[];
   notatka: string | null;
   werdykt: { pass: number; fail: number; inne: number } | null;
 };
@@ -57,7 +57,7 @@ export async function podgladTradu(id: number): Promise<PodgladTradu | null> {
           frozenAt: s.plan.frozenAt,
         }
       : null,
-    zrzuty: s.screenshots.slice(0, 4).map((z) => ({ id: z.id, thumbnail: z.thumbnail, file: z.file, interval: z.interval, origin: z.origin })),
+    zrzuty: s.screenshots.slice(0, 4).map((z) => ({ id: z.id, thumbnail: z.thumbnail, file: z.file, width: z.width ?? null, interval: z.interval, origin: z.origin })),
     notatka: s.trade.note,
     werdykt: ai
       ? {

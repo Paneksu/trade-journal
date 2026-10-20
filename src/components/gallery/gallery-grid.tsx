@@ -10,6 +10,7 @@ import { czyPominiety } from "@/lib/domain/status";
 import type { TradeRecord } from "@/lib/queries/trades";
 import { longDate, rValue, wynikClass, WYNIK_SKROT } from "@/lib/format";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { zrodlaZrzutu } from "@/components/screenshots/zrodla";
 
 /** Kolor i etykieta wyniku na kaflu - "nie wziety" dostaje `accent`, bo zielen
  * i czerwien sa zajete przez zysk/strate (globals.css:25-34). */
@@ -89,7 +90,7 @@ export async function GalleryGrid({ trades }: { trades: TradeRecord[] }) {
                   {t.firstShot ? (
                      
                     <ObrazZrzutu
-                      src={`/api/screenshots/${t.firstShot.file}`}
+                      {...zrodlaZrzutu(t.firstShot, "(max-width: 640px) 50vw, 33vw")}
                       alt={`Zrzut trade'a ${t.instrumentSymbol} z ${t.tradingDay}`}
                       width={t.firstShot.width ?? undefined}
                       height={t.firstShot.height ?? undefined}

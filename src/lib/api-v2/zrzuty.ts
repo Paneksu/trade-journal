@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { screenshots, trades } from "@/lib/db/schema";
 import { czyInterwal, sparujZInterwalami } from "@/lib/domain/interwaly";
+import { bladZegaraReplayu } from "@/lib/domain/zegar-replayu";
 import { bladPliku, bladZawartosci, deleteScreenshot } from "@/lib/screenshots";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import { policzZrzuty, wgrajZrzuty, type OriginZrzutu } from "@/lib/trades/screenshots-db";
@@ -187,6 +188,9 @@ export function wczytajMetaZrzutow(form: FormData): { ok: true; meta: MetaZrzuto
     try {
       const j: unknown = JSON.parse(tekst);
       if (j === null || typeof j !== "object" || Array.isArray(j)) throw new Error("oczekiwano obiektu JSON");
+      // Zegar replayu (dowod sprzed wejscia przy backtestach, lib/domain/zegar-replayu.ts): zly format odrzucamy od razu.
+      const zegar = bladZegaraReplayu(j as Record<string, unknown>);
+      if (zegar) throw new Error(zegar);
       chartState.push(j as Record<string, unknown>);
     } catch (e) {
       return { ok: false, error: `chartState #${i + 1}: ${(e as Error).message}. Wyślij obiekt JSON jako tekst, np. {"symbol":"NQ1!","interval":"5m"}.` };

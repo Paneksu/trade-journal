@@ -15,6 +15,7 @@ import type { StatusTrade } from "@/lib/domain/status";
 import { longDate, money, pnlClass, price, rValue, timeOnly } from "@/lib/format";
 import type { TagWithCategory } from "@/lib/queries/dictionaries";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { zrodlaZrzutu } from "@/components/screenshots/zrodla";
 
 /**
  * Lista trade'ów jako księga (wzór 2a: lista Linear + księga Mercury z demo.mercury.com/accounts/credit):
@@ -189,7 +190,9 @@ function ZawartoscSzuflady({ id, onZamknij }: { id: number; onZamknij: () => voi
                     <figure key={z.id} className="m-0">
                       { }
                       <ObrazZrzutu
-                        src={`/api/screenshots/${z.thumbnail ?? z.file}`}
+                        loading="lazy"
+                        decoding="async"
+                        {...zrodlaZrzutu(z, "50vw")}
                         alt={`Zrzut ${z.interval ?? ""} trade'a #${dane.id}`}
                         className="aspect-video w-full rounded-[var(--radius-tab)] border border-line object-cover"
                       />

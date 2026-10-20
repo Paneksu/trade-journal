@@ -73,16 +73,19 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
 
   let kolorZrzutu = Math.floor(Math.random() * 100); // kolejne zrzuty roznia sie kolorem (kolizja sha256 w obrebie trade'a dawala flaky)
   // Domyslnie zrzut jest z chwili PRZED wejsciem (14:30Z przy wejsciu 14:35Z): ocena »chart« nie moze miec zrzutow po wejsciu.
-  async function wgrajZrzut(tradeId: number, origin: string, capturedAt = `${DZIEN}T14:30:00+00:00`): Promise<{ id: number; sha256: string }> {
+  async function wgrajZrzut(tradeId: number, origin: string, capturedAt = `${DZIEN}T14:30:00+00:00`, chartState?: Record<string, unknown>): Promise<{ id: number; sha256: string }> {
     const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: (kolorZrzutu += 7) % 250, g: 10, b: 20 } } }).png().toBuffer();
     const form = new FormData();
     form.append("shot", new File([new Uint8Array(png)], "wykres.png", { type: "image/png" }));
     form.append("interval", "5m");
     form.append("origin", origin);
     form.append("capturedAt", capturedAt);
+    if (chartState) form.append("chartState", JSON.stringify(chartState));
     const r = await wywolajMultipart(import("@/app/api/v2/trades/[id]/screenshots/route"), `/trades/${tradeId}/screenshots`, rw.token, form, PARAMS({ id: String(tradeId) }));
     expect(r.status, JSON.stringify(r.json)).toBe(200);
-    return { id: r.json.screenshots[0].id, sha256: r.json.screenshots[0].sha256 };
+    // Odpowiedz listuje wszystkie zrzuty tego pochodzenia (manual sie dopisuje): nowy jest ostatni.
+    const nowy = r.json.screenshots[r.json.screenshots.length - 1];
+    return { id: nowy.id, sha256: nowy.sha256 };
   }
 
   it("werdykt z dowodem: as_of stawia serwer, evidence_hash to SHA-256 kanonicznego JSON-a swiec i zrzutow, odpowiedz zgodna z kontraktem", async () => {
@@ -282,6 +285,63 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
     expect(dobry.status, JSON.stringify(dobry.json)).toBe(201);
     const historia = await ocena(id, { basis: "history", summaryMd: "Po fakcie.", evidence: { intervalMinutes: 5, candles: swiece("14:40"), screenshots: [{ sha256: poWejsciu.sha256 }] } });
     expect(historia.status, JSON.stringify(historia.json)).toBe(201);
+  });
+
+  it("backtest (20.10.2026): zrzut z replayu jest dowodem »chart«, gdy chartState.replayTime <= wejscie; captured_at (zegar sciany) sie nie liczy; brak replayTime = look_ahead", async () => {
+    const id = await nowyOtwarty();
+    await sql`update trades set source = 'fxreplay' where id = ${id}`;
+    const teraz = new Date().toISOString(); // czas zegarowy zrobienia: lata po wejsciu z replayu (1988)
+    const przed = await wgrajZrzut(id, "fxreplay", teraz, { symbol: "NQ1!", replayTime: `${DZIEN}T14:30:00Z` });
+    const rowno = await wgrajZrzut(id, "manual", teraz, { replayTime: `${DZIEN}T09:35:00-05:00` });
+    const po = await wgrajZrzut(id, "manual", teraz, { replayTime: `${DZIEN}T14:40:00Z` });
+    const bez = await wgrajZrzut(id, "manual", `${DZIEN}T14:00:00+00:00`, { symbol: "NQ1!" });
+    const dowod = (sha: string[]) => ({ basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: sha.map((s) => ({ sha256: s })) } });
+
+    const zPo = await ocena(id, dowod([przed.sha256, po.sha256]));
+    expect(zPo.status, JSON.stringify(zPo.json)).toBe(422);
+    expect(zPo.json.code).toBe("look_ahead");
+    expect(zPo.json.afterEntry).toEqual([po.sha256]);
+    expect(zPo.json.error).toContain("zegar replayu");
+    // captured_at przed wejsciem NIE wystarcza przy backteście: liczy sie wylacznie zegar replayu (fail-closed)
+    const zBez = await ocena(id, dowod([bez.sha256]));
+    expect(zBez.status, JSON.stringify(zBez.json)).toBe(422);
+    expect(zBez.json.error).toContain("chartState.replayTime");
+    const dobry = await ocena(id, dowod([przed.sha256, rowno.sha256]));
+    expect(dobry.status, JSON.stringify(dobry.json)).toBe(201);
+  });
+
+  it("sesja backtestu rodzaju »backtest« tez wymaga replayTime; sesja »forward« liczy captured_at", async () => {
+    const [bt] = await sql`insert into backtest_sessions (name, kind) values (${`WERD-BT-${znacznik}`}, 'backtest') returning id`;
+    const [fw] = await sql`insert into backtest_sessions (name, kind) values (${`WERD-FW-${znacznik}`}, 'forward') returning id`;
+    try {
+      const idBt = await nowyOtwarty();
+      await sql`update trades set backtest_session_id = ${bt.id} where id = ${idBt}`;
+      const zwykly = await wgrajZrzut(idBt, "tradingview");
+      const r1 = await ocena(idBt, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zwykly.sha256 }] } });
+      expect(r1.status, JSON.stringify(r1.json)).toBe(422);
+      expect(r1.json.code).toBe("look_ahead");
+
+      const idFw = await nowyOtwarty();
+      await sql`update trades set backtest_session_id = ${fw.id} where id = ${idFw}`;
+      const zFw = await wgrajZrzut(idFw, "tradingview");
+      const r2 = await ocena(idFw, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zFw.sha256 }] } });
+      expect(r2.status, JSON.stringify(r2.json)).toBe(201);
+    } finally {
+      await sql`delete from trades where backtest_session_id in (${bt.id}, ${fw.id})`;
+      await sql`delete from backtest_sessions where id in (${bt.id}, ${fw.id})`;
+    }
+  });
+
+  it("nieczytelne chartState.replayTime przy wgrywaniu zrzutu = 400", async () => {
+    const id = await nowyOtwarty();
+    const png = await sharp({ create: { width: 16, height: 16, channels: 3, background: { r: 1, g: 2, b: 3 } } }).png().toBuffer();
+    const form = new FormData();
+    form.append("shot", new File([new Uint8Array(png)], "wykres.png", { type: "image/png" }));
+    form.append("origin", "fxreplay");
+    form.append("chartState", JSON.stringify({ replayTime: "10 marca" }));
+    const r = await wywolajMultipart(import("@/app/api/v2/trades/[id]/screenshots/route"), `/trades/${id}/screenshots`, rw.token, form, PARAMS({ id: String(id) }));
+    expect(r.status, JSON.stringify(r.json)).toBe(400);
+    expect(r.json.error).toContain("replayTime");
   });
 
   it("korekta uzytkownika to NOWY wiersz user_override; werdykt AI zostaje; wymaga slow; kolejna korekta wskazuje werdykt AI", async () => {

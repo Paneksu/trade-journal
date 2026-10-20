@@ -17,7 +17,20 @@ import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./up
 const HEIC = new Set(["image/heic", "image/heif"]);
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/avif", ...HEIC]);
 const MAX_BYTES = 10 * 1024 * 1024;
+/** Musi byc rowne SZEROKOSC_MINIATURY w components/screenshots/zrodla.ts (srcset podaje ja jako `560w`). */
 const THUMBNAIL_WIDTH = 560;
+
+/**
+ * Kiedy zapis bezstratny. Zrzut WYKRESU (zrodlo tradingview / fxreplay albo wklejony PNG) ma cienkie linie
+ * i drobny tekst osi: stratny WebP (quality 88) rozmywal je (Slowa uzytkownika 20.10.2026: «w zrzutach dalej
+ * te screeny sa rozmyte»). Bezstratny WebP: pomiar 20.10.2026 na zrzucie FX Replay 2706x1514 - 98 KB zamiast
+ * 46 KB stratnie i zamiast 180 KB jako PNG (ten sam obraz co do piksela, a serwowanie zostaje image/webp).
+ * Zdjecia (JPEG, HEIC, AVIF - telefon, aparat) zostaja stratne: bezstratnie wazylyby megabajty, a szum
+ * matrycy i tak nie ma ostrych krawedzi do ochrony.
+ */
+export function zapisBezstratny(origin: "manual" | "tradingview" | "fxreplay", typ: string): boolean {
+  return origin === "tradingview" || origin === "fxreplay" || typ === "image/png";
+}
 
 export type SavedScreenshot = {
   file: string;
@@ -69,7 +82,7 @@ export async function bladZawartosci(upload: File): Promise<string | null> {
   }
 }
 
-export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<SavedScreenshot> {
+export async function saveScreenshot(owner: ShotOwner, upload: File, opcje: { bezstratnie?: boolean } = {}): Promise<SavedScreenshot> {
   if (!ALLOWED.has(upload.type)) {
     throw new Error("Obsługiwane formaty to PNG, JPEG, WEBP, AVIF i HEIC.");
   }
@@ -106,11 +119,16 @@ export async function saveScreenshot(owner: ShotOwner, upload: File): Promise<Sa
   const full = `${name}.webp`;
   const thumb = `${name}-mini.webp`;
 
-  await image.clone().webp({ quality: 88 }).toFile(path.join(dir, full));
+  // effort 6: przy zrzutach wykresow najmniejszy plik i (w pomiarze) najszybszy z bezstratnych poziomow.
+  const bezstratnie = opcje.bezstratnie === true;
+  await image
+    .clone()
+    .webp(bezstratnie ? { lossless: true, effort: 6 } : { quality: 88 })
+    .toFile(path.join(dir, full));
   await image
     .clone()
     .resize({ width: THUMBNAIL_WIDTH, withoutEnlargement: true })
-    .webp({ quality: 80 })
+    .webp(bezstratnie ? { lossless: true, effort: 6 } : { quality: 80 })
     .toFile(path.join(dir, thumb));
 
   const segment = ownerSegment(owner);

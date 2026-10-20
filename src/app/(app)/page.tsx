@@ -367,7 +367,7 @@ export default async function DzisPage() {
                         {t.firstShot && !ukryty ? (
                            
                           <ObrazZrzutu
-                            src={`/api/screenshots/${t.firstShot.file}`}
+                            src={`/api/screenshots/${t.firstShot.thumbnail ?? t.firstShot.file}`}
                             alt={`Zrzut ${t.instrumentSymbol} ${timeOnly(t.entryTime, t.exchangeTimezone)}`}
                             className="h-9 w-16 rounded-[6px] border border-line object-cover"
                           />

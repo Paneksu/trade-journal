@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { screenshots } from "@/lib/db/schema";
 import { opiszBladBazy } from "@/lib/api-v2/bledy-bazy";
 import type { Zapis } from "@/lib/api-v2/zapis";
-import { deleteScreenshot, saveScreenshot } from "@/lib/screenshots";
+import { deleteScreenshot, saveScreenshot, zapisBezstratny } from "@/lib/screenshots";
 import { bladLimitu, MAX_ZRZUTOW } from "@/lib/screenshots-limit";
 import type { ShotOwner } from "@/lib/uploads-path";
 
@@ -78,7 +78,7 @@ export async function wgrajZalaczniki(
   for (const { file, interval, capturedAt, chartState, caption } of items) {
     let zapisany: Awaited<ReturnType<typeof saveScreenshot>> | null = null;
     try {
-      zapisany = await saveScreenshot(owner, file);
+      zapisany = await saveScreenshot(owner, file, { bezstratnie: zapisBezstratny(origin, file.type) });
       const saved = zapisany;
       // Limit i numeracja liczone POD BLOKADA DORADCZA wlasciciela (audyt 7): dwa rownolegle wgrania nie
       // przekrocza limitu, a kolejnosc nie dubluje numerow. Zrzuty zastepowanego pochodzenia nie licza sie.

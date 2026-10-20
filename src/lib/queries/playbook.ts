@@ -57,9 +57,9 @@ export async function kartaSetupu(slug: string) {
   const zrzutyPrzykladow = d.examples.filter((e) => e.screenshotId !== null).map((e) => e.screenshotId!);
   const pliki = zrzutyPrzykladow.length
     ? new Map(
-        (await db.select({ id: screenshots.id, file: screenshots.file, interval: screenshots.interval }).from(screenshots).where(inArray(screenshots.id, zrzutyPrzykladow))).map((z) => [z.id, z]),
+        (await db.select({ id: screenshots.id, file: screenshots.file, width: screenshots.width, interval: screenshots.interval }).from(screenshots).where(inArray(screenshots.id, zrzutyPrzykladow))).map((z) => [z.id, z]),
       )
-    : new Map<number, { id: number; file: string; interval: string | null }>();
+    : new Map<number, { id: number; file: string; width: number | null; interval: string | null }>();
 
   const wersjePoId = new Map(d.versions.map((w) => [w.id, w.version]));
   return {

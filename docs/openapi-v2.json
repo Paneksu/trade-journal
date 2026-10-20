@@ -4206,7 +4206,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik."
+                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik. Pole replayTime (ISO 8601 z offsetem albo null) = zegar replayu w chwili zrzutu: przy trade'cie z backtestu (sesja backtestu albo zrodlo fxreplay) ocena basis=chart przyjmuje zrzut jako dowod tylko z replayTime <= wejscie (brak = look_ahead). Nieczytelne replayTime = 400."
                   },
                   "origin": {
                     "type": "string",
@@ -5664,7 +5664,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik."
+                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik. Pole replayTime (ISO 8601 z offsetem albo null) = zegar replayu w chwili zrzutu: przy trade'cie z backtestu (sesja backtestu albo zrodlo fxreplay) ocena basis=chart przyjmuje zrzut jako dowod tylko z replayTime <= wejscie (brak = look_ahead). Nieczytelne replayTime = 400."
                   },
                   "origin": {
                     "type": "string",
@@ -8971,7 +8971,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik."
+                    "description": "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik. Pole replayTime (ISO 8601 z offsetem albo null) = zegar replayu w chwili zrzutu: przy trade'cie z backtestu (sesja backtestu albo zrodlo fxreplay) ocena basis=chart przyjmuje zrzut jako dowod tylko z replayTime <= wejscie (brak = look_ahead). Nieczytelne replayTime = 400."
                   },
                   "origin": {
                     "type": "string",

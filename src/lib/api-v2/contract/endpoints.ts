@@ -160,7 +160,7 @@ export type Metoda = "get" | "post" | "put" | "patch";
 
 const POLA_META_ZRZUTOW = {
   capturedAt: { type: "array", items: { type: "string", format: "date-time" }, description: "Kiedy zrobiono zrzut (ISO 8601 z offsetem); po jednym na plik, w tej samej kolejnosci." },
-  chartState: { type: "array", items: { type: "string" }, description: "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik." },
+  chartState: { type: "array", items: { type: "string" }, description: "Obiekt JSON jako tekst (symbol, interwal, zakres z tj shot); po jednym na plik. Pole replayTime (ISO 8601 z offsetem albo null) = zegar replayu w chwili zrzutu: przy trade'cie z backtestu (sesja backtestu albo zrodlo fxreplay) ocena basis=chart przyjmuje zrzut jako dowod tylko z replayTime <= wejscie (brak = look_ahead). Nieczytelne replayTime = 400." },
 };
 
 const MULTIPART_ZRZUTY = {

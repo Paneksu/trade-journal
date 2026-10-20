@@ -6,6 +6,7 @@ import { EdytorNotatki } from "@/components/mozg/edytor";
 import { linkiNaMarkdown } from "@/components/mozg/linki";
 import { SlowaUzytkownikaNotatki } from "@/components/mozg/slowa";
 import { ObrazZrzutu } from "@/components/screenshots/obraz-zrzutu";
+import { zrodlaZrzutu } from "@/components/screenshots/zrodla";
 import { Markdown } from "@/components/trade/markdown";
 import { Chip, klasaPigulki } from "@/components/ui/v2";
 import { requireSession } from "@/lib/auth/guard";
@@ -184,7 +185,7 @@ export default async function NotatkaPage({
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {n.zalaczniki.map((z) => (
                   <a key={z.id} href={`/api/screenshots/${z.file}`} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-[var(--radius-tab)] border border-line">
-                    <ObrazZrzutu src={`/api/screenshots/${z.thumbnail ?? z.file}`} alt={`Załącznik ${z.interval ?? ""}`} className="aspect-video w-full object-cover" />
+                    <ObrazZrzutu loading="lazy" decoding="async" {...zrodlaZrzutu(z, "(max-width: 640px) 50vw, 400px")} alt={`Załącznik ${z.interval ?? ""}`} className="aspect-video w-full object-cover" />
                   </a>
                 ))}
               </div>

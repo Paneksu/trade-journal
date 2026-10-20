@@ -144,6 +144,7 @@ export const DowodWerdyktuSchema = z.strictObject({
    * ktora konczy sie po wejsciu (np. 15-minutowa swieca z 14:30 obejmuje wejscie o 14:35).
    */
   intervalMinutes: z.number().int().min(1).max(10_080).optional(),
+  /** Skroty zrzutow trade'a. Przy basis=chart: zrzut z capturedAt <= wejscie, a przy trade'cie z backtestu z chartState.replayTime <= wejscie. */
   screenshots: z
     .array(z.strictObject({ sha256: z.string().regex(/^[0-9a-f]{64}$/, { message: "oczekiwano 64 znaków hex (małe litery)" }) }))
     .max(40)
