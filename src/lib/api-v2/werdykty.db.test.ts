@@ -326,6 +326,14 @@ describe.skipIf(!MOZNA_NA_BAZIE)("werdykt niezmienny i ukrywanie wyniku (baza lo
       const zFw = await wgrajZrzut(idFw, "tradingview");
       const r2 = await ocena(idFw, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zFw.sha256 }] } });
       expect(r2.status, JSON.stringify(r2.json)).toBe(201);
+
+      // forward ze zrodlem fxreplay: FX Replay to replay, wiec liczy sie replayTime (zrodlo wygrywa z rodzajem sesji)
+      const idFwFx = await nowyOtwarty();
+      await sql`update trades set backtest_session_id = ${fw.id}, source = 'fxreplay' where id = ${idFwFx}`;
+      const zFwFx = await wgrajZrzut(idFwFx, "fxreplay");
+      const r3 = await ocena(idFwFx, { basis: "chart", brainVerdict: "wejdz", evidence: { intervalMinutes: 5, candles: swiece(), screenshots: [{ sha256: zFwFx.sha256 }] } });
+      expect(r3.status, JSON.stringify(r3.json)).toBe(422);
+      expect(r3.json.code).toBe("look_ahead");
     } finally {
       await sql`delete from trades where backtest_session_id in (${bt.id}, ${fw.id})`;
       await sql`delete from backtest_sessions where id in (${bt.id}, ${fw.id})`;

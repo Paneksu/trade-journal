@@ -178,9 +178,11 @@ async function zapiszWerdyktNiezmienny(
       .from(screenshots)
       .where(and(eq(screenshots.tradeId, trade.id), inArray(screenshots.sha256, sha)));
     // Ocena »chart« nie moze opierac sie na zrzucie zrobionym PO wejsciu (audyt N3, 15.10.2026): pokazuje przyszlosc.
-    // Backtest (20.10.2026, Slowa uzytkownika z zadania: zrzut z replayu ma byc dowodem): wejscie jest w czasie
-    // replayu, wiec porownujemy zegar replayu z chartState.replayTime, nie captured_at (inny zegar). Brak = odrzut.
-    // Sesja »forward« idzie na biezacych danych: tam zegar replayu nie istnieje, a captured_at jest wlasciwym czasem.
+    // Backtest (ADR-035, 20.10.2026; Decyzja sesji glownej, autoryzacja uzytkownika z 17.10.2026: «Niepytaj się do końca
+    // już o zadne permisje i acceptable»): wejscie jest w czasie replayu, wiec porownujemy zegar replayu z
+    // chartState.replayTime, nie captured_at (inny zegar). Brak = odrzut (fail-closed).
+    // Sesja »forward« idzie na biezacych danych i liczy captured_at, CHYBA ZE trade ma zrodlo fxreplay: FX Replay to zawsze
+    // replay, wiec zrodlo fxreplay wygrywa z rodzajem sesji.
     const zBacktestu = trade.rodzajSesji === "backtest" || trade.source === "fxreplay";
     const poWejsciu =
       o.basis === "chart"

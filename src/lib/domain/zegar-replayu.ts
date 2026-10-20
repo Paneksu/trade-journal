@@ -7,7 +7,8 @@
  *
  * Regula: lacznik dopisuje do `chartState` zrzutu pole `replayTime` - zegar replayu (czas rynkowy, ktory
  * replay pokazywal w chwili zrzutu) jako ISO 8601 z offsetem, np. "2023-03-10T14:30:00Z". Dla trade'a z
- * backtestu (sesja rodzaju "backtest" albo zrodlo fxreplay; sesja "forward" nie) serwer porownuje z wejsciem WYLACZNIE `replayTime`;
+ * backtestu (sesja rodzaju "backtest" albo zrodlo fxreplay; sesja "forward" tylko ze zrodlem fxreplay) serwer porownuje z
+ * wejsciem WYLACZNIE `replayTime`;
  * brak albo nieczytelna wartosc = zrzut nie jest dowodem sprzed wejscia (fail-closed). `captured_at`
  * nie ma tu znaczenia, bo to inny zegar.
  *

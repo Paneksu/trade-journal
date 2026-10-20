@@ -15,6 +15,8 @@ describe("zegar replayu zrzutu (backtest, 20.10.2026)", () => {
     expect(zegarReplayu({ replayTime: 1678458600000 })).toBeNull();
     expect(zegarReplayu({ replayTime: "2023-03-10T14:30:00" })).toBeNull();
     expect(zegarReplayu({ replayTime: "2023-13-40T99:30:00Z" })).toBeNull();
+    // V8 przesuwa 30 lutego na 2 marca: pozniej, czyli w bezpieczna strone (czesciej look_ahead).
+    expect(zegarReplayu({ replayTime: "2023-02-30T10:00:00Z" })!.getTime()).toBeGreaterThanOrEqual(Date.parse("2023-02-28T10:00:00Z"));
   });
 
   it("walidacja przy wgrywaniu: brak i null dozwolone, nieczytelna wartosc to blad", () => {

@@ -4,6 +4,7 @@ import { mkdir, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import sharp, { type Sharp } from "sharp";
 
+import { SZEROKOSC_MINIATURY } from "@/components/screenshots/zrodla";
 import { dekodujHeic, BladHeic, LIMIT_PIKSELI_HEIC, wygladaNaHeic, wymiaryHeic } from "./heic";
 import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./uploads-path";
 
@@ -17,8 +18,8 @@ import { ownerDir, ownerSegment, safePath, tradeDir, type ShotOwner } from "./up
 const HEIC = new Set(["image/heic", "image/heif"]);
 const ALLOWED = new Set(["image/png", "image/jpeg", "image/webp", "image/avif", ...HEIC]);
 const MAX_BYTES = 10 * 1024 * 1024;
-/** Musi byc rowne SZEROKOSC_MINIATURY w components/screenshots/zrodla.ts (srcset podaje ja jako `560w`). */
-const THUMBNAIL_WIDTH = 560;
+// Jedna stala z zrodla.ts: srcset podaje szerokosc miniatury (`560w`), wiec zapis i widok nie moga sie rozjechac.
+const THUMBNAIL_WIDTH = SZEROKOSC_MINIATURY;
 
 /**
  * Kiedy zapis bezstratny. Zrzut WYKRESU (zrodlo tradingview / fxreplay albo wklejony PNG) ma cienkie linie
@@ -119,7 +120,7 @@ export async function saveScreenshot(owner: ShotOwner, upload: File, opcje: { be
   const full = `${name}.webp`;
   const thumb = `${name}-mini.webp`;
 
-  // effort 6: przy zrzutach wykresow najmniejszy plik i (w pomiarze) najszybszy z bezstratnych poziomow.
+  // effort 6: pomiar 20.10.2026 (2706x1514, FX Replay): 98 KB w 0,3-0,9 s; effort 4: 104 KB w 1,5-2,5 s.
   const bezstratnie = opcje.bezstratnie === true;
   await image
     .clone()
