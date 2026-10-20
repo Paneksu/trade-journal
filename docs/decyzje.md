@@ -2354,3 +2354,11 @@ Etap A zbudowany na gałęzi `feat/broker-import` (migracje 0030-0032, `lib/doma
     - Test `bezpieczenstwo.spec.ts` (zmiana hasła i powrót) wymaga, żeby hasło z `E2E_PASSWORD`/`OWNER_PASSWORD` spełniało politykę (małe i wielkie litery, cyfra, min. 10 znaków); z prostszym hasłem lokalnym pada na przywracaniu hasła, nie na kodzie.
 
 Pytania klasy trzeciej z etapu A rozstrzygnięto w punkcie 13.
+
+## ADR-035 — ostre zrzuty wykresów i zegar replayu jako dowód oceny »chart« (2026-10-20)
+
+Słowa użytkownika (20.10.2026): «w zrzutach dalej te screeny sa rozmyte», wcześniej «Chciałbym od razu uzyskać najwyższą jakość, bez konieczności dodatkowego klikania».
+
+1. **Zapis bezstratny** (`lib/screenshots.ts`, `zapisBezstratny`): zrzuty z łącznika (`tradingview`, `fxreplay`) i każdy wgrany PNG idą do WebP lossless (effort 6), pełny plik i miniatura. Pomiar na zrzucie FX Replay 2706x1514: 98 KB lossless, 46 KB stratnie (q88), 180 KB jako PNG. WebP zamiast PNG, bo ten sam obraz co do piksela przy połowie wagi, a trasa `/api/screenshots` już serwuje `image/webp`. Zdjęcia (JPEG, HEIC, AVIF) zostają stratne. Decyzja gustu.
+2. **Wyświetlanie** (`components/screenshots/zrodla.ts`): galerie dostają `srcset` (miniatura 560w + pełny plik) i `sizes="auto, …"`. Przyczyna rozmycia: kafel w zakładce »Zrzuty« ma ok. 818 px CSS (1636 px urządzenia przy 2x), a pokazywał miniaturę 560 px. Teraz przeglądarka sama bierze pełny plik, gdy kafel jest szerszy niż miniatura. Stare zrzuty na produkcji zostają stratne (oryginałów nie ma); ostrzejsze będą dopiero nowe.
+3. **Zegar replayu** (`lib/domain/zegar-replayu.ts`, `lib/api-v2/oceny.ts`): przy trade'cie z backtestu wejście jest w czasie replayu, a `captured_at` to zegar ścienny, więc każdy zrzut wyglądał na zrobiony po wejściu. Łącznik wysyła w `chartState` pole `replayTime`; serwer porównuje je z wejściem tylko dla trade'ów z sesji `backtest` albo ze źródłem `fxreplay`. Brak pola = odrzut (fail-closed). Sesja `forward` i trade realny: bez zmian (`captured_at`). Ukrywanie zrzutów przy ukrytym wyniku (`sqlPoWejsciu`) nadal patrzy na `captured_at`, więc przy otwartym trade'cie z backtestu z werdyktem zrzuty są ukryte do zamknięcia (nadmiarowo, czyli w bezpieczną stronę).
