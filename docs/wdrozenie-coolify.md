@@ -143,7 +143,7 @@ każda trasa `/api/ingest/*` odpowiada 404. Kontrakt API: `docs/api-ingest.md`, 
    node -e "console.log('tj_' + require('crypto').randomBytes(32).toString('base64url'))"
    node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" <token>
    ```
-   Token zapisz w pliku poza gitem (`C:\Users\ahaah\.claude\sekrety\trade-journal-ingest.env`).
+   Token zapisz w lokalnym pliku env łącznika, poza gitem.
    **Do Coolify trafia wyłącznie skrót.**
 3. W Coolify dodaj zmienną `INGEST_TOKEN_SHA256` (secret) i wdróż. Zmienna zmienia zachowanie
    dopiero po restarcie kontenera.
@@ -189,7 +189,7 @@ wymusza ciasteczka `Secure`, dlatego dostęp ma tylko przez HTTPS (adres sslip t
 
 5. **Scal do `master`** (to uruchamia deploy; sprawdź w Coolify, że wdrożony commit == HEAD `master`).
    Start kontenera uruchamia migrację 0016.
-6. **Podmień `TJ_INGEST_URL`** w `C:\Users\ahaah\.claude\sekrety\trade-journal-ingest.env` na
+6. **Podmień `TJ_INGEST_URL`** w lokalnym pliku env łącznika (poza gitem) na
    `https://dziennik.panekweb.pl`. Dopiero potem krok 7, inaczej łącznik straci adres.
 7. **Usuń adres sslip** z pola Domains i zapisz. Od teraz zostaje tylko `https://dziennik.panekweb.pl`.
 8. **Smoke test** z sekcji 5, razem z nowymi punktami o HSTS, robots i przekierowaniu.
