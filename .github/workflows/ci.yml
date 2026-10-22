@@ -29,7 +29,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       # Tests that need PostgreSQL skip themselves when no test database is configured.
-      # No secrets and no database here on purpose.
-      - run: npm test
+      # No secrets and no database here on purpose. test-db-skrypt.test.ts checks the guard
+      # that loads a production safety module from the developer machine, so it only runs locally.
+      - run: npm test -- --exclude src/lib/api-v2/test-db-skrypt.test.ts
         env:
           NEXT_TELEMETRY_DISABLED: "1"
