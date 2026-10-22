@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [master, "docs/**", "feat/**", "fix/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run lint
+      # Tests that need PostgreSQL skip themselves when no test database is configured.
+      # No secrets and no database here on purpose.
+      - run: npm test
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
